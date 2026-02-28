@@ -1,29 +1,44 @@
 """
-Quick way to run a single task manually.
-Usage: python run.py "your task description here"
+Dev tool — send a prompt to the running zipper server.
+Usage: python run.py "prompt" [conversation_id]
 """
-import asyncio
 import sys
-import os
-from dotenv import load_dotenv
+import json
+import urllib.request
+import urllib.error
 
-load_dotenv()
-
-from llm import run_task
-from storage.conversations import create_conversation
+ZIPPER_URL = "http://localhost:4199"
 
 
-async def main():
+def main():
     if len(sys.argv) < 2:
-        print("usage: python run.py \"task description\"")
+        print('usage: python run.py "prompt" [conversation_id]')
         sys.exit(1)
 
-    description = " ".join(sys.argv[1:])
-    conversation_id = create_conversation(title=description, source="cli")
-    print(f"[zipper] conversation: {conversation_id}")
-    result = await run_task(description, conversation_id)
-    print(f"\n[zipper] result:\n{result}")
+    prompt = sys.argv[1]
+    conversation_id = sys.argv[2] if len(sys.argv) > 2 else None
+
+    payload = {"prompt": prompt, "source": "cli"}
+    if conversation_id:
+        payload["conversation_id"] = conversation_id
+
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(
+        f"{ZIPPER_URL}/chat",
+        data=data,
+        headers={"Content-Type": "application/json"},
+    )
+
+    try:
+        with urllib.request.urlopen(req) as resp:
+            body = json.loads(resp.read())
+            print(f"[conversation: {body['conversation_id']}]")
+            print(body["result"])
+    except urllib.error.URLError as e:
+        print(f"error: could not reach zipper server at {ZIPPER_URL}")
+        print(f"  is it running? try: python main.py")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
