@@ -1,0 +1,14 @@
+services:
+  discord:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    command: python discord_bot.py
+    volumes:
+      - ./data:/app/data
+    networks:
+      - zipper-net
+
+networks:
+  zipper-net:
+    external: true

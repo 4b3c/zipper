@@ -7,3 +7,9 @@ services:
       - "4199:4199"
     volumes:
       - ./data:/app/data
+    networks:
+      - zipper-net
+
+networks:
+  zipper-net:
+    external: true

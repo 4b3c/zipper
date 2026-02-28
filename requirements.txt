@@ -2,3 +2,5 @@ anthropic
 python-dotenv
 fastapi
 uvicorn
+discord.py
+aiohttp
