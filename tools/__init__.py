@@ -1,9 +1,88 @@
-from tools.file import run as file_run
+from pathlib import Path
+from tools.file import run as file_run, _list_tree, PROJECT_ROOT, DEFAULT_HIDDEN_DIRS
 from tools.bash import run as bash_run
 from tools.search import run as search_run
 from tools.restart import run as restart_run
 from tools.task import run as task_run
 from tools.notify import run as notify_run
+from storage.trace import get_trace
+
+_CODEBASE_MD = PROJECT_ROOT / "system_prompts" / "codebase.md"
+_BASH_MD = PROJECT_ROOT / "system_prompts" / "bash.md"
+_FILE_TOOL_USAGE = """
+## File Tool Modes
+- list — recursive tree (project root default). Hidden entries shown as stubs. Pass include_data=true to expand data/.
+- read — single file or filenames=[] for multi-read. line_start/line_end for ranges.
+- grep — regex across files. glob= to filter by extension (e.g. "*.py").
+- edit — exact search/replace. Errors on 0 or 2+ matches. all=true for bulk. Shows 3-line context on success.
+- write — full overwrite. Prefer edit for targeted changes.
+- delete — removes a single file.
+
+Rules: always read before editing. Use grep to locate symbols before diving into files. After source changes, use the restart tool — never bash.
+""".strip()
+
+
+def _file_onboarding(args: dict) -> str:
+    parts = ["[first use — file tool + codebase orientation]", ""]
+
+    codebase = _CODEBASE_MD.read_text(encoding="utf-8").strip() if _CODEBASE_MD.exists() else ""
+    if codebase:
+        parts.append(codebase)
+        parts.append("")
+
+    # skip tree if this call is already listing files — output would be identical
+    if args.get("mode") != "list":
+        tree = _list_tree(PROJECT_ROOT, PROJECT_ROOT, DEFAULT_HIDDEN_DIRS)
+        parts.append("## Current File Tree")
+        parts.append("\n".join(tree))
+        parts.append("")
+
+    parts.append(_FILE_TOOL_USAGE)
+    return "\n".join(parts)
+
+
+ONBOARDING = {
+    "file": _file_onboarding,
+
+    "bash": lambda _: "[first use — bash tool guide]\n\n" + (
+        _BASH_MD.read_text(encoding="utf-8").strip() if _BASH_MD.exists()
+        else "See system_prompts/bash.md (not found)."
+    ),
+
+    "search": """
+[first use — search tool guide]
+Queries Brave Search and returns titles, URLs, and descriptions.
+
+Use it for: library documentation, API references, error messages you don't recognize, anything requiring current information beyond your training data.
+
+Pass limit=N to get more results (default 5).
+""".strip(),
+
+    "restart": """
+[first use — restart tool guide]
+Restarts zipper service components. Always use this after modifying source code — never use bash to restart manually.
+
+Modes:
+- zipper — async restart of the main process via systemctl. Registers a watchdog with the discord bot that resumes this conversation once zipper is healthy. If startup fails, code changes are stashed and the previous state is restored automatically.
+- discord — synchronous restart of the zipper-discord service. Returns when done.
+
+Workflow after a code change: edit files → test with bash if possible → restart(zipper) → verify the watchdog result → push to GitHub.
+""".strip(),
+
+    "task": """
+[first use — task tool guide]
+Manages the persistent task queue across sessions. Use it to track work that spans multiple conversations.
+
+Modes:
+- list — all tasks, filter by status (pending/running/done/failed).
+- create — requires title. Optional: description (full instructions), due_at (ISO 8601), schedule (recurrence string).
+- update — patch any field on a task. Always pass result when marking done, error when marking failed.
+- due — tasks that are pending and past their due_at.
+- archive — completed/failed tasks, most recent first. Check this before starting a recurring task to see what you did last time.
+
+Recurrence: "daily", "weekly", "every N hours", "every N days", "every monday" (any weekday). Marking a scheduled task done automatically creates the next occurrence.
+""".strip(),
+}
 
 TOOLS = [
     {
@@ -73,6 +152,10 @@ TOOLS = [
                     "type": "boolean",
                     "description": "For edit: replace all occurrences instead of erroring on multiple matches. Default false.",
                 },
+                "help": {
+                    "type": "boolean",
+                    "description": "Return usage guide for this tool without performing any action.",
+                },
             },
             "required": ["mode"],
         },
@@ -91,6 +174,10 @@ TOOLS = [
                     "type": "integer",
                     "description": "Number of results to return. Default 5.",
                 },
+                "help": {
+                    "type": "boolean",
+                    "description": "Return usage guide for this tool without performing any action.",
+                },
             },
             "required": ["query"],
         },
@@ -108,6 +195,10 @@ TOOLS = [
                 "thread_id": {
                     "type": "integer",
                     "description": "Discord thread ID to post in. Omit to post to the main channel.",
+                },
+                "help": {
+                    "type": "boolean",
+                    "description": "Return usage guide for this tool without performing any action.",
                 },
             },
             "required": ["message"],
@@ -129,6 +220,10 @@ TOOLS = [
                         "discord — restart the zipper-discord systemd user service synchronously. "
                         "dashboard — restart the dashboard (not yet implemented)."
                     ),
+                },
+                "help": {
+                    "type": "boolean",
+                    "description": "Return usage guide for this tool without performing any action.",
                 },
             },
             "required": ["mode"],
@@ -188,6 +283,10 @@ TOOLS = [
                     "type": "integer",
                     "description": "Max entries to return for archive mode. Default 20.",
                 },
+                "help": {
+                    "type": "boolean",
+                    "description": "Return usage guide for this tool without performing any action.",
+                },
             },
             "required": ["mode"],
         },
@@ -206,6 +305,10 @@ TOOLS = [
                     "type": "integer",
                     "description": "Timeout in seconds. Default 30.",
                 },
+                "help": {
+                    "type": "boolean",
+                    "description": "Return usage guide for this tool without performing any action.",
+                },
             },
             "required": ["command"],
         },
@@ -213,17 +316,56 @@ TOOLS = [
 ]
 
 
+def _is_first_use(name: str, conversation_id: str) -> bool:
+    if not conversation_id:
+        return False
+    trace = get_trace(conversation_id)
+    return not any(e.get("tool") == name for e in trace.get("entries", []))
+
+
+# empty primary field triggers help, same as calling with no args in a CLI
+_EMPTY_TRIGGERS = {
+    "bash": lambda a: not a.get("command", "").strip(),
+    "search": lambda a: not a.get("query", "").strip(),
+    "notify": lambda a: not a.get("message", "").strip(),
+}
+
+
+def _wants_help(name: str, args: dict) -> bool:
+    if args.get("help"):
+        return True
+    return _EMPTY_TRIGGERS.get(name, lambda a: False)(args)
+
+
+def _get_onboarding(name: str, args: dict) -> str:
+    entry = ONBOARDING.get(name)
+    if entry is None:
+        return f"No guide available for '{name}'."
+    return entry(args) if callable(entry) else entry
+
+
 def execute_tool(name: str, args: dict, conversation_id: str = "") -> str:
+    if _wants_help(name, args):
+        return _get_onboarding(name, args)
+
+    first_use = _is_first_use(name, conversation_id)
+
     if name == "file":
-        return file_run(args)
-    if name == "bash":
-        return bash_run(args)
-    if name == "search":
-        return search_run(args)
-    if name == "restart":
-        return restart_run(args, conversation_id)
-    if name == "task":
-        return task_run(args)
-    if name == "notify":
-        return notify_run(args)
-    raise ValueError(f"Unknown tool: {name}")
+        result = file_run(args)
+    elif name == "bash":
+        result = bash_run(args)
+    elif name == "search":
+        result = search_run(args)
+    elif name == "restart":
+        result = restart_run(args, conversation_id)
+    elif name == "task":
+        result = task_run(args)
+    elif name == "notify":
+        result = notify_run(args)
+    else:
+        raise ValueError(f"Unknown tool: {name}")
+
+    if first_use and name in ONBOARDING:
+        result = _get_onboarding(name, args) + "\n\n---\n\n" + result
+
+    return result

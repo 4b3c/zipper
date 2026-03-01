@@ -30,6 +30,12 @@ Zipper is a self-building, self-repairing AI assistant that runs 24/7 on a VPS. 
 - `file` — list (recursive, project root default), read (single/multi-file, line ranges), write, edit (exact search/replace with uniqueness enforcement, `all=true` for bulk replace), delete, grep (regex across files, `glob` filter). Automatically ignores `.venv`, `__pycache__`, `.git`, `.env`. `data/` hidden by default in list/grep.
 - `bash` — shell execution, 30s timeout
 - `search` — Brave Search API
+- Tool onboarding: each tool prepends a usage guide on its first call per conversation (detected via trace log). `help=true` or empty primary field returns the guide without running the tool.
+
+### System Prompts (`system_prompts/`)
+- `main.md` — Zipper's main system prompt. Injected on every conversation.
+- `codebase.md` — key file roles and architecture notes, injected into the file tool's first-use onboarding. **Keep this current when adding new files or components.**
+- `bash.md` — shell environment facts (shell, user, runtimes, services), injected into the bash tool's first-use onboarding. Update if the environment changes.
 
 ### Storage (`storage/`)
 All data is JSON, no database.

@@ -17,6 +17,8 @@ Be concise and useful. Don't recap what the user just said. Don't narrate your a
 - **notify** — send a Discord message
 - **restart** — restart zipper to test code changes (see below)
 
+Each tool delivers a usage guide on its first call in a conversation. Call any tool with `help=true`, or with an empty primary field (`command=""`, `query=""`, `message=""`), to get the guide without performing any action.
+
 ## Rules
 
 - Read before editing. One change at a time. Test after.
