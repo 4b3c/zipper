@@ -1,10 +1,41 @@
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 DATA_DIR = ROOT / "data" / "conversations"
+
+
+def _title_to_slug(title: str) -> str:
+    """Convert a title to a URL-safe slug.
+    
+    - Convert to lowercase
+    - Strip special characters (keep only alphanumerics, spaces, and hyphens)
+    - Replace spaces with hyphens
+    - Remove consecutive hyphens
+    - Strip leading/trailing hyphens
+    """
+    slug = title.lower()
+    slug = re.sub(r"[^a-z0-9\s-]", "", slug)
+    slug = re.sub(r"\s+", "-", slug)
+    slug = re.sub(r"-+", "-", slug)
+    slug = slug.strip("-")
+    return slug or "conversation"
+
+
+def _generate_conversation_id(title: str) -> str:
+    """Generate a slug-based conversation ID, handling collisions."""
+    slug = _title_to_slug(title)
+    candidate = slug
+    counter = 1
+    
+    while _conversation_path(candidate).exists():
+        candidate = f"{slug}-{counter}"
+        counter += 1
+    
+    return candidate
 
 
 def _conversation_path(conversation_id: str) -> Path:
@@ -20,7 +51,7 @@ def _versions_path(conversation_id: str) -> Path:
 
 
 def create_conversation(title: str, source: str, discord_thread_id: str = None) -> str:
-    conversation_id = uuid.uuid4().hex[:12]
+    conversation_id = _generate_conversation_id(title)
     path = _conversation_path(conversation_id)
     path.mkdir(parents=True, exist_ok=True)
     _versions_path(conversation_id).mkdir(exist_ok=True)
