@@ -26,6 +26,7 @@ class ChatRequest(BaseModel):
     prompt: str
     conversation_id: str | None = None
     source: str = "api"
+    discord_thread_id: int | None = None
 
 class WakeRequest(BaseModel):
     time: str  # HH:MM
@@ -67,7 +68,11 @@ async def chat(req: ChatRequest):
     if req.conversation_id:
         conversation_id = req.conversation_id
     else:
-        conversation_id = create_conversation(title=req.prompt[:60], source=req.source)
+        conversation_id = create_conversation(
+            title=req.prompt[:60],
+            source=req.source,
+            discord_thread_id=req.discord_thread_id
+        )
 
     result = await run_task(req.prompt, conversation_id)
     return {"conversation_id": conversation_id, "result": result}

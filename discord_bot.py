@@ -45,10 +45,12 @@ def set_conversation_id(thread_id: int, conversation_id: str):
 
 # --- Zipper API ---
 
-async def chat(prompt: str, conversation_id: str | None = None) -> dict:
+async def chat(prompt: str, conversation_id: str | None = None, discord_thread_id: int | None = None) -> dict:
     payload = {"prompt": prompt, "source": "discord"}
     if conversation_id:
         payload["conversation_id"] = conversation_id
+    if discord_thread_id:
+        payload["discord_thread_id"] = discord_thread_id
 
     async with aiohttp.ClientSession() as session:
         async with session.post(f"{ZIPPER_URL}/chat", json=payload) as resp:
@@ -80,14 +82,16 @@ async def on_message(message: discord.Message):
     if message.channel.id != DISCORD_CHANNEL_ID:
         return
 
+    # create a thread first so we can pass the thread ID
+    thread = await message.create_thread(name=message.content[:50])
+    
     async with message.channel.typing():
-        response = await chat(message.content)
+        response = await chat(message.content, discord_thread_id=thread.id)
 
     conversation_id = response["conversation_id"]
     result = response["result"]
 
-    # create a thread for this conversation
-    thread = await message.create_thread(name=message.content[:50])
+    # save the mapping for future reference
     set_conversation_id(thread.id, conversation_id)
     await thread.send(result)
 
