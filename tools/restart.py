@@ -1,4 +1,3 @@
-import os
 import subprocess
 import json
 import urllib.request
@@ -78,19 +77,16 @@ def run(args: dict, conversation_id: str) -> str:
         raise BreakLoop("restarting...")
 
     if mode == "discord":
-        project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
         result = subprocess.run(
-            ["docker", "compose", "up", "-d", "--build", "--remove-orphans"],
-            cwd=project_dir,
+            ["systemctl", "--user", "restart", "zipper-discord"],
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=30,
         )
         output = (result.stdout + result.stderr).strip()
         if result.returncode != 0:
-            return f"error restarting discord bot:\n{output}"
-        return f"discord bot restarted\n{output}".strip()
+            return f"error restarting discord bot service:\n{output}"
+        return f"discord bot service restarted\n{output}".strip()
 
     if mode == "dashboard":
         return "dashboard not yet implemented"

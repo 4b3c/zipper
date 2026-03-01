@@ -90,7 +90,7 @@ TOOLS = [
                         "zipper — restart the main zipper process via systemctl. "
                         "Spawns a watcher that resumes this conversation with the result. "
                         "If startup fails, code changes are stashed and previous state is restored. "
-                        "discord — restart the discord bot Docker container synchronously. "
+                        "discord — restart the zipper-discord systemd user service synchronously. "
                         "dashboard — restart the dashboard (not yet implemented)."
                     ),
                 },
