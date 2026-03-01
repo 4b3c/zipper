@@ -11,10 +11,11 @@ import discord
 
 load_dotenv()
 
-ZIPPER_URL = os.environ.get("ZIPPER_URL", "http://localhost:4199")
+ZIPPER_URL = os.environ.get("ZIPPER_URL", "http://host.docker.internal:4199")
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 DISCORD_CHANNEL_ID = int(os.environ["DISCORD_CHANNEL_ID"])
 BOT_PORT = int(os.environ.get("BOT_PORT", 4200))
+BOT_HOST = os.environ.get("BOT_HOST", "0.0.0.0")
 POLL_INTERVAL = 2
 STARTUP_TIMEOUT = 45
 SETTLE_DELAY = 3
@@ -328,9 +329,9 @@ async def main():
     http_app.router.add_post("/watch-restart", handle_watch_restart)
     runner = web.AppRunner(http_app)
     await runner.setup()
-    site = web.TCPSite(runner, "127.0.0.1", BOT_PORT)
+    site = web.TCPSite(runner, BOT_HOST, BOT_PORT)
     await site.start()
-    print(f"[discord] internal server listening on port {BOT_PORT}")
+    print(f"[discord] internal server listening on {BOT_HOST}:{BOT_PORT}")
 
     # now start the Discord client
     await client.start(DISCORD_TOKEN)
