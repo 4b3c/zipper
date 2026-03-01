@@ -117,6 +117,15 @@ def set_system_prompt(conversation_id: str, system_prompt: str):
     version_path.write_text(json.dumps(version, indent=2))
 
 
+def pop_last_message(conversation_id: str):
+    """Remove the last message from the active version. Used to roll back on API failure."""
+    version_path = _active_version_path(conversation_id)
+    version = json.loads(version_path.read_text())
+    if version["messages"]:
+        version["messages"].pop()
+    version_path.write_text(json.dumps(version, indent=2))
+
+
 def append_message(conversation_id: str, role: str, content):
     version_path = _active_version_path(conversation_id)
     version = json.loads(version_path.read_text())

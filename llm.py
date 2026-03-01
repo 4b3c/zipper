@@ -7,6 +7,7 @@ import anthropic
 from storage.conversations import (
     get_active_version,
     append_message,
+    pop_last_message,
     create_version,
     get_conversation,
     set_system_prompt,
@@ -74,13 +75,18 @@ async def llm_loop(conversation_id: str, messages: list, system: str) -> str:
     while True:
         model = select_model(messages)
         print(f"[llm] {model}")
-        response = client.messages.create(
-            model=model,
-            max_tokens=8096,
-            system=system,
-            tools=TOOLS,
-            messages=messages,
-        )
+        try:
+            response = client.messages.create(
+                model=model,
+                max_tokens=8096,
+                system=system,
+                tools=TOOLS,
+                messages=messages,
+            )
+        except Exception as e:
+            # roll back the last user message so the conversation stays clean
+            pop_last_message(conversation_id)
+            raise
 
         assistant_content = response.content
         append_message(conversation_id, "assistant", serialize_content(assistant_content))

@@ -73,9 +73,14 @@ async def on_message(message: discord.Message):
     # message in a thread — continue existing conversation
     if isinstance(message.channel, discord.Thread):
         conversation_id = get_conversation_id(message.channel.id)
-        async with message.channel.typing():
-            response = await chat(message.content, conversation_id)
-        await message.channel.send(response["result"])
+        try:
+            async with message.channel.typing():
+                response = await chat(message.content, conversation_id)
+            if not conversation_id:
+                set_conversation_id(message.channel.id, response["conversation_id"])
+            await message.channel.send(response["result"])
+        except Exception as e:
+            await message.channel.send(f"⚠️ Error: {e}")
         return
 
     # message in the main channel — start new conversation + thread
@@ -84,16 +89,14 @@ async def on_message(message: discord.Message):
 
     # create a thread first so we can pass the thread ID
     thread = await message.create_thread(name=message.content[:50])
-    
-    async with message.channel.typing():
-        response = await chat(message.content, discord_thread_id=thread.id)
 
-    conversation_id = response["conversation_id"]
-    result = response["result"]
-
-    # save the mapping for future reference
-    set_conversation_id(thread.id, conversation_id)
-    await thread.send(result)
+    try:
+        async with message.channel.typing():
+            response = await chat(message.content, discord_thread_id=thread.id)
+        set_conversation_id(thread.id, response["conversation_id"])
+        await thread.send(response["result"])
+    except Exception as e:
+        await thread.send(f"⚠️ Error: {e}")
 
 
 if __name__ == "__main__":
