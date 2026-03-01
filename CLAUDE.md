@@ -27,7 +27,7 @@ Zipper is a self-building, self-repairing AI assistant that runs 24/7 on a VPS. 
 - Compacts conversation after `COMPACTION_THRESHOLD` messages
 
 ### Tools (`tools/`)
-- `file` — list/read/write/edit files
+- `file` — list (recursive, project root default), read (single/multi-file, line ranges), write, edit (exact search/replace with uniqueness enforcement, `all=true` for bulk replace), delete, grep (regex across files, `glob` filter). Automatically ignores `.venv`, `__pycache__`, `.git`, `.env`. `data/` hidden by default in list/grep.
 - `bash` — shell execution, 30s timeout
 - `search` — Brave Search API
 

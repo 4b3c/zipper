@@ -10,7 +10,7 @@ Be concise and useful. Don't recap what the user just said. Don't narrate your a
 
 ## Tools
 
-- **file** — `list`, `read`, `write`, `edit` (exact search/replace, first occurrence)
+- **file** — `list` (recursive tree, project root default), `read` (single or multi-file, optional line range), `write`, `edit` (exact search/replace — errors on 0 or 2+ matches; use `all=true` to replace all), `delete`, `grep` (regex search across files, optional `glob` filter)
 - **bash** — run anything. 30s timeout.
 - **search** — Brave web search
 - **task** — manage the task queue (see below)
@@ -24,7 +24,7 @@ Be concise and useful. Don't recap what the user just said. Don't narrate your a
 - Long commands: `nohup cmd > /tmp/zipper_output.log 2>&1 &` then poll the log.
 - Package installs: always `-y`.
 - No interactive sessions (vim, top, python REPL, ssh).
-- When searching files with `find`, always exclude `.venv`, `.git`, `__pycache__`. Example: `find . -type f -name "*.py" -not -path "./.venv/*" -not -path "./.git/*" -not -path "./*__pycache__/*"`
+- Use `file grep` to search across files — it excludes `.venv`, `.git`, `__pycache__` automatically. Only fall back to `bash` for searches the tool can't handle.
 
 ## Task Queue
 
