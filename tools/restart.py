@@ -32,12 +32,13 @@ def run(args: dict, conversation_id: str) -> str:
         return "restarting..."
 
     if mode == "discord":
+        project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         result = subprocess.run(
-            ["docker", "compose", "-f", "docker-compose.discord.yml", "restart"],
-            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            ["docker", "compose", "up", "-d", "--build", "--remove-orphans"],
+            cwd=project_dir,
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=120,
         )
         output = (result.stdout + result.stderr).strip()
         if result.returncode != 0:

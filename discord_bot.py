@@ -62,6 +62,12 @@ async def chat(prompt: str, conversation_id: str | None = None, discord_thread_i
 # --- Discord events ---
 
 @client.event
+async def on_ready():
+    print(f"[discord] logged in as {client.user}")
+    print(f"[discord] listening in channel {DISCORD_CHANNEL_ID}")
+
+
+@client.event
 async def on_message(message: discord.Message):
     if message.author == client.user:
         return
@@ -83,7 +89,6 @@ async def on_message(message: discord.Message):
     if message.channel.id != DISCORD_CHANNEL_ID:
         return
 
-    # create a thread first so we can pass the thread ID
     thread = await message.create_thread(name=message.content[:50])
 
     try:
@@ -105,29 +110,26 @@ async def handle_notify(request: web.Request) -> web.Response:
             return web.json_response({"error": "message required"}, status=400)
         channel = client.get_channel(DISCORD_CHANNEL_ID)
         if channel is None:
-            return web.json_response({"error": "channel not found"}, status=500)
+            return web.json_response({"error": "channel not found — bot may not be ready yet"}, status=503)
         await channel.send(message)
         return web.json_response({"ok": True})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 
 
-async def start_http_server():
-    app = web.Application()
-    app.router.add_post("/notify", handle_notify)
-    runner = web.AppRunner(app)
+async def main():
+    # start HTTP server first, before Discord connects
+    http_app = web.Application()
+    http_app.router.add_post("/notify", handle_notify)
+    runner = web.AppRunner(http_app)
     await runner.setup()
     site = web.TCPSite(runner, "127.0.0.1", BOT_PORT)
     await site.start()
     print(f"[discord] internal server listening on port {BOT_PORT}")
 
-
-@client.event
-async def on_ready():
-    print(f"[discord] logged in as {client.user}")
-    print(f"[discord] listening in channel {DISCORD_CHANNEL_ID}")
-    await start_http_server()
+    # now start the Discord client
+    await client.start(DISCORD_TOKEN)
 
 
 if __name__ == "__main__":
-    client.run(DISCORD_TOKEN)
+    asyncio.run(main())

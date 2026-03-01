@@ -62,8 +62,7 @@ data/
 - OS: Ubuntu
 - Zipper runs directly via systemd as root: `systemctl --user start zipper`
 - Service file: `zipper.service` (uses `%h` for home directory)
-- Discord bot: `docker compose -f docker-compose.discord.yml up -d`
-- Both: `docker compose -f docker-compose.all.yml up -d`
+- Discord bot: `docker compose up -d`
 - Logs: `journalctl --user -u zipper -n 50 --no-pager`
 - Code lives at `/opt/zipper/app`
 
