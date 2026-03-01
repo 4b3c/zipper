@@ -3,24 +3,19 @@ import json
 import urllib.request
 
 
+BOT_URL = os.environ.get("BOT_URL", "http://127.0.0.1:4200")
+
+
 def run(args: dict) -> str:
     message = args.get("message", "").strip()
     if not message:
         return "error: message required"
 
-    token = os.environ.get("DISCORD_TOKEN")
-    channel_id = os.environ.get("DISCORD_CHANNEL_ID")
-    if not token or not channel_id:
-        return "error: DISCORD_TOKEN or DISCORD_CHANNEL_ID not set"
-
-    payload = json.dumps({"content": message}).encode()
+    payload = json.dumps({"message": message}).encode()
     req = urllib.request.Request(
-        f"https://discord.com/api/v10/channels/{channel_id}/messages",
+        f"{BOT_URL}/notify",
         data=payload,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bot {token}",
-        },
+        headers={"Content-Type": "application/json"},
         method="POST",
     )
     try:

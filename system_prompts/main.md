@@ -43,9 +43,8 @@ Use `notify` to post results to Discord when the session was triggered by cron o
 
 Read → implement → test → restart → verify → push to GitHub → done. If it breaks, fix it and restart again.
 
-Use the `restart` tool after making code changes. It will:
-1. Restart zipper
-2. Resume this conversation automatically with the result
-3. If the restart fails (syntax error, crash), revert your changes via git stash and resume with an error message
+Use the `restart` tool to restart any zipper component. Modes:
 
-Never use `bash` to restart zipper manually — always use the `restart` tool so the conversation is resumed correctly.
+- `zipper` — restarts the main process via systemctl. Async: spawns a watcher, resumes this conversation with the result. If startup fails, code changes are stashed and previous state is restored. Always use this after code changes — never `bash` restart zipper manually.
+- `discord` — restarts the Discord bot Docker container. Synchronous, returns when done.
+- `dashboard` — not yet implemented.

@@ -40,9 +40,40 @@ def load_system_prompt() -> str:
     return "You are Zipper, a self-building AI assistant."
 
 
+def _has_tool_use(content) -> bool:
+    if isinstance(content, list):
+        return any(
+            (b.get("type") == "tool_use" if isinstance(b, dict) else getattr(b, "type", None) == "tool_use")
+            for b in content
+        )
+    return False
+
+
+def _sanitize_messages(messages: list) -> list:
+    """Strip trailing assistant tool_use with no following tool_result."""
+    if not messages:
+        return messages
+    # if last message is assistant and contains tool_use, drop it
+    last = messages[-1]
+    if last.get("role") == "assistant" and _has_tool_use(last.get("content", [])):
+        return messages[:-1]
+    # if second-to-last is assistant tool_use and last is not a tool_result user message, drop both
+    if len(messages) >= 2:
+        prev = messages[-2]
+        last_content = last.get("content", [])
+        is_tool_result = (
+            isinstance(last_content, list)
+            and last_content
+            and (last_content[0].get("type") == "tool_result" if isinstance(last_content[0], dict) else False)
+        )
+        if prev.get("role") == "assistant" and _has_tool_use(prev.get("content", [])) and not is_tool_result:
+            return messages[:-2]
+    return messages
+
+
 async def run_task(description: str, conversation_id: str) -> str:
     version = get_active_version(conversation_id)
-    messages = version["messages"]
+    messages = _sanitize_messages(version["messages"])
 
     # append the task as a user message if not already present
     if not messages or messages[-1]["content"] != description:

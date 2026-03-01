@@ -75,18 +75,23 @@ TOOLS = [
     },
     {
         "name": "restart",
-        "description": (
-            "Restart zipper to test code changes. "
-            "Spawns a watcher that monitors whether the process comes back up, "
-            "then resumes this conversation with the result. "
-            "If the restart fails (crash/syntax error), code changes are automatically "
-            "stashed with git stash and the previous working state is restored before "
-            "resuming with an error message. "
-            "Call this after making code changes you want to test."
-        ),
+        "description": "Restart a zipper service component.",
         "input_schema": {
             "type": "object",
-            "properties": {},
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": ["zipper", "discord", "dashboard"],
+                    "description": (
+                        "zipper — restart the main zipper process via systemctl. "
+                        "Spawns a watcher that resumes this conversation with the result. "
+                        "If startup fails, code changes are stashed and previous state is restored. "
+                        "discord — restart the discord bot Docker container synchronously. "
+                        "dashboard — restart the dashboard (not yet implemented)."
+                    ),
+                },
+            },
+            "required": ["mode"],
         },
     },
     {

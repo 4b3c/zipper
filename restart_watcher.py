@@ -57,19 +57,12 @@ def post_resume(conversation_id: str, message: str):
 
 
 def notify_discord(message: str):
-    token = os.environ.get("DISCORD_TOKEN")
-    channel_id = os.environ.get("DISCORD_CHANNEL_ID")
-    if not token or not channel_id:
-        print(f"[restart_watcher] no discord credentials, cannot notify: {message}")
-        return
-    payload = json.dumps({"content": message}).encode()
+    bot_url = os.environ.get("BOT_URL", "http://127.0.0.1:4200")
+    payload = json.dumps({"message": message}).encode()
     req = urllib.request.Request(
-        f"https://discord.com/api/v10/channels/{channel_id}/messages",
+        f"{bot_url}/notify",
         data=payload,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bot {token}",
-        },
+        headers={"Content-Type": "application/json"},
         method="POST",
     )
     try:

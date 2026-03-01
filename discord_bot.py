@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 import aiohttp
+from aiohttp import web
 from pathlib import Path
 from dotenv import load_dotenv
 import discord
@@ -11,6 +12,7 @@ load_dotenv()
 ZIPPER_URL = os.environ.get("ZIPPER_URL", "http://localhost:4199")
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 DISCORD_CHANNEL_ID = int(os.environ["DISCORD_CHANNEL_ID"])
+BOT_PORT = int(os.environ.get("BOT_PORT", 4200))
 
 ROOT = Path(__file__).parent
 THREADS_PATH = ROOT / "data" / "discord_threads.json"
@@ -60,12 +62,6 @@ async def chat(prompt: str, conversation_id: str | None = None, discord_thread_i
 # --- Discord events ---
 
 @client.event
-async def on_ready():
-    print(f"[discord] logged in as {client.user}")
-    print(f"[discord] listening in channel {DISCORD_CHANNEL_ID}")
-
-
-@client.event
 async def on_message(message: discord.Message):
     if message.author == client.user:
         return
@@ -97,6 +93,40 @@ async def on_message(message: discord.Message):
         await thread.send(response["result"])
     except Exception as e:
         await thread.send(f"⚠️ Error: {e}")
+
+
+# --- Internal HTTP server ---
+
+async def handle_notify(request: web.Request) -> web.Response:
+    try:
+        body = await request.json()
+        message = body.get("message", "").strip()
+        if not message:
+            return web.json_response({"error": "message required"}, status=400)
+        channel = client.get_channel(DISCORD_CHANNEL_ID)
+        if channel is None:
+            return web.json_response({"error": "channel not found"}, status=500)
+        await channel.send(message)
+        return web.json_response({"ok": True})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def start_http_server():
+    app = web.Application()
+    app.router.add_post("/notify", handle_notify)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", BOT_PORT)
+    await site.start()
+    print(f"[discord] internal server listening on port {BOT_PORT}")
+
+
+@client.event
+async def on_ready():
+    print(f"[discord] logged in as {client.user}")
+    print(f"[discord] listening in channel {DISCORD_CHANNEL_ID}")
+    await start_http_server()
 
 
 if __name__ == "__main__":
