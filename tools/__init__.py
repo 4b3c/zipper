@@ -3,6 +3,7 @@ from tools.bash import run as bash_run
 from tools.search import run as search_run
 from tools.restart import run as restart_run
 from tools.task import run as task_run
+from tools.notify import run as notify_run
 
 TOOLS = [
     {
@@ -56,6 +57,20 @@ TOOLS = [
                 },
             },
             "required": ["query"],
+        },
+    },
+    {
+        "name": "notify",
+        "description": "Send a message to the Discord channel. Use this to surface results from cron-triggered tasks or anything else worth reporting.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "Message to send. Markdown is supported.",
+                },
+            },
+            "required": ["message"],
         },
     },
     {
@@ -164,4 +179,6 @@ def execute_tool(name: str, args: dict, conversation_id: str = "") -> str:
         return restart_run(args, conversation_id)
     if name == "task":
         return task_run(args)
+    if name == "notify":
+        return notify_run(args)
     raise ValueError(f"Unknown tool: {name}")
