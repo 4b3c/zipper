@@ -5,20 +5,27 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 
 from llm import run_task
 from storage.conversations import create_conversation
 from storage.tasks import get_due_tasks
+from utils import notify_discord_async
 
 ROOT = Path(__file__).parent
 SCHEDULE_PATH = ROOT / "data" / "schedule.json"
 WAKE_LOG_PATH = ROOT / "data" / "wake_log.json"
 
 app = FastAPI()
+
+
+@app.exception_handler(Exception)
+async def json_error_handler(request: Request, exc: Exception):
+    """Return all unhandled exceptions as JSON so clients never get text/plain 500s."""
+    return JSONResponse(status_code=500, content={"error": str(exc)})
 
 
 # --- Models ---
@@ -110,6 +117,7 @@ async def wake(req: WakeRequest):
             )
             conversation_id = create_conversation(title=f"Oneshot: {entry['prompt'][:50]}", source="cron")
             result = await run_task(prompt, conversation_id)
+            await notify_discord_async(f"**Scheduled task completed** (oneshot {entry['at']})\n\n{result}")
             return {"conversation_id": conversation_id, "result": result}
 
     # daily check-in
@@ -139,6 +147,7 @@ async def wake(req: WakeRequest):
     )
     conversation_id = create_conversation(title=f"Check-in {slot}", source="cron")
     result = await run_task(prompt, conversation_id)
+    await notify_discord_async(f"**Daily check-in at {slot}** completed\n\n{result}")
     return {"conversation_id": conversation_id, "result": result}
 
 

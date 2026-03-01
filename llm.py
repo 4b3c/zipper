@@ -8,12 +8,14 @@ from storage.conversations import (
     get_active_version,
     append_message,
     pop_last_message,
+    save_messages,
     create_version,
     get_conversation,
     set_system_prompt,
 )
 from storage.trace import append_trace_entry
 from tools import TOOLS, execute_tool
+from tools.signals import BreakLoop
 
 client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
@@ -34,9 +36,10 @@ def select_model(messages: list) -> str:
 def load_system_prompt() -> str:
     root = os.path.dirname(os.path.abspath(__file__))
     path = os.path.join(root, "system_prompts/main.md")
+    current_time = datetime.now(timezone.utc).isoformat()
     if os.path.exists(path):
         with open(path) as f:
-            return f.read().replace("{{project_directory}}", root)
+            return f.read().replace("{{project_directory}}", root).replace("{{current_time}}", current_time)
     return "You are Zipper, a self-building AI assistant."
 
 
@@ -75,8 +78,9 @@ def _sanitize_messages(messages: list) -> list:
         if len(msgs) < 2 or not _has_tool_use(msgs[-2].get("content", [])):
             msgs = msgs[:-1]
 
-    # drop leading user tool_result (conversation starts with orphaned result)
-    while msgs and _is_tool_result_message(msgs[0]):
+    # ensure conversation starts with a proper user message — strip leading tool_results
+    # and any assistant messages that become leading after those are removed
+    while msgs and (msgs[0].get("role") == "assistant" or _is_tool_result_message(msgs[0])):
         msgs = msgs[1:]
 
     return msgs
@@ -85,6 +89,11 @@ def _sanitize_messages(messages: list) -> list:
 async def run_task(description: str, conversation_id: str) -> str:
     version = get_active_version(conversation_id)
     messages = _sanitize_messages(version["messages"])
+
+    # persist sanitization back to storage before we append anything, so that
+    # llm_loop's storage reads stay clean throughout the whole session
+    if len(messages) != len(version["messages"]):
+        save_messages(conversation_id, messages)
 
     # append the task as a user message if not already present
     if not messages or messages[-1]["content"] != description:
@@ -152,6 +161,21 @@ async def llm_loop(conversation_id: str, messages: list, system: str) -> str:
                     output = execute_tool(block.name, block.input, conversation_id)
                     error = None
                     status = "ok"
+                except BreakLoop as e:
+                    # tool signalled an immediate stop — save what we have and exit
+                    msg = str(e)
+                    duration_ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
+                    append_trace_entry(conversation_id, {
+                        "tool": block.name,
+                        "args": block.input,
+                        "output": msg,
+                        "error": None,
+                        "duration_ms": duration_ms,
+                        "status": "ok",
+                    })
+                    tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": msg})
+                    append_message(conversation_id, "user", tool_results)
+                    return ""
                 except Exception as e:
                     output = str(e)
                     error = str(e)

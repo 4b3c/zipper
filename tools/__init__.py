@@ -61,13 +61,17 @@ TOOLS = [
     },
     {
         "name": "notify",
-        "description": "Send a message to the Discord channel. Use this to surface results from cron-triggered tasks or anything else worth reporting.",
+        "description": "Send a message to Discord. Defaults to the main channel; pass thread_id to post in a specific conversation thread.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "message": {
                     "type": "string",
                     "description": "Message to send. Markdown is supported.",
+                },
+                "thread_id": {
+                    "type": "integer",
+                    "description": "Discord thread ID to post in. Omit to post to the main channel.",
                 },
             },
             "required": ["message"],
@@ -106,7 +110,7 @@ TOOLS = [
                     "description": (
                         "list — all tasks, optionally filtered by status. "
                         "create — add a new task. "
-                        "update — change status/result/error on an existing task. "
+                        "update — patch any fields on an existing task (title, description, due_at, schedule, status, result, error). Only id is required. "
                         "due — tasks that are due now (pending and past due_at). "
                         "archive — completed/failed tasks, most recent first."
                     ),

@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+from collections import deque
 import aiohttp
 from aiohttp import web
 from pathlib import Path
@@ -20,6 +21,8 @@ THREADS_PATH = ROOT / "data" / "discord_threads.json"
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
+
+_notify_queue: deque = deque()
 
 
 # --- Thread → conversation mapping ---
@@ -56,7 +59,30 @@ async def chat(prompt: str, conversation_id: str | None = None, discord_thread_i
 
     async with aiohttp.ClientSession() as session:
         async with session.post(f"{ZIPPER_URL}/chat", json=payload) as resp:
-            return await resp.json()
+            return await resp.json(content_type=None)
+
+
+# --- Notify queue ---
+
+async def _notify_worker():
+    """Drain the in-memory notify queue, retrying on Discord API failures."""
+    await client.wait_until_ready()
+    while not client.is_closed():
+        if _notify_queue:
+            entry = _notify_queue[0]
+            thread_id = entry.get("thread_id")
+            target = client.get_channel(int(thread_id)) if thread_id else client.get_channel(DISCORD_CHANNEL_ID)
+            if target is None:
+                _notify_queue.popleft()  # invalid target, drop it
+            else:
+                try:
+                    await target.send(entry["message"])
+                    _notify_queue.popleft()
+                except Exception as e:
+                    print(f"[discord] notify send failed, retrying: {e}")
+                    await asyncio.sleep(5)
+        else:
+            await asyncio.sleep(1)
 
 
 # --- Discord events ---
@@ -65,6 +91,7 @@ async def chat(prompt: str, conversation_id: str | None = None, discord_thread_i
 async def on_ready():
     print(f"[discord] logged in as {client.user}")
     print(f"[discord] listening in channel {DISCORD_CHANNEL_ID}")
+    asyncio.create_task(_notify_worker())
 
 
 @client.event
@@ -80,7 +107,10 @@ async def on_message(message: discord.Message):
                 response = await chat(message.content, conversation_id)
             if not conversation_id:
                 set_conversation_id(message.channel.id, response["conversation_id"])
-            await message.channel.send(response["result"])
+            if "error" in response:
+                await message.channel.send(f"⚠️ {response['error']}")
+            elif response.get("result"):
+                await message.channel.send(response["result"])
         except Exception as e:
             await message.channel.send(f"⚠️ Error: {e}")
         return
@@ -95,7 +125,10 @@ async def on_message(message: discord.Message):
         async with message.channel.typing():
             response = await chat(message.content, discord_thread_id=thread.id)
         set_conversation_id(thread.id, response["conversation_id"])
-        await thread.send(response["result"])
+        if "error" in response:
+            await thread.send(f"⚠️ {response['error']}")
+        elif response.get("result"):
+            await thread.send(response["result"])
     except Exception as e:
         await thread.send(f"⚠️ Error: {e}")
 
@@ -108,10 +141,7 @@ async def handle_notify(request: web.Request) -> web.Response:
         message = body.get("message", "").strip()
         if not message:
             return web.json_response({"error": "message required"}, status=400)
-        channel = client.get_channel(DISCORD_CHANNEL_ID)
-        if channel is None:
-            return web.json_response({"error": "channel not found — bot may not be ready yet"}, status=503)
-        await channel.send(message)
+        _notify_queue.append({"message": message, "thread_id": body.get("thread_id")})
         return web.json_response({"ok": True})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)

@@ -126,6 +126,14 @@ def pop_last_message(conversation_id: str):
     version_path.write_text(json.dumps(version, indent=2))
 
 
+def save_messages(conversation_id: str, messages: list):
+    """Overwrite messages in the active version. Used to persist sanitization."""
+    version_path = _active_version_path(conversation_id)
+    version = json.loads(version_path.read_text())
+    version["messages"] = messages
+    version_path.write_text(json.dumps(version, indent=2))
+
+
 def append_message(conversation_id: str, role: str, content):
     version_path = _active_version_path(conversation_id)
     version = json.loads(version_path.read_text())

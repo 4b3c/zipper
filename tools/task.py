@@ -1,5 +1,5 @@
 import json
-from storage.tasks import create_task, get_due_tasks, update_task_status, list_tasks, ARCHIVE_PATH
+from storage.tasks import create_task, get_due_tasks, update_task_status, patch_task, list_tasks, ARCHIVE_PATH
 
 
 def run(args: dict) -> str:
@@ -36,16 +36,22 @@ def run(args: dict) -> str:
 
     if mode == "update":
         task_id = args.get("id")
+        if not task_id:
+            return "error: id required"
         status = args.get("status")
-        if not task_id or not status:
-            return "error: id and status required"
-        update_task_status(
-            task_id=task_id,
-            status=status,
-            result=args.get("result"),
-            error=args.get("error"),
-        )
-        return f"ok: task {task_id} → {status}"
+        # patch arbitrary fields first (title, description, due_at, schedule, etc.)
+        patch_fields = {k: v for k, v in args.items() if k not in {"mode", "id", "status", "result", "error"}}
+        if patch_fields:
+            patch_task(task_id, patch_fields)
+        # then apply status transition if provided
+        if status:
+            update_task_status(
+                task_id=task_id,
+                status=status,
+                result=args.get("result"),
+                error=args.get("error"),
+            )
+        return f"ok: task {task_id} updated"
 
     if mode == "archive":
         if not ARCHIVE_PATH.exists():

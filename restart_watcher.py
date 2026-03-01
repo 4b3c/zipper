@@ -12,6 +12,7 @@ import urllib.request
 import json
 import subprocess
 from pathlib import Path
+from utils import notify_discord
 
 
 def load_env(project_dir: str):
@@ -40,7 +41,17 @@ def is_up() -> bool:
         return False
 
 
-def post_resume(conversation_id: str, message: str):
+def get_discord_thread_id(conversation_id: str, project_dir: str) -> int | None:
+    meta_path = Path(project_dir) / "data" / "conversations" / conversation_id / "meta.json"
+    if not meta_path.exists():
+        return None
+    try:
+        return json.loads(meta_path.read_text()).get("discord_thread_id")
+    except Exception:
+        return None
+
+
+def post_resume(conversation_id: str, message: str) -> str:
     payload = json.dumps({
         "prompt": message,
         "conversation_id": conversation_id,
@@ -53,23 +64,8 @@ def post_resume(conversation_id: str, message: str):
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=60) as r:
-        r.read()
-
-
-def notify_discord(message: str):
-    bot_url = os.environ.get("BOT_URL", "http://127.0.0.1:4200")
-    payload = json.dumps({"message": message}).encode()
-    req = urllib.request.Request(
-        f"{bot_url}/notify",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=10) as r:
-            r.read()
-    except Exception as e:
-        print(f"[restart_watcher] failed to notify discord: {e}")
+        data = json.loads(r.read())
+    return data.get("result", "")
 
 
 def git_stash(project_dir: str) -> str:
@@ -107,13 +103,16 @@ def main():
             break
         time.sleep(POLL_INTERVAL)
 
+    thread_id = get_discord_thread_id(conversation_id, project_dir)
+
     if came_up:
         time.sleep(SETTLE_DELAY)
-        post_resume(
+        result = post_resume(
             conversation_id,
             "Restart successful. Zipper came back up cleanly. "
             "Now verify that your changes work as intended.",
         )
+        notify_discord(f"✅ Restarted successfully.\n\n{result}", thread_id=thread_id)
     else:
         # restart failed — stash changes and recover
         stash_output = git_stash(project_dir)
@@ -135,7 +134,7 @@ def main():
 
         if recovered:
             time.sleep(SETTLE_DELAY)
-            post_resume(
+            result = post_resume(
                 conversation_id,
                 f"RESTART FAILED: Your code changes caused a crash and zipper could not start. "
                 f"Changes have been automatically stashed (git stash). "
@@ -143,14 +142,16 @@ def main():
                 f"Stash output: {stash_output}\n\n"
                 f"Review the error, fix the issue, and try again.",
             )
+            notify_discord(f"❌ Restart failed — rolled back.\n\n{result}", thread_id=thread_id)
         else:
-            # truly broken — notify discord directly via REST API
+            # truly broken — notify discord directly
             notify_discord(
                 f"**Zipper is down and could not recover automatically.**\n"
                 f"Code changes caused a crash. Git stash was attempted but zipper still won't start.\n"
                 f"**Manual intervention required.**\n"
                 f"conversation_id: `{conversation_id}`\n"
-                f"stash output: ```{stash_output}```"
+                f"stash output: ```{stash_output}```",
+                thread_id=thread_id,
             )
 
 

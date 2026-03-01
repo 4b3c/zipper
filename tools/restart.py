@@ -2,6 +2,8 @@ import os
 import subprocess
 import sys
 
+from tools.signals import BreakLoop
+
 
 def run(args: dict, conversation_id: str) -> str:
     mode = args.get("mode", "zipper")
@@ -29,10 +31,11 @@ def run(args: dict, conversation_id: str) -> str:
             start_new_session=True,
         )
 
-        return "restarting..."
+        raise BreakLoop("restarting...")
 
     if mode == "discord":
         project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
         result = subprocess.run(
             ["docker", "compose", "up", "-d", "--build", "--remove-orphans"],
             cwd=project_dir,

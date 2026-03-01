@@ -143,7 +143,7 @@ def update_task_status(task_id: str, status: str, result: str = None, error: str
     else:
         _save(tasks)
 
-    if completed_task and completed_task.get("schedule"):
+    if completed_task and status in ("done", "failed") and completed_task.get("schedule"):
         prev_due = datetime.fromisoformat(completed_task["due_at"])
         next_dt = _next_due(completed_task["schedule"], prev_due)
         if next_dt:
@@ -154,6 +154,16 @@ def update_task_status(task_id: str, status: str, result: str = None, error: str
                 schedule=completed_task["schedule"],
             )
             _add_oneshot(completed_task["title"], next_dt)
+
+
+def patch_task(task_id: str, fields: dict):
+    """Update arbitrary fields on a task without triggering status logic."""
+    tasks = _load()
+    for task in tasks:
+        if task["id"] == task_id:
+            task.update(fields)
+            break
+    _save(tasks)
 
 
 def list_tasks(status: str = None) -> list:
