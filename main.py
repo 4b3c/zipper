@@ -12,6 +12,7 @@ import uvicorn
 
 from llm import run_task
 from storage.conversations import create_conversation
+from storage.tasks import get_due_tasks
 
 ROOT = Path(__file__).parent
 SCHEDULE_PATH = ROOT / "data" / "schedule.json"
@@ -91,10 +92,21 @@ async def wake(req: WakeRequest):
         if current_dt >= entry_dt:
             schedule["oneshot"] = [e for e in schedule["oneshot"] if e["id"] != entry["id"]]
             save_schedule(schedule)
+
+            due_tasks = get_due_tasks()
+            if due_tasks:
+                task_lines = "\n".join(
+                    f"- [{t['id']}] {t['title']}: {t['description']} (due {t['due_at'][:16].replace('T', ' ')})"
+                    for t in due_tasks
+                )
+                task_section = f"\n\nThe following tasks are due:\n{task_lines}\n\nWork through them, mark each done or failed using the task tool when finished."
+            else:
+                task_section = f"\n\n{entry['prompt']}"
+
             prompt = (
-                f"You set a one-time reminder scheduled for {entry['at']}. "
-                f"It is now {now.strftime('%Y-%m-%d %H:%M')}. "
-                f"{entry['prompt']}"
+                f"You have been woken up by a scheduled reminder for {entry['at']}. "
+                f"It is now {now.strftime('%Y-%m-%d %H:%M')}."
+                f"{task_section}"
             )
             conversation_id = create_conversation(title=f"Oneshot: {entry['prompt'][:50]}", source="cron")
             result = await run_task(prompt, conversation_id)
@@ -108,11 +120,22 @@ async def wake(req: WakeRequest):
     wake_log[slot] = date.today().isoformat()
     save_wake_log(wake_log)
 
+    due_tasks = get_due_tasks()
+    if due_tasks:
+        import json
+        task_lines = "\n".join(
+            f"- [{t['id']}] {t['description']} (due {t['due_at'][:16].replace('T', ' ')})"
+            for t in due_tasks
+        )
+        task_section = f"\n\nThe following tasks are due:\n{task_lines}\n\nWork through them, mark each done or failed using the task tool when finished."
+    else:
+        task_section = "\n\nNo tasks are currently due."
+
     prompt = (
         f"You have woken up for your scheduled check-in at {slot}. "
         f"Today is {now.strftime('%A, %B %d %Y')}. "
-        f"Review your task queue, handle anything pending, and do anything useful. "
-        f"When you are done, say so."
+        f"Review your task queue, handle anything pending, and do anything useful."
+        f"{task_section}"
     )
     conversation_id = create_conversation(title=f"Check-in {slot}", source="cron")
     result = await run_task(prompt, conversation_id)
