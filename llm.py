@@ -107,7 +107,7 @@ async def llm_loop(conversation_id: str, messages: list, system: str) -> str:
 
                 start = datetime.now(timezone.utc)
                 try:
-                    output = execute_tool(block.name, block.input)
+                    output = execute_tool(block.name, block.input, conversation_id)
                     error = None
                     status = "ok"
                 except Exception as e:
