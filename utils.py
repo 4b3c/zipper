@@ -1,20 +1,20 @@
 """Shared utility functions."""
 
-import os
 import json
 import urllib.request
 import asyncio
 
+BOT_URL = "http://127.0.0.1:4200"
+
 
 def notify_discord(message: str, thread_id: int = None):
     """Send a message to Discord via the bot endpoint (sync)."""
-    bot_url = os.environ.get("BOT_URL", "http://127.0.0.1:4200")
     body = {"message": message}
     if thread_id:
         body["thread_id"] = thread_id
     payload = json.dumps(body).encode()
     req = urllib.request.Request(
-        f"{bot_url}/notify",
+        f"{BOT_URL}/notify",
         data=payload,
         headers={"Content-Type": "application/json"},
         method="POST",

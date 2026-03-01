@@ -1,8 +1,7 @@
-import os
 import json
 import urllib.request
 
-BOT_URL = os.environ.get("BOT_URL", "http://127.0.0.1:4200")
+BOT_URL = "http://127.0.0.1:4200"
 
 
 def run(args: dict) -> str:

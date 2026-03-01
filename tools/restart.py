@@ -15,7 +15,7 @@ def run(args: dict, conversation_id: str) -> str:
             return "error: no conversation_id available, cannot resume after restart"
 
         # register watchdog on the Discord bot process (survives zipper restart)
-        bot_url = os.environ.get("BOT_URL", "http://127.0.0.1:4200")
+        bot_url = "http://127.0.0.1:4200"
         payload = json.dumps({"conversation_id": conversation_id}).encode()
         req = urllib.request.Request(
             f"{bot_url}/watch-restart",

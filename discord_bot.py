@@ -11,7 +11,7 @@ import discord
 
 load_dotenv()
 
-ZIPPER_URL = os.environ.get("ZIPPER_URL", "http://host.docker.internal:4199")
+ZIPPER_URL = "http://host.docker.internal:4199"
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 DISCORD_CHANNEL_ID = int(os.environ["DISCORD_CHANNEL_ID"])
 BOT_PORT = int(os.environ.get("BOT_PORT", 4200))
