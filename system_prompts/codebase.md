@@ -20,7 +20,7 @@ This is Zipper's own source code. Update this file when you add new components.
 - `restart.py` — registers watchdog with discord bot, then triggers systemctl restart via BreakLoop
 - `task.py` — task queue CRUD
 - `notify.py` — posts to discord bot `/notify`
-- `search.py` — Brave Search API
+- `web.py` — Brave Search (`search` mode) and HTTP GET (`fetch` mode, HTML stripped to text)
 - `signals.py` — `BreakLoop` exception, raised by tools to stop the LLM loop early
 
 ### Storage (`storage/`)

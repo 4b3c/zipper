@@ -12,7 +12,7 @@ Be concise and useful. Don't recap what the user just said. Don't narrate your a
 
 - **file** — `list` (recursive tree, project root default), `read` (single or multi-file, optional line range), `write`, `edit` (exact search/replace — errors on 0 or 2+ matches; use `all=true` to replace all), `delete`, `grep` (regex search across files, optional `glob` filter)
 - **bash** — run anything. 30s timeout.
-- **search** — Brave web search
+- **web** — `search` (Brave web search) or `fetch` (HTTP GET a URL, returns page text)
 - **task** — manage the task queue (see below)
 - **notify** — send a Discord message
 - **restart** — restart zipper to test code changes (see below)

@@ -1,7 +1,7 @@
 from pathlib import Path
 from tools.file import run as file_run, _list_tree, PROJECT_ROOT, DEFAULT_HIDDEN_DIRS
 from tools.bash import run as bash_run
-from tools.search import run as search_run
+from tools.web import run as web_run
 from tools.restart import run as restart_run
 from tools.task import run as task_run
 from tools.notify import run as notify_run
@@ -49,13 +49,13 @@ ONBOARDING = {
         else "See system_prompts/bash.md (not found)."
     ),
 
-    "search": """
-[first use — search tool guide]
-Queries Brave Search and returns titles, URLs, and descriptions.
+    "web": """
+[first use — web tool guide]
+Two modes:
+- search — queries Brave Search, returns title/URL/description per result. Use for finding docs, articles, or anything requiring current information. Pass limit=N for more results (default 5).
+- fetch — HTTP GET a URL, returns page text with HTML stripped. Use to read the actual content of a page found via search, or any public URL. Truncates at 20k chars.
 
-Use it for: library documentation, API references, error messages you don't recognize, anything requiring current information beyond your training data.
-
-Pass limit=N to get more results (default 5).
+Workflow: search to find relevant URLs, then fetch to read the content.
 """.strip(),
 
     "restart": """
@@ -161,25 +161,34 @@ TOOLS = [
         },
     },
     {
-        "name": "search",
-        "description": "Search the web using Brave Search. Returns titles, URLs, and descriptions.",
+        "name": "web",
+        "description": "Search the web or fetch a URL. search mode queries Brave Search; fetch mode HTTP GETs a URL and returns the page text.",
         "input_schema": {
             "type": "object",
             "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": ["search", "fetch"],
+                    "description": "search — Brave web search. fetch — HTTP GET a URL, returns page text with HTML stripped.",
+                },
                 "query": {
                     "type": "string",
-                    "description": "Search query.",
+                    "description": "Search query. Required for search mode.",
+                },
+                "url": {
+                    "type": "string",
+                    "description": "URL to fetch. Required for fetch mode.",
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Number of results to return. Default 5.",
+                    "description": "Number of search results to return. Default 5. Search mode only.",
                 },
                 "help": {
                     "type": "boolean",
                     "description": "Return usage guide for this tool without performing any action.",
                 },
             },
-            "required": ["query"],
+            "required": ["mode"],
         },
     },
     {
@@ -326,7 +335,7 @@ def _is_first_use(name: str, conversation_id: str) -> bool:
 # empty primary field triggers help, same as calling with no args in a CLI
 _EMPTY_TRIGGERS = {
     "bash": lambda a: not a.get("command", "").strip(),
-    "search": lambda a: not a.get("query", "").strip(),
+    "web": lambda a: not a.get("query", "").strip() and not a.get("url", "").strip(),
     "notify": lambda a: not a.get("message", "").strip(),
 }
 
@@ -354,8 +363,8 @@ def execute_tool(name: str, args: dict, conversation_id: str = "") -> str:
         result = file_run(args)
     elif name == "bash":
         result = bash_run(args)
-    elif name == "search":
-        result = search_run(args)
+    elif name == "web":
+        result = web_run(args)
     elif name == "restart":
         result = restart_run(args, conversation_id)
     elif name == "task":
