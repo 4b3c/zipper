@@ -1,7 +1,6 @@
 import os
 import json
 import asyncio
-from collections import deque
 import aiohttp
 from aiohttp import ClientTimeout
 from aiohttp import web
@@ -26,9 +25,6 @@ THREADS_PATH = ROOT / "data" / "discord_threads.json"
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
-
-_notify_queue: deque = deque()
-
 
 # --- Thread → conversation mapping ---
 
@@ -189,36 +185,12 @@ async def run_restart_watch(conversation_id: str, thread_id: int):
         )
 
 
-# --- Notify queue ---
-
-async def _notify_worker():
-    """Drain the in-memory notify queue, retrying on Discord API failures."""
-    await client.wait_until_ready()
-    while not client.is_closed():
-        if _notify_queue:
-            entry = _notify_queue[0]
-            thread_id = entry.get("thread_id")
-            target = client.get_channel(int(thread_id)) if thread_id else client.get_channel(DISCORD_CHANNEL_ID)
-            if target is None:
-                _notify_queue.popleft()  # invalid target, drop it
-            else:
-                try:
-                    await target.send(entry["message"])
-                    _notify_queue.popleft()
-                except Exception as e:
-                    print(f"[discord] notify send failed, retrying: {e}")
-                    await asyncio.sleep(5)
-        else:
-            await asyncio.sleep(1)
-
-
 # --- Discord events ---
 
 @client.event
 async def on_ready():
     print(f"[discord] logged in as {client.user}")
     print(f"[discord] listening in channel {DISCORD_CHANNEL_ID}")
-    asyncio.create_task(_notify_worker())
 
 
 @client.event
@@ -262,17 +234,6 @@ async def on_message(message: discord.Message):
 
 # --- Internal HTTP server ---
 
-async def handle_notify(request: web.Request) -> web.Response:
-    try:
-        body = await request.json()
-        message = body.get("message", "").strip()
-        if not message:
-            return web.json_response({"error": "message required"}, status=400)
-        _notify_queue.append({"message": message, "thread_id": body.get("thread_id")})
-        return web.json_response({"ok": True})
-    except Exception as e:
-        return web.json_response({"error": str(e)}, status=500)
-
 
 async def handle_inject(request: web.Request) -> web.Response:
     """Inject a synthetic message into a thread as if it came from a user."""
@@ -293,6 +254,96 @@ async def handle_inject(request: web.Request) -> web.Response:
             await inject_prompt_to_thread(prompt, thread_id)
 
         asyncio.create_task(_do_inject())
+        return web.json_response({"ok": True})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def handle_send(request: web.Request) -> web.Response:
+    """Send a message synchronously and return its ID."""
+    try:
+        body = await request.json()
+        message = body.get("message", "").strip()
+        if not message:
+            return web.json_response({"error": "message required"}, status=400)
+        if not client.is_ready():
+            return web.json_response({"error": "discord client not ready"}, status=503)
+        thread_id = body.get("thread_id")
+        target = client.get_channel(int(thread_id)) if thread_id else client.get_channel(DISCORD_CHANNEL_ID)
+        if target is None:
+            return web.json_response({"error": "channel not found"}, status=404)
+        msg = await target.send(message)
+        return web.json_response({"ok": True, "message_id": str(msg.id)})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def handle_history(request: web.Request) -> web.Response:
+    """Return recent messages from a channel or thread."""
+    try:
+        body = await request.json()
+        if not client.is_ready():
+            return web.json_response({"error": "discord client not ready"}, status=503)
+        thread_id = body.get("thread_id")
+        limit = min(int(body.get("limit", 20)), 100)
+        target = client.get_channel(int(thread_id)) if thread_id else client.get_channel(DISCORD_CHANNEL_ID)
+        if target is None:
+            return web.json_response({"error": "channel not found"}, status=404)
+        messages = []
+        async for msg in target.history(limit=limit):
+            entry = {
+                "id": str(msg.id),
+                "author": msg.author.display_name,
+                "content": msg.content,
+                "timestamp": msg.created_at.isoformat(),
+            }
+            if msg.thread:
+                entry["thread_id"] = str(msg.thread.id)
+            messages.append(entry)
+        return web.json_response({"messages": messages})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def handle_edit(request: web.Request) -> web.Response:
+    """Edit a message by ID."""
+    try:
+        body = await request.json()
+        if not client.is_ready():
+            return web.json_response({"error": "discord client not ready"}, status=503)
+        message_id = body.get("message_id")
+        content = body.get("content", "").strip()
+        if not message_id or not content:
+            return web.json_response({"error": "message_id and content required"}, status=400)
+        thread_id = body.get("thread_id")
+        target = client.get_channel(int(thread_id)) if thread_id else client.get_channel(DISCORD_CHANNEL_ID)
+        if target is None:
+            return web.json_response({"error": "channel not found"}, status=404)
+        msg = await target.fetch_message(int(message_id))
+        await msg.edit(content=content)
+        return web.json_response({"ok": True})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def handle_react(request: web.Request) -> web.Response:
+    """Add a reaction to a message."""
+    try:
+        body = await request.json()
+        if not client.is_ready():
+            return web.json_response({"error": "discord client not ready"}, status=503)
+        message_id = body.get("message_id")
+        emoji = body.get("emoji", "").strip()
+        if not message_id or not emoji:
+            return web.json_response({"error": "message_id and emoji required"}, status=400)
+        if emoji.startswith("<:") or emoji.startswith("<a:"):
+            return web.json_response({"error": "custom server emoji not supported, use standard unicode emoji only"}, status=400)
+        thread_id = body.get("thread_id")
+        target = client.get_channel(int(thread_id)) if thread_id else client.get_channel(DISCORD_CHANNEL_ID)
+        if target is None:
+            return web.json_response({"error": "channel not found"}, status=404)
+        msg = await target.fetch_message(int(message_id))
+        await msg.add_reaction(emoji)
         return web.json_response({"ok": True})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -324,7 +375,10 @@ async def handle_watch_restart(request: web.Request) -> web.Response:
 async def main():
     # start HTTP server first, before Discord connects
     http_app = web.Application()
-    http_app.router.add_post("/notify", handle_notify)
+    http_app.router.add_post("/send", handle_send)
+    http_app.router.add_post("/history", handle_history)
+    http_app.router.add_post("/edit", handle_edit)
+    http_app.router.add_post("/react", handle_react)
     http_app.router.add_post("/inject", handle_inject)
     http_app.router.add_post("/watch-restart", handle_watch_restart)
     runner = web.AppRunner(http_app)

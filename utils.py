@@ -14,7 +14,7 @@ def notify_discord(message: str, thread_id: int = None):
         body["thread_id"] = thread_id
     payload = json.dumps(body).encode()
     req = urllib.request.Request(
-        f"{BOT_URL}/notify",
+        f"{BOT_URL}/send",
         data=payload,
         headers={"Content-Type": "application/json"},
         method="POST",

@@ -4,7 +4,7 @@ from tools.bash import run as bash_run
 from tools.web import run as web_run
 from tools.restart import run as restart_run
 from tools.task import run as task_run
-from tools.notify import run as notify_run
+from tools.discord import run as discord_run
 from storage.trace import get_trace
 
 _CODEBASE_MD = PROJECT_ROOT / "system_prompts" / "codebase.md"
@@ -67,6 +67,19 @@ Modes:
 - discord — synchronous restart of the zipper-discord service. Returns when done.
 
 Workflow after a code change: edit files → test with bash if possible → restart(zipper) → verify the watchdog result → push to GitHub.
+""".strip(),
+
+    "discord": """
+[first use — discord tool guide]
+Interact with Discord directly from within a conversation.
+
+Modes:
+- send — post a message to a channel or thread. Returns a message_id you can use with edit or react.
+- history — fetch recent messages (default 20, max 100). Useful for checking what's been discussed.
+- edit — update a previously sent message by message_id. Good for live status updates.
+- react — add an emoji reaction to any message by message_id.
+
+All modes default to the main channel. Pass thread_id to target a specific thread.
 """.strip(),
 
     "task": """
@@ -192,25 +205,51 @@ TOOLS = [
         },
     },
     {
-        "name": "notify",
-        "description": "Send a message to Discord. Defaults to the main channel; pass thread_id to post in a specific conversation thread.",
+        "name": "discord",
+        "description": "Interact with Discord. Send messages, read history, edit messages, or add reactions.",
         "input_schema": {
             "type": "object",
             "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": ["send", "history", "edit", "react"],
+                    "description": (
+                        "send — post a message, returns message_id for use with edit/react. "
+                        "history — fetch recent messages from a channel or thread. "
+                        "edit — edit a previously sent message by message_id. "
+                        "react — add an emoji reaction to a message by message_id."
+                    ),
+                },
                 "message": {
                     "type": "string",
-                    "description": "Message to send. Markdown is supported.",
+                    "description": "Message content. Required for send.",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Replacement content. Required for edit.",
+                },
+                "emoji": {
+                    "type": "string",
+                    "description": "Unicode emoji to react with (e.g. '✅', '👍', '🎉'). Standard emoji only — no custom server emoji. Required for react.",
+                },
+                "message_id": {
+                    "type": "string",
+                    "description": "ID of the message to edit or react to.",
                 },
                 "thread_id": {
                     "type": "integer",
-                    "description": "Discord thread ID to post in. Omit to post to the main channel.",
+                    "description": "Discord thread ID. Omit to target the main channel.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Number of messages to return. Default 5, max 100. history mode only.",
                 },
                 "help": {
                     "type": "boolean",
                     "description": "Return usage guide for this tool without performing any action.",
                 },
             },
-            "required": ["message"],
+            "required": ["mode"],
         },
     },
     {
@@ -336,7 +375,7 @@ def _is_first_use(name: str, conversation_id: str) -> bool:
 _EMPTY_TRIGGERS = {
     "bash": lambda a: not a.get("command", "").strip(),
     "web": lambda a: not a.get("query", "").strip() and not a.get("url", "").strip(),
-    "notify": lambda a: not a.get("message", "").strip(),
+    "discord": lambda a: False,  # mode is always required; use help=true
 }
 
 
@@ -369,8 +408,8 @@ def execute_tool(name: str, args: dict, conversation_id: str = "") -> str:
         result = restart_run(args, conversation_id)
     elif name == "task":
         result = task_run(args)
-    elif name == "notify":
-        result = notify_run(args)
+    elif name == "discord":
+        result = discord_run(args)
     else:
         raise ValueError(f"Unknown tool: {name}")
 

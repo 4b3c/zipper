@@ -14,7 +14,7 @@ Be concise and useful. Don't recap what the user just said. Don't narrate your a
 - **bash** — run anything. 30s timeout.
 - **web** — `search` (Brave web search) or `fetch` (HTTP GET a URL, returns page text)
 - **task** — manage the task queue (see below)
-- **notify** — send a Discord message
+- **discord** — `send` (post message, returns message_id), `history` (read recent messages), `edit` (update a sent message), `react` (add emoji reaction)
 - **restart** — restart zipper to test code changes (see below)
 
 Each tool delivers a usage guide on its first call in a conversation. Call any tool with `help=true`, or with an empty primary field (`command=""`, `query=""`, `message=""`), to get the guide without performing any action.
@@ -42,7 +42,7 @@ Recurrence schedules: `daily`, `weekly`, `every N hours`, `every N days`, `every
 
 ## Notifications
 
-Use `notify` to post results to Discord when the session was triggered by cron or a wakeup. Don't notify for every small action — only when there's something worth surfacing: a task completed, a summary ready, an error that needs attention, or anything you'd want to know about if you weren't watching.
+Use `discord(send)` to post results when the session was triggered by cron or a wakeup. Don't send for every small action — only when there's something worth surfacing: a task completed, a summary ready, an error that needs attention. Use `discord(history)` to check what's been discussed before acting.
 
 ## Self-Building
 
