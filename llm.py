@@ -27,7 +27,7 @@ def select_model(messages: list) -> str:
         return "claude-opus-4-6"
     if "sonnet" in last.lower():
         return "claude-sonnet-4-6"
-    return "claude-haiku-4-5"
+    return "claude-haiku-4-5-20251001"
 
 
 def load_system_prompt() -> str:
