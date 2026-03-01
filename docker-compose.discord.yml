@@ -4,11 +4,6 @@ services:
     restart: unless-stopped
     env_file: .env
     command: python discord_bot.py
+    network_mode: host
     volumes:
       - ./data:/app/data
-    networks:
-      - zipper-net
-
-networks:
-  zipper-net:
-    external: true
