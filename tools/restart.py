@@ -1,6 +1,7 @@
 import os
 import subprocess
-import sys
+import json
+import urllib.request
 
 from tools.signals import BreakLoop
 
@@ -12,17 +13,21 @@ def run(args: dict, conversation_id: str) -> str:
         if not conversation_id:
             return "error: no conversation_id available, cannot resume after restart"
 
-        project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        watcher = os.path.join(project_dir, "restart_watcher.py")
-
-        # spawn watcher detached so it survives the restart
-        subprocess.Popen(
-            [sys.executable, watcher, conversation_id, project_dir],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            close_fds=True,
-            start_new_session=True,
+        # register watchdog on the Discord bot process (survives zipper restart)
+        bot_url = os.environ.get("BOT_URL", "http://127.0.0.1:4200")
+        payload = json.dumps({"conversation_id": conversation_id}).encode()
+        req = urllib.request.Request(
+            f"{bot_url}/watch-restart",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
+        registration_error = None
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                r.read()
+        except Exception as e:
+            registration_error = str(e)
 
         # trigger the restart — this process will die here
         subprocess.Popen(
@@ -31,6 +36,8 @@ def run(args: dict, conversation_id: str) -> str:
             start_new_session=True,
         )
 
+        if registration_error:
+            raise BreakLoop(f"restarting... (warning: watchdog registration failed: {registration_error})")
         raise BreakLoop("restarting...")
 
     if mode == "discord":

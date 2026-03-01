@@ -48,6 +48,6 @@ Read → implement → test → restart → verify → push to GitHub → done. 
 
 Use the `restart` tool to restart any zipper component. Modes:
 
-- `zipper` — restarts the main process via systemctl. Async: spawns a watcher, resumes this conversation with the result. If startup fails, code changes are stashed and previous state is restored. Always use this after code changes — never `bash` restart zipper manually.
+- `zipper` — restarts the main process via systemctl. Async: registers a restart watchdog with the Discord bot, then resumes this conversation with the result after zipper is healthy. Always use this after code changes — never `bash` restart zipper manually.
 - `discord` — restarts the Discord bot Docker container. Synchronous, returns when done.
 - `dashboard` — not yet implemented.
