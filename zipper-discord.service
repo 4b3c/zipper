@@ -3,11 +3,15 @@ Description=Zipper Discord Bot
 After=network.target zipper.service
 
 [Service]
-WorkingDirectory=%h/zipper
-ExecStart=%h/zipper/.venv/bin/python discord_bot.py
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/zipper/app
+ExecStart=/opt/zipper/app/.venv/bin/python discord_bot.py
 Restart=always
 RestartSec=5
-EnvironmentFile=%h/zipper/.env
+TimeoutStopSec=30
+EnvironmentFile=/opt/zipper/app/.env
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target

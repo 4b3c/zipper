@@ -17,7 +17,7 @@ Zipper is a self-building, self-repairing AI assistant that runs 24/7 on a VPS. 
 - `main.py` — FastAPI server, exposes `/chat`, `/wake`, `/status`
 - `discord_bot.py` — Discord bot, maps threads to conversations
 - `run.py` — dev tool, POSTs to `/chat` from CLI
-- `setup_cron.py` — generates crontab entries from `data/schedule.json`
+- `setup_cron.py` — generates crontab entries from `data/schedule.json` (daily recurring + date-pinned oneshot entries). Run after any schedule change.
 
 ### LLM Loop (`llm.py`)
 - Calls Claude, parses tool calls, executes them, loops until `end_turn`
@@ -37,6 +37,7 @@ Zipper is a self-building, self-repairing AI assistant that runs 24/7 on a VPS. 
 - `main.md` — Zipper's main system prompt. Injected on every conversation.
 - `codebase.md` — key file roles and architecture notes, injected into the file tool's first-use onboarding. **Keep this current when adding new files or components.**
 - `bash.md` — shell environment facts (shell, user, runtimes, services), injected into the bash tool's first-use onboarding. Update if the environment changes.
+- `discord.md` — Discord tool usage guide, injected into the discord tool's first-use onboarding.
 
 ### Storage (`storage/`)
 All data is JSON, no database.
@@ -87,8 +88,8 @@ DISCORD_CHANNEL_ID=
 - Zipper runs on the host (not Docker) so `bash` tool has full VPS access
 - Discord threads map 1:1 to conversations — replying in a thread continues the same conversation
 - New Discord message in the main channel = new conversation + new thread
-- Cron wakeups hit `/wake` endpoint with a `time` field; zipper builds the check-in prompt
-- Oneshot timers in `schedule.json` are removed after firing
+- Cron wakeups hit `/wake` endpoint with a `time` field; zipper builds the check-in prompt and is instructed to send a Discord summary itself when done
+- Oneshot timers in `schedule.json` are removed after firing; their cron entries are cleaned up next time `setup_cron.py` runs
 - `pop_last_message` rolls back conversation on API failure to prevent corruption
 - Messages are validated before each API call to strip orphaned `tool_result` blocks
 

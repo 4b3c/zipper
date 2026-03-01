@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 from datetime import datetime, timezone
@@ -127,7 +128,9 @@ async def llm_loop(conversation_id: str, messages: list, system: str) -> str:
         model = select_model(messages)
         print(f"[llm] {model}")
         try:
-            response = client.messages.create(
+            # Run blocking API call in a thread pool to avoid blocking the event loop
+            response = await asyncio.to_thread(
+                client.messages.create,
                 model=model,
                 max_tokens=8096,
                 system=system,

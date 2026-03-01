@@ -7,6 +7,7 @@ Usage: python setup_cron.py
 import json
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).parent
@@ -18,16 +19,26 @@ LOG = ROOT / "logs" / "cron.log"
 def load_schedule() -> dict:
     if not SCHEDULE_PATH.exists():
         print(f"[setup] no schedule file found at {SCHEDULE_PATH}")
-        return {"daily": []}
+        return {"daily": [], "oneshot": []}
     return json.loads(SCHEDULE_PATH.read_text())
 
 
-def generate_entries(daily_times: list[str]) -> list[str]:
+def generate_daily_entries(daily_times: list[str]) -> list[str]:
     entries = []
     for slot in daily_times:
         h, m = map(int, slot.split(":"))
         cmd = f'curl -s -X POST {ZIPPER_URL}/wake -H "Content-Type: application/json" -d \'{{"time":"{slot}"}}\' >> {LOG} 2>&1'
         entries.append(f"{m} {h} * * * {cmd}")
+    return entries
+
+
+def generate_oneshot_entries(oneshots: list) -> list[str]:
+    entries = []
+    for entry in oneshots:
+        at = datetime.fromisoformat(entry["at"])
+        slot = at.strftime("%H:%M")
+        cmd = f'curl -s -X POST {ZIPPER_URL}/wake -H "Content-Type: application/json" -d \'{{"time":"{slot}"}}\' >> {LOG} 2>&1'
+        entries.append(f"{at.minute} {at.hour} {at.day} {at.month} * {cmd}")
     return entries
 
 
@@ -61,15 +72,19 @@ def install_crontab(new_entries: list[str]):
 def main():
     schedule = load_schedule()
     daily = schedule.get("daily", [])
+    oneshots = schedule.get("oneshot", [])
 
-    if not daily:
-        print("[setup] no daily times in schedule — nothing to install")
+    daily_entries = generate_daily_entries(daily)
+    oneshot_entries = generate_oneshot_entries(oneshots)
+    entries = daily_entries + oneshot_entries
+
+    if not entries:
+        print("[setup] no entries in schedule — nothing to install")
         return
 
-    entries = generate_entries(daily)
     LOG.parent.mkdir(parents=True, exist_ok=True)
 
-    print(f"[setup] installing {len(entries)} cron entries:")
+    print(f"[setup] installing {len(entries)} cron entries ({len(daily_entries)} daily, {len(oneshot_entries)} oneshot):")
     for e in entries:
         print(f"  {e}")
 

@@ -1,6 +1,6 @@
 import json
 import asyncio
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
@@ -13,7 +13,6 @@ import uvicorn
 from llm import run_task
 from storage.conversations import create_conversation
 from storage.tasks import get_due_tasks
-from utils import notify_discord_async
 
 ROOT = Path(__file__).parent
 SCHEDULE_PATH = ROOT / "data" / "schedule.json"
@@ -88,7 +87,7 @@ async def chat(req: ChatRequest):
 
 @app.post("/wake")
 async def wake(req: WakeRequest):
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     wake_log = load_wake_log()
 
     # check oneshots
@@ -96,7 +95,10 @@ async def wake(req: WakeRequest):
     current_dt = now.replace(second=0, microsecond=0)
     for entry in schedule.get("oneshot", []):
         entry_dt = datetime.fromisoformat(entry["at"]).replace(second=0, microsecond=0)
-        if current_dt >= entry_dt:
+        # make both naive for comparison
+        entry_dt_naive = entry_dt.replace(tzinfo=None) if entry_dt.tzinfo else entry_dt
+        current_dt_naive = current_dt.replace(tzinfo=None)
+        if current_dt_naive >= entry_dt_naive:
             schedule["oneshot"] = [e for e in schedule["oneshot"] if e["id"] != entry["id"]]
             save_schedule(schedule)
 
@@ -117,7 +119,6 @@ async def wake(req: WakeRequest):
             )
             conversation_id = create_conversation(title=f"Oneshot: {entry['prompt'][:50]}", source="cron")
             result = await run_task(prompt, conversation_id)
-            await notify_discord_async(f"**Scheduled task completed** (oneshot {entry['at']})\n\n{result}")
             return {"conversation_id": conversation_id, "result": result}
 
     # daily check-in
@@ -142,12 +143,12 @@ async def wake(req: WakeRequest):
     prompt = (
         f"You have woken up for your scheduled check-in at {slot}. "
         f"Today is {now.strftime('%A, %B %d %Y')}. "
-        f"Review your task queue, handle anything pending, and do anything useful."
+        f"Review your task queue, handle anything pending, and do anything useful. "
+        f"When done, send a brief summary to Discord using the discord tool."
         f"{task_section}"
     )
     conversation_id = create_conversation(title=f"Check-in {slot}", source="cron")
     result = await run_task(prompt, conversation_id)
-    await notify_discord_async(f"**Daily check-in at {slot}** completed\n\n{result}")
     return {"conversation_id": conversation_id, "result": result}
 
 

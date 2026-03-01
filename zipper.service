@@ -3,11 +3,15 @@ Description=Zipper AI
 After=network.target
 
 [Service]
-WorkingDirectory=%h/zipper
-ExecStart=%h/zipper/.venv/bin/python main.py
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/zipper/app
+ExecStart=/opt/zipper/app/.venv/bin/python main.py
 Restart=always
 RestartSec=5
-EnvironmentFile=%h/zipper/.env
+TimeoutStopSec=120
+EnvironmentFile=/opt/zipper/app/.env
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
