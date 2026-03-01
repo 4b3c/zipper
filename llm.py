@@ -49,26 +49,37 @@ def _has_tool_use(content) -> bool:
     return False
 
 
+def _is_tool_result_message(msg: dict) -> bool:
+    content = msg.get("content", [])
+    return (
+        msg.get("role") == "user"
+        and isinstance(content, list)
+        and bool(content)
+        and (content[0].get("type") == "tool_result" if isinstance(content[0], dict) else False)
+    )
+
+
 def _sanitize_messages(messages: list) -> list:
-    """Strip trailing assistant tool_use with no following tool_result."""
+    """Remove orphaned tool_use/tool_result pairs that would cause API 400 errors."""
     if not messages:
         return messages
-    # if last message is assistant and contains tool_use, drop it
-    last = messages[-1]
-    if last.get("role") == "assistant" and _has_tool_use(last.get("content", [])):
-        return messages[:-1]
-    # if second-to-last is assistant tool_use and last is not a tool_result user message, drop both
-    if len(messages) >= 2:
-        prev = messages[-2]
-        last_content = last.get("content", [])
-        is_tool_result = (
-            isinstance(last_content, list)
-            and last_content
-            and (last_content[0].get("type") == "tool_result" if isinstance(last_content[0], dict) else False)
-        )
-        if prev.get("role") == "assistant" and _has_tool_use(prev.get("content", [])) and not is_tool_result:
-            return messages[:-2]
-    return messages
+
+    msgs = list(messages)
+
+    # drop trailing assistant message ending in tool_use (restart killed process before result)
+    if msgs and msgs[-1].get("role") == "assistant" and _has_tool_use(msgs[-1].get("content", [])):
+        msgs = msgs[:-1]
+
+    # drop trailing user tool_result with no preceding assistant tool_use
+    if msgs and _is_tool_result_message(msgs[-1]):
+        if len(msgs) < 2 or not _has_tool_use(msgs[-2].get("content", [])):
+            msgs = msgs[:-1]
+
+    # drop leading user tool_result (conversation starts with orphaned result)
+    while msgs and _is_tool_result_message(msgs[0]):
+        msgs = msgs[1:]
+
+    return msgs
 
 
 async def run_task(description: str, conversation_id: str) -> str:
