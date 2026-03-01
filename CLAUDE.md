@@ -10,7 +10,7 @@ Zipper is a self-building, self-repairing AI assistant that runs 24/7 on a VPS. 
 
 ### Runtime
 - **Zipper** runs as a persistent FastAPI server on port `4199` managed by systemd on the VPS (not Docker)
-- **Discord bot** runs as a persistent systemd user service (`zipper-discord`) on the VPS
+- **Discord bot** runs as a persistent systemd service (`zipper-discord`) on the VPS
 - **Cron** hits the `/wake` endpoint at scheduled times defined in `data/schedule.json`
 
 ### Entry Points
@@ -67,10 +67,10 @@ data/
 ## Deployment (VPS)
 
 - OS: Ubuntu
-- Zipper runs directly via systemd user service: `systemctl --user start zipper`
-- Discord bot runs directly via systemd user service: `systemctl --user start zipper-discord`
-- Service files: `zipper.service`, `zipper-discord.service` (both use `%h` for home directory)
-- Logs: `journalctl --user -u zipper -n 50 --no-pager`
+- Zipper runs directly via systemd: `systemctl start zipper`
+- Discord bot runs directly via systemd: `systemctl start zipper-discord`
+- Service files: `/etc/systemd/system/zipper.service`, `/etc/systemd/system/zipper-discord.service`
+- Logs: `journalctl -u zipper -n 50 --no-pager`
 - Code lives at `/opt/zipper/app`
 
 ## Environment Variables

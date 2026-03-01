@@ -69,7 +69,7 @@ def run(args: dict, conversation_id: str) -> str:
 
         # trigger the restart — this process will die here
         subprocess.Popen(
-            ["systemctl", "--user", "restart", "zipper"],
+            ["systemctl", "restart", "zipper"],
             close_fds=True,
             start_new_session=True,
         )
@@ -78,7 +78,7 @@ def run(args: dict, conversation_id: str) -> str:
 
     if mode == "discord":
         result = subprocess.run(
-            ["systemctl", "--user", "restart", "zipper-discord"],
+            ["systemctl", "restart", "zipper-discord"],
             capture_output=True,
             text=True,
             timeout=30,

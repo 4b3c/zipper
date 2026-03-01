@@ -119,7 +119,7 @@ def main():
 
         # restart again with clean code
         subprocess.run(
-            ["systemctl", "--user", "restart", "zipper"],
+            ["systemctl", "restart", "zipper"],
             capture_output=True,
         )
 

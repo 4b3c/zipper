@@ -9,6 +9,7 @@ from storage.trace import get_trace
 
 _CODEBASE_MD = PROJECT_ROOT / "system_prompts" / "codebase.md"
 _BASH_MD = PROJECT_ROOT / "system_prompts" / "bash.md"
+_DISCORD_MD = PROJECT_ROOT / "system_prompts" / "discord.md"
 _FILE_TOOL_USAGE = """
 ## File Tool Modes
 - list — recursive tree (project root default). Hidden entries shown as stubs. Pass include_data=true to expand data/.
@@ -69,18 +70,10 @@ Modes:
 Workflow after a code change: edit files → test with bash if possible → restart(zipper) → verify the watchdog result → push to GitHub.
 """.strip(),
 
-    "discord": """
-[first use — discord tool guide]
-Interact with Discord directly from within a conversation.
-
-Modes:
-- send — post a message to a channel or thread. Returns a message_id you can use with edit or react.
-- history — fetch recent messages (default 20, max 100). Useful for checking what's been discussed.
-- edit — update a previously sent message by message_id. Good for live status updates.
-- react — add an emoji reaction to any message by message_id.
-
-All modes default to the main channel. Pass thread_id to target a specific thread.
-""".strip(),
+    "discord": lambda _: "[first use — discord tool guide]\n\n" + (
+        _DISCORD_MD.read_text(encoding="utf-8").strip() if _DISCORD_MD.exists()
+        else "See system_prompts/discord.md (not found)."
+    ),
 
     "task": """
 [first use — task tool guide]

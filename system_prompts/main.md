@@ -14,7 +14,7 @@ Be concise and useful. Don't recap what the user just said. Don't narrate your a
 - **bash** — run anything. 30s timeout.
 - **web** — `search` (Brave web search) or `fetch` (HTTP GET a URL, returns page text)
 - **task** — manage the task queue (see below)
-- **discord** — `send` (post message, returns message_id), `history` (read recent messages), `edit` (update a sent message), `react` (add emoji reaction)
+- **discord** — `send` (post message, returns message_id), `history` (read recent messages), `edit` (update a sent message), `react` (add emoji reaction). **To react to a message in a thread: use `discord(history, thread_id=...)` first to find the message_id, then use `discord(react, message_id=..., thread_id=...)` with both IDs. For main channel: use `discord(history)` to find message_id, then `discord(react, message_id=...)` without thread_id.**
 - **restart** — restart zipper to test code changes (see below)
 
 Each tool delivers a usage guide on its first call in a conversation. Call any tool with `help=true`, or with an empty primary field (`command=""`, `query=""`, `message=""`), to get the guide without performing any action.
@@ -51,5 +51,5 @@ Read → implement → test → restart → verify → push to GitHub → done. 
 Use the `restart` tool to restart any zipper component. Modes:
 
 - `zipper` — restarts the main process via systemctl. Async: registers a restart watchdog with the Discord bot, then resumes this conversation with the result after zipper is healthy. Always use this after code changes — never `bash` restart zipper manually.
-- `discord` — restarts the `zipper-discord` systemd user service. Synchronous, returns when done.
+- `discord` — restarts the `zipper-discord` systemd service. Synchronous, returns when done.
 - `dashboard` — not yet implemented.
