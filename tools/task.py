@@ -1,5 +1,20 @@
 import json
+import subprocess
+from pathlib import Path
 from storage.tasks import create_task, get_due_tasks, update_task_status, patch_task, list_tasks, ARCHIVE_PATH
+
+ROOT = Path(__file__).parent.parent
+
+
+def _sync_crontab():
+    """Run setup_cron.py to sync crontab with schedule.json"""
+    try:
+        subprocess.run([
+            str(ROOT / ".venv" / "bin" / "python"), str(ROOT / "utils" / "setup_cron.py")
+        ], capture_output=True, timeout=10, check=False)
+    except Exception as e:
+        # Log but don't fail the task operation
+        print(f"[task] warning: failed to sync crontab: {e}")
 
 
 def run(args: dict) -> str:
@@ -32,6 +47,7 @@ def run(args: dict) -> str:
             schedule=args.get("schedule"),
             conversation_id=args.get("conversation_id"),
         )
+        _sync_crontab()
         return f"ok: created task {task_id}"
 
     if mode == "update":
@@ -51,6 +67,7 @@ def run(args: dict) -> str:
                 result=args.get("result"),
                 error=args.get("error"),
             )
+        _sync_crontab()
         return f"ok: task {task_id} updated"
 
     if mode == "archive":

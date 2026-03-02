@@ -13,6 +13,7 @@ import uvicorn
 from llm import run_task
 from storage.conversations import create_conversation
 from storage.tasks import get_due_tasks
+from utils.utils import notify_discord
 
 ROOT = Path(__file__).parent
 SCHEDULE_PATH = ROOT / "data" / "schedule.json"
@@ -94,7 +95,7 @@ async def wake(req: WakeRequest):
     schedule = load_schedule()
     current_dt = now.replace(second=0, microsecond=0)
     for entry in schedule.get("oneshot", []):
-        entry_dt = datetime.fromisoformat(entry["at"]).replace(second=0, microsecond=0)
+        entry_dt = datetime.fromisoformat(entry["at"]).replace(second=0, microsecond=0, tzinfo=None)
         if current_dt >= entry_dt:
             schedule["oneshot"] = [e for e in schedule["oneshot"] if e["id"] != entry["id"]]
             save_schedule(schedule)

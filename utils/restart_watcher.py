@@ -12,7 +12,7 @@ import urllib.request
 import json
 import subprocess
 from pathlib import Path
-from utils import notify_discord
+from utils.utils import notify_discord
 
 
 def load_env(project_dir: str):

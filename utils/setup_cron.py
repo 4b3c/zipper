@@ -10,7 +10,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-ROOT = Path(__file__).parent
+ROOT = Path(__file__).parent.parent  # Go up from utils/ to app root
 SCHEDULE_PATH = ROOT / "data" / "schedule.json"
 ZIPPER_URL = "http://localhost:4199"
 LOG = ROOT / "logs" / "cron.log"
