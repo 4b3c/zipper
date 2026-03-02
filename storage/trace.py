@@ -1,6 +1,6 @@
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
@@ -24,7 +24,7 @@ def _save(conversation_id: str, trace: dict):
 def append_trace_entry(conversation_id: str, entry: dict):
     trace = _load(conversation_id)
     entry["id"] = uuid.uuid4().hex[:8]
-    entry["timestamp"] = datetime.now(timezone.utc).isoformat()
+    entry["timestamp"] = datetime.now().isoformat()
     trace["entries"].append(entry)
     _save(conversation_id, trace)
 

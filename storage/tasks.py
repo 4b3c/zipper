@@ -1,6 +1,6 @@
 import json
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 
 WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
@@ -61,7 +61,7 @@ def _archive(task: dict):
         archive = json.loads(ARCHIVE_PATH.read_text())
     else:
         archive = []
-    task["archived_at"] = datetime.now(timezone.utc).isoformat()
+    task["archived_at"] = datetime.now().isoformat()
     archive.append(task)
     ARCHIVE_PATH.parent.mkdir(parents=True, exist_ok=True)
     ARCHIVE_PATH.write_text(json.dumps(archive, indent=2))
@@ -106,8 +106,8 @@ def create_task(title: str, description: str = None, due_at: str = None, schedul
         "description": description or title,
         "status": "pending",
         "schedule": schedule,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "due_at": due_at or datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now().isoformat(),
+        "due_at": due_at or datetime.now().isoformat(),
         "conversation_id": conversation_id,
         "result": None,
         "error": None,
@@ -119,7 +119,7 @@ def create_task(title: str, description: str = None, due_at: str = None, schedul
 
 def get_due_tasks() -> list:
     tasks = _load()
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now().isoformat()
     return [t for t in tasks if t["status"] == "pending" and t["due_at"] <= now]
 
 

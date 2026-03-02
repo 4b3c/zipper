@@ -1,7 +1,7 @@
 import asyncio
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime
 
 import anthropic
 
@@ -37,7 +37,7 @@ def select_model(messages: list) -> str:
 def load_system_prompt() -> str:
     root = os.path.dirname(os.path.abspath(__file__))
     path = os.path.join(root, "system_prompts/main.md")
-    current_time = datetime.now(timezone.utc).isoformat()
+    current_time = datetime.now().isoformat()
     if os.path.exists(path):
         with open(path) as f:
             return f.read().replace("{{project_directory}}", root).replace("{{current_time}}", current_time)
@@ -159,7 +159,7 @@ async def llm_loop(conversation_id: str, messages: list, system: str) -> str:
                 if block.type != "tool_use":
                     continue
 
-                start = datetime.now(timezone.utc)
+                start = datetime.now()
                 try:
                     output = execute_tool(block.name, block.input, conversation_id)
                     error = None
@@ -167,7 +167,7 @@ async def llm_loop(conversation_id: str, messages: list, system: str) -> str:
                 except BreakLoop as e:
                     # tool signalled an immediate stop — save what we have and exit
                     msg = str(e)
-                    duration_ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
+                    duration_ms = int((datetime.now() - start).total_seconds() * 1000)
                     append_trace_entry(conversation_id, {
                         "tool": block.name,
                         "args": block.input,
@@ -185,7 +185,7 @@ async def llm_loop(conversation_id: str, messages: list, system: str) -> str:
                     status = "error"
 
                 duration_ms = int(
-                    (datetime.now(timezone.utc) - start).total_seconds() * 1000
+                    (datetime.now() - start).total_seconds() * 1000
                 )
 
                 append_trace_entry(conversation_id, {

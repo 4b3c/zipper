@@ -1,7 +1,7 @@
 import json
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
@@ -61,8 +61,8 @@ def create_conversation(title: str, source: str, discord_thread_id: str = None) 
         "title": title,
         "source": source,
         "discord_thread_id": discord_thread_id,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now().isoformat(),
+        "updated_at": datetime.now().isoformat(),
         "status": "active",
         "summary": "",
         "key_points": [],
@@ -82,7 +82,7 @@ def get_conversation(conversation_id: str) -> dict:
 def update_meta(conversation_id: str, **kwargs):
     meta = get_conversation(conversation_id)
     meta.update(kwargs)
-    meta["updated_at"] = datetime.now(timezone.utc).isoformat()
+    meta["updated_at"] = datetime.now().isoformat()
     _meta_path(conversation_id).write_text(json.dumps(meta, indent=2))
 
 

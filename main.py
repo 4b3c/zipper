@@ -1,6 +1,6 @@
 import json
 import asyncio
-from datetime import datetime, date, timezone
+from datetime import datetime, date
 from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
@@ -87,7 +87,7 @@ async def chat(req: ChatRequest):
 
 @app.post("/wake")
 async def wake(req: WakeRequest):
-    now = datetime.now(timezone.utc)
+    now = datetime.now()
     wake_log = load_wake_log()
 
     # check oneshots
@@ -95,10 +95,7 @@ async def wake(req: WakeRequest):
     current_dt = now.replace(second=0, microsecond=0)
     for entry in schedule.get("oneshot", []):
         entry_dt = datetime.fromisoformat(entry["at"]).replace(second=0, microsecond=0)
-        # make both naive for comparison
-        entry_dt_naive = entry_dt.replace(tzinfo=None) if entry_dt.tzinfo else entry_dt
-        current_dt_naive = current_dt.replace(tzinfo=None)
-        if current_dt_naive >= entry_dt_naive:
+        if current_dt >= entry_dt:
             schedule["oneshot"] = [e for e in schedule["oneshot"] if e["id"] != entry["id"]]
             save_schedule(schedule)
 

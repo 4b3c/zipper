@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
@@ -23,7 +23,7 @@ def get(key: str):
 
 def set(key: str, value):
     memory = _load()
-    memory[key] = {"value": value, "updated_at": datetime.now(timezone.utc).isoformat()}
+    memory[key] = {"value": value, "updated_at": datetime.now().isoformat()}
     _save(memory)
 
 
