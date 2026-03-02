@@ -64,7 +64,7 @@ Post in a thread in the configured Discord server. Zipper will reply in the same
 3. Add usage guide to `tools/__init__.py:ONBOARDING`
 
 **Change Behavior:**
-Edit `system_prompts/main.md` and restart with `restart(zipper)`
+Edit `prompts/main.md` and restart with `restart(zipper)`
 
 **Test Changes:**
 ```bash
@@ -80,5 +80,5 @@ curl -X POST http://localhost:4199/chat ...
 - `discord_bot.py` — Discord integration
 - `tools/` — Tool implementations
 - `storage/` — Conversation, task, and memory persistence
-- `system_prompts/` — Behavior and tool documentation
+- `prompts/` — Behavior and tool documentation
 - `requirements.txt` — Python dependencies

@@ -36,7 +36,7 @@ def select_model(messages: list) -> str:
 
 def load_system_prompt() -> str:
     root = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(root, "system_prompts/main.md")
+    path = os.path.join(root, "prompts/main.md")
     current_time = datetime.now().isoformat()
     if os.path.exists(path):
         with open(path) as f:

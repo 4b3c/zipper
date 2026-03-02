@@ -7,9 +7,9 @@ from tools.task import run as task_run
 from tools.discord import run as discord_run
 from storage.trace import get_trace
 
-_CODEBASE_MD = PROJECT_ROOT / "system_prompts" / "codebase.md"
-_BASH_MD = PROJECT_ROOT / "system_prompts" / "bash.md"
-_DISCORD_MD = PROJECT_ROOT / "system_prompts" / "discord.md"
+_CODEBASE_MD = PROJECT_ROOT / "prompts" / "codebase.md"
+_BASH_MD = PROJECT_ROOT / "prompts" / "bash.md"
+_DISCORD_MD = PROJECT_ROOT / "prompts" / "discord.md"
 _FILE_TOOL_USAGE = """
 ## File Tool Modes
 - list — recursive tree (project root default). Hidden entries shown as stubs. Pass include_data=true to expand data/.
@@ -47,7 +47,7 @@ ONBOARDING = {
 
     "bash": lambda _: "[first use — bash tool guide]\n\n" + (
         _BASH_MD.read_text(encoding="utf-8").strip() if _BASH_MD.exists()
-        else "See system_prompts/bash.md (not found)."
+        else "See prompts/bash.md (not found)."
     ),
 
     "web": """
@@ -72,7 +72,7 @@ Workflow after a code change: edit files → test with bash if possible → rest
 
     "discord": lambda _: "[first use — discord tool guide]\n\n" + (
         _DISCORD_MD.read_text(encoding="utf-8").strip() if _DISCORD_MD.exists()
-        else "See system_prompts/discord.md (not found)."
+        else "See prompts/discord.md (not found)."
     ),
 
     "task": """

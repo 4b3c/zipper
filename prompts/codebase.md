@@ -29,7 +29,7 @@ This is Zipper's own source code. Update this file when you add new components.
 - `memory.py` — persistent key-value store (`data/memory.json`)
 - `tasks.py` — task queue (`data/tasks/queue.json`)
 
-### System Prompts (`system_prompts/`)
+### Prompts (`prompts/`)
 - `main.md` — Zipper's main system prompt. Edit this to change behavior, rules, or tool documentation
 - `codebase.md` — this file. Keep it current as you add components
 - `bash.md` — shell environment facts, injected into the bash tool's first-use onboarding

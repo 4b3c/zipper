@@ -33,7 +33,7 @@ Zipper is a self-building, self-repairing AI assistant that runs 24/7 on a VPS. 
 - `discord` — send (returns message_id), history (read recent messages), edit (update by message_id), react (emoji reaction)
 - Tool onboarding: each tool prepends a usage guide on its first call per conversation (detected via trace log). `help=true` or empty primary field returns the guide without running the tool.
 
-### System Prompts (`system_prompts/`)
+### Prompts (`prompts/`)
 - `main.md` — Zipper's main system prompt. Injected on every conversation.
 - `codebase.md` — key file roles and architecture notes, injected into the file tool's first-use onboarding. **Keep this current when adding new files or components.**
 - `bash.md` — shell environment facts (shell, user, runtimes, services), injected into the bash tool's first-use onboarding. Update if the environment changes.
