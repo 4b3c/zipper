@@ -76,9 +76,13 @@ def status():
 
 async def _discord_respond(prompt: str, conversation_id: str, discord_thread_id: int):
     """Background task: run LLM and push result to discord via /send."""
-    result = await run_task(prompt, conversation_id)
-    if result:
-        await notify_discord_async(result, thread_id=discord_thread_id)
+    try:
+        result = await run_task(prompt, conversation_id)
+        if result:
+            await notify_discord_async(result, thread_id=discord_thread_id)
+    except Exception as e:
+        print(f"[main] _discord_respond error: {e}")
+        await notify_discord_async(f"⚠️ Error: {e}", thread_id=discord_thread_id)
 
 
 @app.post("/discord")
