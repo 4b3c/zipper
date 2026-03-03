@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 from datetime import datetime
 
 import anthropic
@@ -22,16 +23,30 @@ client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
 COMPACTION_THRESHOLD = 20  # messages before compaction
 
+RATING_RE = re.compile(r'\{\{c:(\d),\s*d:(\d),\s*a:(\d)\}\}')
 
-def select_model(messages: list) -> str:
-    # heuristics: length, keywords
-    raw = messages[-1]["content"] if messages else ""
-    last = raw if isinstance(raw, str) else ""
-    if "opus" in last.lower():
+
+def select_model(ratings: tuple | None) -> str:
+    """Select model based on c+d+a rating from previous turn. None = first turn, default to Sonnet."""
+    if ratings is None:
+        return "claude-sonnet-4-6"
+    total = sum(ratings)
+    if total > 11:
         return "claude-opus-4-6"
-    if "sonnet" in last.lower():
+    if total > 6:
         return "claude-sonnet-4-6"
     return "claude-haiku-4-5-20251001"
+
+
+def parse_ratings(text: str) -> tuple | None:
+    m = RATING_RE.search(text)
+    if m:
+        return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    return None
+
+
+def strip_ratings(text: str) -> str:
+    return RATING_RE.sub("", text).strip()
 
 
 def load_system_prompt() -> str:
@@ -124,9 +139,10 @@ def serialize_content(content) -> list:
 
 
 async def llm_loop(conversation_id: str, messages: list, system: str) -> str:
+    ratings = None  # updated each turn from model's self-rating
     while True:
-        model = select_model(messages)
-        print(f"[llm] {model}")
+        model = select_model(ratings)
+        print(f"[llm] {model} (ratings={ratings})")
         try:
             # Run blocking API call in a thread pool to avoid blocking the event loop
             response = await asyncio.to_thread(
@@ -142,15 +158,22 @@ async def llm_loop(conversation_id: str, messages: list, system: str) -> str:
             pop_last_message(conversation_id)
             raise
 
-        assistant_content = response.content
-        append_message(conversation_id, "assistant", serialize_content(assistant_content))
+        # Parse and strip ratings tag from text blocks before storing
+        assistant_content = serialize_content(response.content)
+        for block in assistant_content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                r = parse_ratings(block["text"])
+                if r:
+                    ratings = r
+                block["text"] = strip_ratings(block["text"])
+
+        append_message(conversation_id, "assistant", assistant_content)
         messages = get_active_version(conversation_id)["messages"]
 
         if response.stop_reason == "end_turn":
-            # extract text response
             for block in assistant_content:
-                if hasattr(block, "text"):
-                    return block.text
+                if isinstance(block, dict) and block.get("type") == "text":
+                    return block["text"]
             return ""
 
         if response.stop_reason == "tool_use":

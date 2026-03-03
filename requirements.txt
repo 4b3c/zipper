@@ -4,3 +4,4 @@ fastapi
 uvicorn
 discord.py
 aiohttp
+requests
