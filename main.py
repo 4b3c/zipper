@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 
-from llm import run_task
+from llm import run_task, _cancelled_tasks
 from storage.conversations import create_conversation
 from storage.tasks import get_due_tasks
 from utils.utils import notify_discord
@@ -20,6 +20,9 @@ SCHEDULE_PATH = ROOT / "data" / "schedule.json"
 WAKE_LOG_PATH = ROOT / "data" / "wake_log.json"
 
 app = FastAPI()
+
+# Active LLM tasks keyed by conversation_id — used to cancel on interruption
+_active_tasks: dict[str, asyncio.Task] = {}
 
 
 @app.exception_handler(Exception)
@@ -82,7 +85,23 @@ async def chat(req: ChatRequest):
             discord_thread_id=req.discord_thread_id
         )
 
-    result = await run_task(req.prompt, conversation_id)
+    # Supersede any in-progress task for this conversation
+    if conversation_id in _active_tasks:
+        existing = _active_tasks.pop(conversation_id)
+        _cancelled_tasks.add(existing)  # signal it to discard output and exit
+        existing.cancel()               # wake it up if suspended at an await
+
+    # Start new task immediately — don't wait for old one to finish
+    task = asyncio.create_task(run_task(req.prompt, conversation_id))
+    _active_tasks[conversation_id] = task
+    try:
+        result = await task
+    except asyncio.CancelledError:
+        _active_tasks.pop(conversation_id, None)
+        return JSONResponse(status_code=200, content={"conversation_id": conversation_id, "result": None, "interrupted": True})
+    finally:
+        _active_tasks.pop(conversation_id, None)
+
     return {"conversation_id": conversation_id, "result": result}
 
 

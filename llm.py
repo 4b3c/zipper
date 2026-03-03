@@ -23,6 +23,9 @@ client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
 COMPACTION_THRESHOLD = 20  # messages before compaction
 
+# Tasks added here are superseded — they should discard their output and exit
+_cancelled_tasks: set = set()
+
 RATING_RE = re.compile(r'\{\{c:(\d),\s*d:(\d),\s*a:(\d)\}\}')
 
 
@@ -99,6 +102,27 @@ def _sanitize_messages(messages: list) -> list:
     while msgs and (msgs[0].get("role") == "assistant" or _is_tool_result_message(msgs[0])):
         msgs = msgs[1:]
 
+    # fix consecutive user messages: insert empty assistant turn in between
+    # (represents an interrupted response — the assistant didn't get to say anything)
+    i = 0
+    while i < len(msgs) - 1:
+        if msgs[i].get("role") == "user" and not _is_tool_result_message(msgs[i]) \
+                and msgs[i + 1].get("role") == "user":
+            msgs.insert(i + 1, {"role": "assistant", "content": [{"type": "text", "text": ""}]})
+        i += 1
+
+    # fix consecutive assistant messages: merge into one
+    i = 0
+    while i < len(msgs) - 1:
+        if msgs[i].get("role") == "assistant" and msgs[i + 1].get("role") == "assistant":
+            a = msgs[i].get("content", [])
+            b = msgs[i + 1].get("content", [])
+            if isinstance(a, list) and isinstance(b, list):
+                msgs[i] = {"role": "assistant", "content": a + b}
+            msgs.pop(i + 1)
+        else:
+            i += 1
+
     return msgs
 
 
@@ -140,7 +164,13 @@ def serialize_content(content) -> list:
 
 async def llm_loop(conversation_id: str, messages: list, system: str) -> str:
     ratings = None  # updated each turn from model's self-rating
+    current_task = asyncio.current_task()
     while True:
+        # Check if this task has been superseded by a newer request
+        if current_task in _cancelled_tasks:
+            _cancelled_tasks.discard(current_task)
+            return ""
+
         model = select_model(ratings)
         print(f"[llm] {model} (ratings={ratings})")
         try:
@@ -157,6 +187,11 @@ async def llm_loop(conversation_id: str, messages: list, system: str) -> str:
             # roll back the last user message so the conversation stays clean
             pop_last_message(conversation_id)
             raise
+
+        # Check again after API call returns — new request may have arrived while thread ran
+        if current_task in _cancelled_tasks:
+            _cancelled_tasks.discard(current_task)
+            return ""
 
         # Parse and strip ratings tag from text blocks before storing
         assistant_content = serialize_content(response.content)
@@ -179,12 +214,16 @@ async def llm_loop(conversation_id: str, messages: list, system: str) -> str:
         if response.stop_reason == "tool_use":
             tool_results = []
             for block in assistant_content:
-                if block.type != "tool_use":
+                if block.get("type") != "tool_use":
                     continue
+
+                tool_name = block["name"]
+                tool_input = block["input"]
+                tool_id = block["id"]
 
                 start = datetime.now()
                 try:
-                    output = execute_tool(block.name, block.input, conversation_id)
+                    output = execute_tool(tool_name, tool_input, conversation_id)
                     error = None
                     status = "ok"
                 except BreakLoop as e:
@@ -192,14 +231,14 @@ async def llm_loop(conversation_id: str, messages: list, system: str) -> str:
                     msg = str(e)
                     duration_ms = int((datetime.now() - start).total_seconds() * 1000)
                     append_trace_entry(conversation_id, {
-                        "tool": block.name,
-                        "args": block.input,
+                        "tool": tool_name,
+                        "args": tool_input,
                         "output": msg,
                         "error": None,
                         "duration_ms": duration_ms,
                         "status": "ok",
                     })
-                    tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": msg})
+                    tool_results.append({"type": "tool_result", "tool_use_id": tool_id, "content": msg})
                     append_message(conversation_id, "user", tool_results)
                     return ""
                 except Exception as e:
@@ -212,8 +251,8 @@ async def llm_loop(conversation_id: str, messages: list, system: str) -> str:
                 )
 
                 append_trace_entry(conversation_id, {
-                    "tool": block.name,
-                    "args": block.input,
+                    "tool": tool_name,
+                    "args": tool_input,
                     "output": output,
                     "error": error,
                     "duration_ms": duration_ms,
@@ -222,7 +261,7 @@ async def llm_loop(conversation_id: str, messages: list, system: str) -> str:
 
                 tool_results.append({
                     "type": "tool_result",
-                    "tool_use_id": block.id,
+                    "tool_use_id": tool_id,
                     "content": output,
                 })
 

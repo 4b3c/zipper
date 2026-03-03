@@ -11,6 +11,57 @@ import discord
 
 load_dotenv()
 
+
+def smart_split(text: str, limit: int = 1990) -> list[str]:
+    """Split text into chunks ≤ limit chars at natural break points.
+
+    Avoids splitting inside code fences (``` blocks). Prefers paragraph
+    breaks > line breaks > sentence ends > word boundaries.
+    """
+    if len(text) <= limit:
+        return [text]
+
+    chunks = []
+    while len(text) > limit:
+        window = text[:limit]
+
+        # Don't split inside a code fence — find the last ``` before limit
+        # If the count of ``` in window is odd, we're inside a fence; pull back
+        fence_count = window.count("```")
+        if fence_count % 2 == 1:
+            # Find the last ``` and split before it
+            idx = window.rfind("```")
+            if idx > 0:
+                chunks.append(text[:idx].rstrip())
+                text = text[idx:]
+                continue
+
+        # Find best split point, preferring natural breaks
+        split_at = None
+        for sep in ["\n\n", "\n", ". ", " "]:
+            idx = window.rfind(sep)
+            if idx > limit // 3:
+                split_at = idx
+                break
+
+        if split_at is None:
+            split_at = limit
+
+        chunks.append(text[:split_at].rstrip())
+        text = text[split_at:].lstrip("\n") if "\n" in text[:split_at + 2] else text[split_at:].lstrip(" ")
+
+    if text.strip():
+        chunks.append(text.strip())
+
+    return [c for c in chunks if c]
+
+
+async def send_chunks(target, text: str, **kwargs):
+    """Send text to a Discord channel, splitting if over 2000 chars."""
+    for chunk in smart_split(text):
+        await target.send(chunk, **kwargs)
+
+
 ZIPPER_URL = "http://127.0.0.1:4199"
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 DISCORD_CHANNEL_ID = int(os.environ["DISCORD_CHANNEL_ID"])
@@ -115,7 +166,7 @@ async def inject_prompt_to_thread(prompt: str, thread_id: int, conversation_id: 
         if "error" in response:
             await thread.send(f"⚠️ {response['error']}")
         elif response.get("result"):
-            await thread.send(response["result"])
+            await send_chunks(thread, response["result"])
         return True
     except Exception as e:
         print(f"[discord] inject error: {e}")
@@ -210,7 +261,7 @@ async def on_message(message: discord.Message):
             if "error" in response:
                 await message.channel.send(f"⚠️ {response['error']}")
             elif response.get("result"):
-                await message.channel.send(response["result"])
+                await send_chunks(message.channel, response["result"])
         except Exception as e:
             await message.channel.send(f"⚠️ Error: {e}")
         return
@@ -228,7 +279,7 @@ async def on_message(message: discord.Message):
         if "error" in response:
             await thread.send(f"⚠️ {response['error']}")
         elif response.get("result"):
-            await thread.send(response["result"])
+            await send_chunks(thread, response["result"])
     except Exception as e:
         await thread.send(f"⚠️ Error: {e}")
 
