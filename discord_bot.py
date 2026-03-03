@@ -2,7 +2,6 @@ import os
 import json
 import asyncio
 import io
-import uuid
 import aiohttp
 from aiohttp import ClientTimeout
 from aiohttp import web
@@ -57,12 +56,6 @@ def smart_split(text: str, limit: int = 1990) -> list[str]:
     return [c for c in chunks if c]
 
 
-async def send_chunks(target, text: str, **kwargs):
-    """Send text to a Discord channel, splitting if over 2000 chars."""
-    for chunk in smart_split(text):
-        await target.send(chunk, **kwargs)
-
-
 ZIPPER_URL = "http://127.0.0.1:4199"
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 DISCORD_CHANNEL_ID = int(os.environ["DISCORD_CHANNEL_ID"])
@@ -73,65 +66,13 @@ STARTUP_TIMEOUT = 45
 SETTLE_DELAY = 3
 
 ROOT = Path(__file__).parent
-THREADS_PATH = ROOT / "data" / "discord_threads.json"
 
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
 
-# --- Thread → conversation mapping ---
 
-def load_threads() -> dict:
-    if not THREADS_PATH.exists():
-        return {}
-    return json.loads(THREADS_PATH.read_text())
-
-
-def save_threads(threads: dict):
-    THREADS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    THREADS_PATH.write_text(json.dumps(threads, indent=2))
-
-
-def get_conversation_id(thread_id: int) -> str | None:
-    return load_threads().get(str(thread_id))
-
-
-def set_conversation_id(thread_id: int, conversation_id: str):
-    threads = load_threads()
-    threads[str(thread_id)] = conversation_id
-    save_threads(threads)
-
-
-def remove_conversation_id(thread_id: int):
-    threads = load_threads()
-    threads.pop(str(thread_id), None)
-    save_threads(threads)
-
-
-def get_thread_id_for_conversation(conversation_id: str) -> int | None:
-    meta_path = ROOT / "data" / "conversations" / conversation_id / "meta.json"
-    if not meta_path.exists():
-        return None
-    try:
-        thread_id = json.loads(meta_path.read_text()).get("discord_thread_id")
-        return int(thread_id) if thread_id else None
-    except Exception:
-        return None
-
-
-# --- Zipper API ---
-
-async def chat(prompt: str, conversation_id: str | None = None, discord_thread_id: int | None = None) -> dict:
-    payload = {"prompt": prompt, "source": "discord"}
-    if conversation_id:
-        payload["conversation_id"] = conversation_id
-    if discord_thread_id:
-        payload["discord_thread_id"] = discord_thread_id
-
-    async with aiohttp.ClientSession() as session:
-        async with session.post(f"{ZIPPER_URL}/chat", json=payload) as resp:
-            return await resp.json(content_type=None)
-
+# --- Helpers ---
 
 async def is_zipper_up() -> bool:
     timeout = ClientTimeout(total=3)
@@ -140,6 +81,22 @@ async def is_zipper_up() -> bool:
             async with session.get(f"{ZIPPER_URL}/status") as resp:
                 return resp.status == 200
     except Exception:
+        return False
+
+
+async def post_to_zipper(prompt: str, discord_thread_id: int) -> bool:
+    """Forward a message to zipper. Returns True if zipper acknowledged."""
+    try:
+        timeout = ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(f"{ZIPPER_URL}/chat", json={
+                "prompt": prompt,
+                "discord_thread_id": discord_thread_id,
+                "source": "discord",
+            }) as resp:
+                return resp.status == 200
+    except Exception as e:
+        print(f"[discord] post_to_zipper error: {e}")
         return False
 
 
@@ -158,30 +115,25 @@ async def resolve_thread(thread_id: int):
     return None
 
 
-async def inject_prompt_to_thread(prompt: str, thread_id: int, conversation_id: str | None = None) -> bool:
-    thread = await resolve_thread(thread_id)
-    if thread is None:
-        print(f"[discord] inject: thread {thread_id} not found after retries")
-        return False
-
-    active_conversation_id = conversation_id or get_conversation_id(thread_id)
+def get_thread_id_for_conversation(conversation_id: str) -> int | None:
+    meta_path = ROOT / "data" / "conversations" / conversation_id / "meta.json"
+    if not meta_path.exists():
+        return None
     try:
-        async with thread.typing():
-            response = await chat(prompt, active_conversation_id, discord_thread_id=thread_id)
-        if not active_conversation_id and response.get("conversation_id"):
-            set_conversation_id(thread_id, response["conversation_id"])
-        if "error" in response:
-            await thread.send(f"⚠️ {response['error']}")
-        elif response.get("result"):
-            await send_chunks(thread, response["result"])
-        return True
-    except Exception as e:
-        print(f"[discord] inject error: {e}")
-        try:
-            await thread.send(f"⚠️ Error: {e}")
-        except Exception:
-            pass
-        return False
+        thread_id = json.loads(meta_path.read_text()).get("discord_thread_id")
+        return int(thread_id) if thread_id else None
+    except Exception:
+        return None
+
+
+async def inject_prompt_to_thread(prompt: str, thread_id: int, conversation_id: str | None = None) -> bool:
+    """Send a synthetic prompt to zipper for a given thread."""
+    ok = await post_to_zipper(prompt, thread_id)
+    if not ok:
+        thread = await resolve_thread(thread_id)
+        if thread:
+            await thread.send("⚠️ Zipper disconnected")
+    return ok
 
 
 async def run_restart_watch(conversation_id: str, thread_id: int):
@@ -257,58 +209,28 @@ async def on_message(message: discord.Message):
     if message.author == client.user:
         return
 
-    # message in a thread — continue existing conversation
+    # Message in a thread — relay to zipper
     if isinstance(message.channel, discord.Thread):
-        conversation_id = get_conversation_id(message.channel.id)
-        try:
-            async with message.channel.typing():
-                response = await chat(message.content, conversation_id, discord_thread_id=message.channel.id)
-            if response.get("interrupted"):
-                # This message displaced an in-flight task — clear the mapping so
-                # the original request's handler can't re-associate the thread and
-                # so the next message starts a fresh conversation.
-                remove_conversation_id(message.channel.id)
-            elif not conversation_id and response.get("conversation_id"):
-                set_conversation_id(message.channel.id, response["conversation_id"])
-            if "error" in response:
-                await message.channel.send(f"⚠️ {response['error']}")
-            elif response.get("result"):
-                await send_chunks(message.channel, response["result"])
-        except Exception as e:
-            await message.channel.send(f"⚠️ Error: {e}")
+        ok = await post_to_zipper(message.content, message.channel.id)
+        if not ok:
+            await message.channel.send("⚠️ Zipper disconnected")
         return
 
-    # message in the main channel — start new conversation + thread
+    # Message in the main channel — create a thread, then relay to zipper
     if message.channel.id != DISCORD_CHANNEL_ID:
         return
 
     thread = await message.create_thread(name=message.content[:50])
-
-    # Pre-create and immediately cache the conversation ID so that any
-    # interrupt message arriving while the long chat call is in-flight will
-    # find the correct conversation via get_conversation_id().
-    # Generate UUID locally and store it BEFORE any await — the interrupt's
-    # on_message can fire at any subsequent await point, but by then
-    # get_conversation_id(thread.id) will already return this UUID.
-    conv_id = str(uuid.uuid4())
-    set_conversation_id(thread.id, conv_id)
-
-    try:
-        async with thread.typing():
-            response = await chat(message.content, conv_id)
-        if "error" in response:
-            await thread.send(f"⚠️ {response['error']}")
-        elif response.get("result"):
-            await send_chunks(thread, response["result"])
-    except Exception as e:
-        await thread.send(f"⚠️ Error: {e}")
+    ok = await post_to_zipper(message.content, thread.id)
+    if not ok:
+        await thread.send("⚠️ Zipper disconnected")
 
 
 # --- Internal HTTP server ---
 
 
 async def handle_inject(request: web.Request) -> web.Response:
-    """Inject a synthetic message into a thread as if it came from a user."""
+    """Forward a synthetic prompt to zipper for a given thread."""
     try:
         body = await request.json()
         prompt = body.get("prompt", "").strip()
@@ -322,10 +244,7 @@ async def handle_inject(request: web.Request) -> web.Response:
         except (TypeError, ValueError):
             return web.json_response({"error": "thread_id must be an integer"}, status=400)
 
-        async def _do_inject():
-            await inject_prompt_to_thread(prompt, thread_id)
-
-        asyncio.create_task(_do_inject())
+        asyncio.create_task(inject_prompt_to_thread(prompt, thread_id))
         return web.json_response({"ok": True})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -374,8 +293,16 @@ async def handle_send(request: web.Request) -> web.Response:
             file_obj = discord.File(io.BytesIO(file_data), filename=file_name)
 
         try:
-            msg = await asyncio.wait_for(target.send(message if message else None, file=file_obj), timeout=60)
-            return web.json_response({"ok": True, "message_id": str(msg.id)})
+            last_msg = None
+            if message:
+                chunks = smart_split(message)
+                for i, chunk in enumerate(chunks):
+                    # attach file to the last chunk only
+                    f = file_obj if (i == len(chunks) - 1 and file_obj) else None
+                    last_msg = await asyncio.wait_for(target.send(chunk, file=f), timeout=60)
+            else:
+                last_msg = await asyncio.wait_for(target.send(file=file_obj), timeout=60)
+            return web.json_response({"ok": True, "message_id": str(last_msg.id)})
         except asyncio.TimeoutError:
             return web.json_response({"error": "send timed out"}, status=504)
         except Exception as e:

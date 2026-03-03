@@ -26,7 +26,7 @@ def notify_discord(message: str, thread_id: int = None):
         print(f"[utils] failed to notify discord: {e}")
 
 
-async def notify_discord_async(message: str):
+async def notify_discord_async(message: str, thread_id: int = None):
     """Send a message to Discord via the bot endpoint (async)."""
     loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, notify_discord, message)
+    await loop.run_in_executor(None, notify_discord, message, thread_id)

@@ -30,13 +30,6 @@ COMPACTION_THRESHOLD = 20  # messages before compaction
 # will exit silently at its next write-point check.
 _conversation_owners: dict[str, str] = {}
 
-# Set of conversation_ids currently being processed by an active run_task call.
-_active_conversations: set[str] = set()
-
-
-def is_conversation_active(conversation_id: str) -> bool:
-    return conversation_id in _active_conversations
-
 RATING_RE = re.compile(r'\{\{c:(\d),\s*d:(\d),\s*a:(\d)\}\}')
 
 
@@ -142,35 +135,31 @@ async def run_task(description: str, conversation_id: str) -> str:
     # for this conversation will see the mismatch at its next write-point and exit.
     owner_token = str(uuid.uuid4())
     _conversation_owners[conversation_id] = owner_token
-    _active_conversations.add(conversation_id)
 
-    try:
-        version = get_active_version(conversation_id)
-        messages = _sanitize_messages(version["messages"])
+    version = get_active_version(conversation_id)
+    messages = _sanitize_messages(version["messages"])
 
-        if len(messages) != len(version["messages"]):
-            save_messages(conversation_id, messages)
+    if len(messages) != len(version["messages"]):
+        save_messages(conversation_id, messages)
 
-        # append the new user message, then re-sanitize in case a concurrent task
-        # already appended one (producing consecutive user messages)
-        if not messages or messages[-1].get("content") != description:
-            append_message(conversation_id, "user", description)
-            messages = _sanitize_messages(get_active_version(conversation_id)["messages"])
-            save_messages(conversation_id, messages)
+    # append the new user message, then re-sanitize in case a concurrent task
+    # already appended one (producing consecutive user messages)
+    if not messages or messages[-1].get("content") != description:
+        append_message(conversation_id, "user", description)
+        messages = _sanitize_messages(get_active_version(conversation_id)["messages"])
+        save_messages(conversation_id, messages)
 
-        system = load_system_prompt()
-        summary = version.get("summary", "")
-        if summary:
-            system = f"{system}\n\n## Conversation History\n{summary}"
+    system = load_system_prompt()
+    summary = version.get("summary", "")
+    if summary:
+        system = f"{system}\n\n## Conversation History\n{summary}"
 
-        set_system_prompt(conversation_id, system)
+    set_system_prompt(conversation_id, system)
 
-        result = await llm_loop(conversation_id, messages, system, owner_token)
-        if _conversation_owners.get(conversation_id) == owner_token:
-            await maybe_compact(conversation_id)
-        return result
-    finally:
-        _active_conversations.discard(conversation_id)
+    result = await llm_loop(conversation_id, messages, system, owner_token)
+    if _conversation_owners.get(conversation_id) == owner_token:
+        await maybe_compact(conversation_id)
+    return result
 
 
 def serialize_content(content) -> list:

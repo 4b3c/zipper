@@ -5,21 +5,46 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import uvicorn
 
-from llm import run_task, is_conversation_active
+from llm import run_task
 from storage.conversations import create_conversation, conversation_exists
 from storage.tasks import get_due_tasks
-from utils.utils import notify_discord
+from utils.utils import notify_discord_async
 
 ROOT = Path(__file__).parent
 SCHEDULE_PATH = ROOT / "data" / "schedule.json"
 WAKE_LOG_PATH = ROOT / "data" / "wake_log.json"
 
 app = FastAPI()
+
+# Maps discord_thread_id → conversation_id.
+# Set synchronously (no await) when a new conversation is created for a thread,
+# so any concurrent message for the same thread finds the right conversation.
+_thread_conversations: dict[int, str] = {}
+
+
+def _init_thread_conversations():
+    """Populate the in-memory mapping from existing conversation metadata on disk."""
+    conversations_dir = ROOT / "data" / "conversations"
+    if not conversations_dir.exists():
+        return
+    for conv_dir in sorted(conversations_dir.iterdir()):
+        meta_path = conv_dir / "meta.json"
+        if not meta_path.exists():
+            continue
+        try:
+            meta = json.loads(meta_path.read_text())
+            thread_id = meta.get("discord_thread_id")
+            if thread_id:
+                _thread_conversations[int(thread_id)] = meta["id"]
+        except Exception:
+            pass
+
+_init_thread_conversations()
 
 
 @app.exception_handler(Exception)
@@ -71,27 +96,48 @@ def status():
     return {"status": "ok", "time": datetime.now().isoformat()}
 
 
+async def _discord_respond(prompt: str, conversation_id: str, discord_thread_id: int):
+    """Background task: run LLM and push result to discord via /send."""
+    result = await run_task(prompt, conversation_id)
+    if result:
+        await notify_discord_async(result, thread_id=discord_thread_id)
+
+
 @app.post("/chat")
 async def chat(req: ChatRequest):
+    if req.discord_thread_id:
+        # Discord source: resolve or create conversation synchronously (no await),
+        # then fire-and-forget so the bot gets an immediate acknowledgment.
+        if req.discord_thread_id in _thread_conversations:
+            conversation_id = _thread_conversations[req.discord_thread_id]
+        else:
+            conversation_id = create_conversation(
+                title=req.prompt[:60],
+                source="discord",
+                discord_thread_id=req.discord_thread_id,
+            )
+            _thread_conversations[req.discord_thread_id] = conversation_id  # sync
+
+        asyncio.create_task(_discord_respond(req.prompt, conversation_id, req.discord_thread_id))
+        return {"ok": True}
+
+    # Non-discord callers (API, cron, wake) get a synchronous response.
     if req.conversation_id:
         conversation_id = req.conversation_id
         if not conversation_exists(conversation_id):
             create_conversation(
                 title=req.prompt[:60],
                 source=req.source,
-                discord_thread_id=req.discord_thread_id,
                 conversation_id=conversation_id,
             )
     else:
         conversation_id = create_conversation(
             title=req.prompt[:60],
             source=req.source,
-            discord_thread_id=req.discord_thread_id,
         )
 
-    interrupted = is_conversation_active(conversation_id)
     result = await run_task(req.prompt, conversation_id)
-    return {"conversation_id": conversation_id, "result": result, "interrupted": interrupted}
+    return {"conversation_id": conversation_id, "result": result}
 
 
 @app.post("/wake")
@@ -137,7 +183,6 @@ async def wake(req: WakeRequest):
 
     due_tasks = get_due_tasks()
     if due_tasks:
-        import json
         task_lines = "\n".join(
             f"- [{t['id']}] {t['description']} (due {t['due_at'][:16].replace('T', ' ')})"
             for t in due_tasks
