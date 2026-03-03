@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 import io
+import uuid
 import aiohttp
 from aiohttp import ClientTimeout
 from aiohttp import web
@@ -98,6 +99,12 @@ def get_conversation_id(thread_id: int) -> str | None:
 def set_conversation_id(thread_id: int, conversation_id: str):
     threads = load_threads()
     threads[str(thread_id)] = conversation_id
+    save_threads(threads)
+
+
+def remove_conversation_id(thread_id: int):
+    threads = load_threads()
+    threads.pop(str(thread_id), None)
     save_threads(threads)
 
 
@@ -255,8 +262,13 @@ async def on_message(message: discord.Message):
         conversation_id = get_conversation_id(message.channel.id)
         try:
             async with message.channel.typing():
-                response = await chat(message.content, conversation_id)
-            if not conversation_id:
+                response = await chat(message.content, conversation_id, discord_thread_id=message.channel.id)
+            if response.get("interrupted"):
+                # This message displaced an in-flight task — clear the mapping so
+                # the original request's handler can't re-associate the thread and
+                # so the next message starts a fresh conversation.
+                remove_conversation_id(message.channel.id)
+            elif not conversation_id and response.get("conversation_id"):
                 set_conversation_id(message.channel.id, response["conversation_id"])
             if "error" in response:
                 await message.channel.send(f"⚠️ {response['error']}")
@@ -272,10 +284,18 @@ async def on_message(message: discord.Message):
 
     thread = await message.create_thread(name=message.content[:50])
 
+    # Pre-create and immediately cache the conversation ID so that any
+    # interrupt message arriving while the long chat call is in-flight will
+    # find the correct conversation via get_conversation_id().
+    # Generate UUID locally and store it BEFORE any await — the interrupt's
+    # on_message can fire at any subsequent await point, but by then
+    # get_conversation_id(thread.id) will already return this UUID.
+    conv_id = str(uuid.uuid4())
+    set_conversation_id(thread.id, conv_id)
+
     try:
-        async with message.channel.typing():
-            response = await chat(message.content, discord_thread_id=thread.id)
-        set_conversation_id(thread.id, response["conversation_id"])
+        async with thread.typing():
+            response = await chat(message.content, conv_id)
         if "error" in response:
             await thread.send(f"⚠️ {response['error']}")
         elif response.get("result"):

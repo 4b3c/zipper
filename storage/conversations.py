@@ -50,8 +50,13 @@ def _versions_path(conversation_id: str) -> Path:
     return _conversation_path(conversation_id) / "versions"
 
 
-def create_conversation(title: str, source: str, discord_thread_id: str = None) -> str:
-    conversation_id = _generate_conversation_id(title)
+def conversation_exists(conversation_id: str) -> bool:
+    return _conversation_path(conversation_id).exists()
+
+
+def create_conversation(title: str, source: str, discord_thread_id: str = None, conversation_id: str = None) -> str:
+    if conversation_id is None:
+        conversation_id = _generate_conversation_id(title)
     path = _conversation_path(conversation_id)
     path.mkdir(parents=True, exist_ok=True)
     _versions_path(conversation_id).mkdir(exist_ok=True)

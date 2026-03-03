@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import re
+import uuid
 from datetime import datetime
 
 import anthropic
@@ -23,8 +24,18 @@ client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
 COMPACTION_THRESHOLD = 20  # messages before compaction
 
-# Tasks added here are superseded — they should discard their output and exit
-_cancelled_tasks: set = set()
+# Maps conversation_id -> owner token for the currently active task.
+# When a new request claims a conversation, it writes its token here immediately
+# (before any awaits). The previous task loses ownership at that instant and
+# will exit silently at its next write-point check.
+_conversation_owners: dict[str, str] = {}
+
+# Set of conversation_ids currently being processed by an active run_task call.
+_active_conversations: set[str] = set()
+
+
+def is_conversation_active(conversation_id: str) -> bool:
+    return conversation_id in _active_conversations
 
 RATING_RE = re.compile(r'\{\{c:(\d),\s*d:(\d),\s*a:(\d)\}\}')
 
@@ -32,7 +43,7 @@ RATING_RE = re.compile(r'\{\{c:(\d),\s*d:(\d),\s*a:(\d)\}\}')
 def select_model(ratings: tuple | None) -> str:
     """Select model based on c+d+a rating from previous turn. None = first turn, default to Sonnet."""
     if ratings is None:
-        return "claude-sonnet-4-6"
+        return "claude-haiku-4-5-20251001"
     total = sum(ratings)
     if total > 11:
         return "claude-opus-4-6"
@@ -127,29 +138,39 @@ def _sanitize_messages(messages: list) -> list:
 
 
 async def run_task(description: str, conversation_id: str) -> str:
-    version = get_active_version(conversation_id)
-    messages = _sanitize_messages(version["messages"])
+    # Claim ownership immediately (no awaits before this) — any running task
+    # for this conversation will see the mismatch at its next write-point and exit.
+    owner_token = str(uuid.uuid4())
+    _conversation_owners[conversation_id] = owner_token
+    _active_conversations.add(conversation_id)
 
-    # persist sanitization back to storage before we append anything, so that
-    # llm_loop's storage reads stay clean throughout the whole session
-    if len(messages) != len(version["messages"]):
-        save_messages(conversation_id, messages)
+    try:
+        version = get_active_version(conversation_id)
+        messages = _sanitize_messages(version["messages"])
 
-    # append the task as a user message if not already present
-    if not messages or messages[-1]["content"] != description:
-        append_message(conversation_id, "user", description)
-        messages = get_active_version(conversation_id)["messages"]
+        if len(messages) != len(version["messages"]):
+            save_messages(conversation_id, messages)
 
-    system = load_system_prompt()
-    summary = version.get("summary", "")
-    if summary:
-        system = f"{system}\n\n## Conversation History\n{summary}"
+        # append the new user message, then re-sanitize in case a concurrent task
+        # already appended one (producing consecutive user messages)
+        if not messages or messages[-1].get("content") != description:
+            append_message(conversation_id, "user", description)
+            messages = _sanitize_messages(get_active_version(conversation_id)["messages"])
+            save_messages(conversation_id, messages)
 
-    set_system_prompt(conversation_id, system)
+        system = load_system_prompt()
+        summary = version.get("summary", "")
+        if summary:
+            system = f"{system}\n\n## Conversation History\n{summary}"
 
-    result = await llm_loop(conversation_id, messages, system)
-    await maybe_compact(conversation_id)
-    return result
+        set_system_prompt(conversation_id, system)
+
+        result = await llm_loop(conversation_id, messages, system, owner_token)
+        if _conversation_owners.get(conversation_id) == owner_token:
+            await maybe_compact(conversation_id)
+        return result
+    finally:
+        _active_conversations.discard(conversation_id)
 
 
 def serialize_content(content) -> list:
@@ -162,40 +183,53 @@ def serialize_content(content) -> list:
     return result
 
 
-async def llm_loop(conversation_id: str, messages: list, system: str) -> str:
-    ratings = None  # updated each turn from model's self-rating
-    current_task = asyncio.current_task()
+async def llm_loop(conversation_id: str, messages: list, system: str, owner_token: str) -> str:
+    ratings = None
+
+    def owns() -> bool:
+        return _conversation_owners.get(conversation_id) == owner_token
+
     while True:
-        # Check if this task has been superseded by a newer request
-        if current_task in _cancelled_tasks:
-            _cancelled_tasks.discard(current_task)
+        # Yield to the event loop so any pending request for this conversation
+        # can run run_task() and write a new ownership token before we check.
+        await asyncio.sleep(0)
+        if not owns():
             return ""
 
         model = select_model(ratings)
         print(f"[llm] {model} (ratings={ratings})")
-        try:
-            # Stream the response so we can check for cancellation between tokens
-            response = None
-            async with client.messages.stream(
-                model=model,
-                max_tokens=8096,
-                system=system,
-                tools=TOOLS,
-                messages=messages,
-            ) as stream:
-                async for _ in stream:
-                    # Check cancellation between every streamed event
-                    if current_task in _cancelled_tasks:
-                        _cancelled_tasks.discard(current_task)
-                        return ""
-                response = await stream.get_final_message()
-        except Exception as e:
-            pop_last_message(conversation_id)
-            raise
 
-        # Final check after stream completes (covers any gap after last event)
-        if current_task in _cancelled_tasks:
-            _cancelled_tasks.discard(current_task)
+        retry_delay = 5
+        while True:
+            try:
+                response = None
+                async with client.messages.stream(
+                    model=model,
+                    max_tokens=8096,
+                    system=system,
+                    tools=TOOLS,
+                    messages=messages,
+                ) as stream:
+                    async for _ in stream:
+                        if not owns():
+                            return ""
+                    response = await stream.get_final_message()
+                break  # success
+            except anthropic.RateLimitError:
+                if not owns():
+                    return ""
+                print(f"[llm] rate limited, retrying in {retry_delay}s")
+                await asyncio.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, 60)
+                if not owns():
+                    return ""
+                continue
+            except Exception as e:
+                if owns():
+                    pop_last_message(conversation_id)
+                raise
+
+        if not owns():
             return ""
 
         # Parse and strip ratings tag from text blocks before storing
@@ -228,11 +262,13 @@ async def llm_loop(conversation_id: str, messages: list, system: str) -> str:
 
                 start = datetime.now()
                 try:
-                    output = execute_tool(tool_name, tool_input, conversation_id)
+                    # Run synchronous tool in a thread pool so the event loop
+                    # remains free to process incoming requests (e.g. an interrupt
+                    # claiming ownership of this conversation) while tools execute.
+                    output = await asyncio.to_thread(execute_tool, tool_name, tool_input, conversation_id)
                     error = None
                     status = "ok"
                 except BreakLoop as e:
-                    # tool signalled an immediate stop — save what we have and exit
                     msg = str(e)
                     duration_ms = int((datetime.now() - start).total_seconds() * 1000)
                     append_trace_entry(conversation_id, {
@@ -243,6 +279,8 @@ async def llm_loop(conversation_id: str, messages: list, system: str) -> str:
                         "duration_ms": duration_ms,
                         "status": "ok",
                     })
+                    if not owns():
+                        return ""
                     tool_results.append({"type": "tool_result", "tool_use_id": tool_id, "content": msg})
                     append_message(conversation_id, "user", tool_results)
                     return ""
@@ -251,9 +289,7 @@ async def llm_loop(conversation_id: str, messages: list, system: str) -> str:
                     error = str(e)
                     status = "error"
 
-                duration_ms = int(
-                    (datetime.now() - start).total_seconds() * 1000
-                )
+                duration_ms = int((datetime.now() - start).total_seconds() * 1000)
 
                 append_trace_entry(conversation_id, {
                     "tool": tool_name,
@@ -264,11 +300,17 @@ async def llm_loop(conversation_id: str, messages: list, system: str) -> str:
                     "status": status,
                 })
 
+                if not owns():
+                    return ""
+
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": tool_id,
                     "content": output,
                 })
+
+            if not owns():
+                return ""
 
             append_message(conversation_id, "user", tool_results)
             messages = get_active_version(conversation_id)["messages"]
@@ -279,8 +321,7 @@ async def maybe_compact(conversation_id: str):
     if len(version["messages"]) < COMPACTION_THRESHOLD:
         return
 
-    # summarize old messages
-    old_messages = version["messages"][:-6]  # keep last 6 verbatim
+    old_messages = version["messages"][:-6]
     keep_messages = version["messages"][-6:]
 
     summary_response = await client.messages.create(
