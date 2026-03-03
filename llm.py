@@ -15,6 +15,7 @@ from storage.conversations import (
     create_version,
     get_conversation,
     set_system_prompt,
+    update_meta,
 )
 from storage.trace import append_trace_entry
 from tools import TOOLS, execute_tool
@@ -24,11 +25,13 @@ client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
 COMPACTION_THRESHOLD = 20  # messages before compaction
 
-# Maps conversation_id -> owner token for the currently active task.
-# When a new request claims a conversation, it writes its token here immediately
-# (before any awaits). The previous task loses ownership at that instant and
-# will exit silently at its next write-point check.
-_conversation_owners: dict[str, str] = {}
+
+def _owns(conversation_id: str, token: str) -> bool:
+    """Check whether token is still the active owner of the conversation."""
+    try:
+        return get_conversation(conversation_id).get("last_owner_token") == token
+    except Exception:
+        return False
 
 RATING_RE = re.compile(r'\{\{c:(\d),\s*d:(\d),\s*a:(\d)\}\}')
 
@@ -134,7 +137,7 @@ async def run_task(description: str, conversation_id: str) -> str:
     # Claim ownership immediately (no awaits before this) — any running task
     # for this conversation will see the mismatch at its next write-point and exit.
     owner_token = str(uuid.uuid4())
-    _conversation_owners[conversation_id] = owner_token
+    update_meta(conversation_id, last_owner_token=owner_token)
 
     version = get_active_version(conversation_id)
     messages = _sanitize_messages(version["messages"])
@@ -176,7 +179,7 @@ async def llm_loop(conversation_id: str, messages: list, system: str, owner_toke
     ratings = None
 
     def owns() -> bool:
-        return _conversation_owners.get(conversation_id) == owner_token
+        return _owns(conversation_id, owner_token)
 
     while True:
         # Yield to the event loop so any pending request for this conversation

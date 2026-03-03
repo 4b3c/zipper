@@ -147,6 +147,23 @@ def append_message(conversation_id: str, role: str, content):
     update_meta(conversation_id)
 
 
+def find_conversation_by_thread(discord_thread_id: int) -> str | None:
+    """Scan conversation meta files to find one matching the given discord thread ID."""
+    if not DATA_DIR.exists():
+        return None
+    for path in sorted(DATA_DIR.iterdir()):
+        meta_file = path / "meta.json"
+        if not meta_file.exists():
+            continue
+        try:
+            meta = json.loads(meta_file.read_text())
+            if meta.get("discord_thread_id") == discord_thread_id:
+                return meta["id"]
+        except Exception:
+            pass
+    return None
+
+
 def list_conversations() -> list:
     if not DATA_DIR.exists():
         return []

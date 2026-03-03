@@ -89,10 +89,9 @@ async def post_to_zipper(prompt: str, discord_thread_id: int) -> bool:
     try:
         timeout = ClientTimeout(total=10)
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(f"{ZIPPER_URL}/chat", json={
+            async with session.post(f"{ZIPPER_URL}/discord", json={
                 "prompt": prompt,
                 "discord_thread_id": discord_thread_id,
-                "source": "discord",
             }) as resp:
                 return resp.status == 200
     except Exception as e:

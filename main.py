@@ -11,7 +11,7 @@ from pydantic import BaseModel
 import uvicorn
 
 from llm import run_task
-from storage.conversations import create_conversation, conversation_exists
+from storage.conversations import create_conversation, conversation_exists, find_conversation_by_thread
 from storage.tasks import get_due_tasks
 from utils.utils import notify_discord_async
 
@@ -20,31 +20,6 @@ SCHEDULE_PATH = ROOT / "data" / "schedule.json"
 WAKE_LOG_PATH = ROOT / "data" / "wake_log.json"
 
 app = FastAPI()
-
-# Maps discord_thread_id → conversation_id.
-# Set synchronously (no await) when a new conversation is created for a thread,
-# so any concurrent message for the same thread finds the right conversation.
-_thread_conversations: dict[int, str] = {}
-
-
-def _init_thread_conversations():
-    """Populate the in-memory mapping from existing conversation metadata on disk."""
-    conversations_dir = ROOT / "data" / "conversations"
-    if not conversations_dir.exists():
-        return
-    for conv_dir in sorted(conversations_dir.iterdir()):
-        meta_path = conv_dir / "meta.json"
-        if not meta_path.exists():
-            continue
-        try:
-            meta = json.loads(meta_path.read_text())
-            thread_id = meta.get("discord_thread_id")
-            if thread_id:
-                _thread_conversations[int(thread_id)] = meta["id"]
-        except Exception:
-            pass
-
-_init_thread_conversations()
 
 
 @app.exception_handler(Exception)
@@ -59,7 +34,10 @@ class ChatRequest(BaseModel):
     prompt: str
     conversation_id: str | None = None
     source: str = "api"
-    discord_thread_id: int | None = None
+
+class DiscordRequest(BaseModel):
+    prompt: str
+    discord_thread_id: int
 
 class WakeRequest(BaseModel):
     time: str  # HH:MM
@@ -103,25 +81,23 @@ async def _discord_respond(prompt: str, conversation_id: str, discord_thread_id:
         await notify_discord_async(result, thread_id=discord_thread_id)
 
 
+@app.post("/discord")
+async def discord_chat(req: DiscordRequest):
+    """Discord entry point: resolve or create conversation, then fire-and-forget."""
+    conversation_id = find_conversation_by_thread(req.discord_thread_id)
+    if not conversation_id:
+        conversation_id = create_conversation(
+            title=req.prompt[:60],
+            source="discord",
+            discord_thread_id=req.discord_thread_id,
+        )
+    asyncio.create_task(_discord_respond(req.prompt, conversation_id, req.discord_thread_id))
+    return {"ok": True}
+
+
 @app.post("/chat")
 async def chat(req: ChatRequest):
-    if req.discord_thread_id:
-        # Discord source: resolve or create conversation synchronously (no await),
-        # then fire-and-forget so the bot gets an immediate acknowledgment.
-        if req.discord_thread_id in _thread_conversations:
-            conversation_id = _thread_conversations[req.discord_thread_id]
-        else:
-            conversation_id = create_conversation(
-                title=req.prompt[:60],
-                source="discord",
-                discord_thread_id=req.discord_thread_id,
-            )
-            _thread_conversations[req.discord_thread_id] = conversation_id  # sync
-
-        asyncio.create_task(_discord_respond(req.prompt, conversation_id, req.discord_thread_id))
-        return {"ok": True}
-
-    # Non-discord callers (API, cron, wake) get a synchronous response.
+    """Synchronous chat for API and cron callers."""
     if req.conversation_id:
         conversation_id = req.conversation_id
         if not conversation_exists(conversation_id):
@@ -135,7 +111,6 @@ async def chat(req: ChatRequest):
             title=req.prompt[:60],
             source=req.source,
         )
-
     result = await run_task(req.prompt, conversation_id)
     return {"conversation_id": conversation_id, "result": result}
 
