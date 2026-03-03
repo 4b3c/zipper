@@ -19,7 +19,7 @@ from storage.trace import append_trace_entry
 from tools import TOOLS, execute_tool
 from tools.signals import BreakLoop
 
-client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
 COMPACTION_THRESHOLD = 20  # messages before compaction
 
@@ -148,7 +148,7 @@ async def run_task(description: str, conversation_id: str) -> str:
     set_system_prompt(conversation_id, system)
 
     result = await llm_loop(conversation_id, messages, system)
-    maybe_compact(conversation_id)
+    await maybe_compact(conversation_id)
     return result
 
 
@@ -174,21 +174,26 @@ async def llm_loop(conversation_id: str, messages: list, system: str) -> str:
         model = select_model(ratings)
         print(f"[llm] {model} (ratings={ratings})")
         try:
-            # Run blocking API call in a thread pool to avoid blocking the event loop
-            response = await asyncio.to_thread(
-                client.messages.create,
+            # Stream the response so we can check for cancellation between tokens
+            response = None
+            async with client.messages.stream(
                 model=model,
                 max_tokens=8096,
                 system=system,
                 tools=TOOLS,
                 messages=messages,
-            )
+            ) as stream:
+                async for _ in stream:
+                    # Check cancellation between every streamed event
+                    if current_task in _cancelled_tasks:
+                        _cancelled_tasks.discard(current_task)
+                        return ""
+                response = await stream.get_final_message()
         except Exception as e:
-            # roll back the last user message so the conversation stays clean
             pop_last_message(conversation_id)
             raise
 
-        # Check again after API call returns — new request may have arrived while thread ran
+        # Final check after stream completes (covers any gap after last event)
         if current_task in _cancelled_tasks:
             _cancelled_tasks.discard(current_task)
             return ""
@@ -269,7 +274,7 @@ async def llm_loop(conversation_id: str, messages: list, system: str) -> str:
             messages = get_active_version(conversation_id)["messages"]
 
 
-def maybe_compact(conversation_id: str):
+async def maybe_compact(conversation_id: str):
     version = get_active_version(conversation_id)
     if len(version["messages"]) < COMPACTION_THRESHOLD:
         return
@@ -278,7 +283,7 @@ def maybe_compact(conversation_id: str):
     old_messages = version["messages"][:-6]  # keep last 6 verbatim
     keep_messages = version["messages"][-6:]
 
-    summary_response = client.messages.create(
+    summary_response = await client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=1024,
         system="Summarize the following conversation concisely, preserving key decisions, actions taken, and outcomes.",
