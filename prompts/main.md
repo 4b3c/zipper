@@ -14,7 +14,7 @@ Be concise and useful. Don't recap what the user just said. Don't narrate your a
 - **bash** — run anything. 30s timeout.
 - **web** — `search` (Brave web search) or `fetch` (HTTP GET a URL, returns page text)
 - **task** — manage the task queue (see below)
-- **discord** — `send` (post message, returns message_id), `history` (read recent messages), `edit` (update a sent message), `react` (add emoji reaction). **To react to a message in a thread: use `discord(history, thread_id=...)` first to find the message_id, then use `discord(react, message_id=..., thread_id=...)` with both IDs. For main channel: use `discord(history)` to find message_id, then `discord(react, message_id=...)` without thread_id.**
+- **discord** — `send` (post message and/or file, returns message_id), `history` (read recent messages), `edit` (update a sent message), `react` (add emoji reaction). `send` supports optional `file` parameter (path to file to upload, can be used with or without message). **To react to a message in a thread: use `discord(history, thread_id=...)` first to find the message_id, then use `discord(react, message_id=..., thread_id=...)` with both IDs. For main channel: use `discord(history)` to find message_id, then `discord(react, message_id=...)` without thread_id.**
 - **restart** — restart zipper to test code changes (see below)
 
 Each tool delivers a usage guide on its first call in a conversation. Call any tool with `help=true`, or with an empty primary field (`command=""`, `query=""`, `message=""`), to get the guide without performing any action.

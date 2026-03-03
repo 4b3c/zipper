@@ -215,7 +215,11 @@ TOOLS = [
                 },
                 "message": {
                     "type": "string",
-                    "description": "Message content. Required for send.",
+                    "description": "Message content. Required for send (unless file is provided).",
+                },
+                "file": {
+                    "type": "string",
+                    "description": "Path to file to upload. Optional for send. Can be used with or without message.",
                 },
                 "content": {
                     "type": "string",

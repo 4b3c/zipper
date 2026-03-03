@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import io
 import aiohttp
 from aiohttp import ClientTimeout
 from aiohttp import web
@@ -260,22 +261,56 @@ async def handle_inject(request: web.Request) -> web.Response:
 
 
 async def handle_send(request: web.Request) -> web.Response:
-    """Send a message synchronously and return its ID."""
+    """Send a message and/or file synchronously and return its ID."""
     try:
-        body = await request.json()
-        message = body.get("message", "").strip()
-        if not message:
-            return web.json_response({"error": "message required"}, status=400)
+        # Handle both JSON and multipart requests
+        if request.content_type and 'multipart' in request.content_type:
+            reader = await request.multipart()
+            fields = {}
+            file_data = None
+            file_name = "file"
+            async for field in reader:
+                if field.name == "file":
+                    file_name = field.filename or "file"
+                    file_data = await field.read()
+                else:
+                    fields[field.name] = await field.text()
+            message = fields.get("message", "").strip()
+            thread_id = fields.get("thread_id")
+        else:
+            body = await request.json()
+            message = body.get("message", "").strip()
+            thread_id = body.get("thread_id")
+            file_data = None
+            file_name = "file"
+
+        if not message and not file_data:
+            return web.json_response({"error": "message or file required"}, status=400)
         if not client.is_ready():
             return web.json_response({"error": "discord client not ready"}, status=503)
-        thread_id = body.get("thread_id")
+
         target = client.get_channel(int(thread_id)) if thread_id else client.get_channel(DISCORD_CHANNEL_ID)
         if target is None:
             return web.json_response({"error": "channel not found"}, status=404)
-        msg = await target.send(message)
-        return web.json_response({"ok": True, "message_id": str(msg.id)})
+
+        # Prepare file attachment if provided
+        file_obj = None
+        if file_data:
+            if len(file_data) > 8 * 1024 * 1024:  # 8MB Discord limit for free servers
+                return web.json_response({
+                    "error": f"file too large: {len(file_data) / 1024 / 1024:.1f}MB (Discord limit: 8MB)"
+                }, status=400)
+            file_obj = discord.File(io.BytesIO(file_data), filename=file_name)
+
+        try:
+            msg = await asyncio.wait_for(target.send(message if message else None, file=file_obj), timeout=60)
+            return web.json_response({"ok": True, "message_id": str(msg.id)})
+        except asyncio.TimeoutError:
+            return web.json_response({"error": "send timed out"}, status=504)
+        except Exception as e:
+            return web.json_response({"error": f"send failed: {type(e).__name__}: {str(e)}"}, status=500)
     except Exception as e:
-        return web.json_response({"error": str(e)}, status=500)
+        return web.json_response({"error": f"send error: {str(e)}"}, status=500)
 
 
 async def handle_history(request: web.Request) -> web.Response:

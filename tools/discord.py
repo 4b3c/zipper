@@ -1,5 +1,7 @@
 import json
 import urllib.request
+from pathlib import Path
+import requests
 
 BOT_URL = "http://127.0.0.1:4200"
 
@@ -22,17 +24,41 @@ def _post(endpoint: str, payload: dict) -> dict:
         return {"error": str(e)}
 
 
+def _post_multipart(endpoint: str, files: dict, data: dict = None) -> dict:
+    """Send multipart/form-data request (for file uploads) using requests library."""
+    try:
+        resp = requests.post(f"{BOT_URL}/{endpoint}", files=files, data=data, timeout=60)
+        if resp.status_code == 200:
+            return resp.json()
+        else:
+            return {"error": f"HTTP {resp.status_code}: {resp.text}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 def run(args: dict) -> str:
     mode = args.get("mode")
 
     if mode == "send":
         message = args.get("message", "").strip()
-        if not message:
-            return "error: message is required"
-        payload = {"message": message}
-        if args.get("thread_id"):
-            payload["thread_id"] = args["thread_id"]
-        resp = _post("send", payload)
+        file_path = args.get("file", "").strip()
+
+        if not message and not file_path:
+            return "error: message or file is required"
+
+        if file_path:
+            file_content = Path(file_path).read_bytes()
+            files = {"file": (Path(file_path).name, file_content)}
+            data = {"message": message}
+            if args.get("thread_id"):
+                data["thread_id"] = args["thread_id"]
+            resp = _post_multipart("send", files, data)
+        else:
+            payload = {"message": message}
+            if args.get("thread_id"):
+                payload["thread_id"] = args["thread_id"]
+            resp = _post("send", payload)
+        
         if "error" in resp:
             return f"error: {resp['error']}"
         return f"ok: sent (message_id: {resp.get('message_id')})"

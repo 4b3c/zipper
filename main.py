@@ -142,7 +142,8 @@ async def wake(req: WakeRequest):
         f"You have woken up for your scheduled check-in at {slot}. "
         f"Today is {now.strftime('%A, %B %d %Y')}. "
         f"Review your task queue, handle anything pending, and do anything useful. "
-        f"When done, send a brief summary to Discord using the discord tool."
+        f"Only send a Discord message if there is something meaningful to report (completed tasks, errors, warnings, or items needing attention). "
+        f"If everything is normal and there's nothing unusual to report, do not send a message."
         f"{task_section}"
     )
     conversation_id = create_conversation(title=f"Check-in {slot}", source="cron")
