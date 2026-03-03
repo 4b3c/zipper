@@ -14,14 +14,16 @@ Zipper is a self-building, self-repairing AI assistant that runs 24/7 on a VPS. 
 - **Cron** hits the `/wake` endpoint at scheduled times defined in `data/schedule.json`
 
 ### Entry Points
-- `main.py` — FastAPI server, exposes `/chat`, `/wake`, `/status`
-- `discord_bot.py` — Discord bot, maps threads to conversations
+- `main.py` — FastAPI server, exposes `/chat`, `/discord`, `/wake`, `/status`
+- `discord_bot.py` — thin relay: creates Discord threads, forwards messages to zipper's `/discord` endpoint, serves HTTP API (port 4200) for zipper to push responses back
 - `run.py` — dev tool, POSTs to `/chat` from CLI
-- `setup_cron.py` — generates crontab entries from `data/schedule.json` (daily recurring + date-pinned oneshot entries). Run after any schedule change.
+- `utils/setup_cron.py` — generates crontab entries from `data/schedule.json` (daily recurring + date-pinned oneshot entries). Run after any schedule change.
+- `utils/restart_watcher.py` — spawned by `tools/restart.py` after a zipper restart; polls `/status`, resumes the conversation via `/chat`, handles rollback on crash
 
 ### LLM Loop (`llm.py`)
 - Calls Claude, parses tool calls, executes them, loops until `end_turn`
-- Model routing by keyword: `opus` → Opus, `sonnet` → Sonnet, default → Haiku
+- Model routing by self-rating: Zipper appends `{{c:X, d:X, a:X}}` to each response; total score picks the next model (>11=Opus, >6=Sonnet, else Haiku)
+- Interrupt system: each `run_task` call writes a `last_owner_token` to the conversation meta synchronously (before any await). Concurrent tasks check ownership at every yield point and exit silently if they lost it.
 - Validates messages before each API call to prevent corrupted tool_result/tool_use pairs
 - Rolls back last message on API failure to keep conversation clean
 - Compacts conversation after `COMPACTION_THRESHOLD` messages
@@ -46,7 +48,7 @@ All data is JSON, no database.
 data/
 ├── conversations/
 │   └── {id}/
-│       ├── meta.json        # title, source, status, summary, key_points
+│       ├── meta.json        # title, source, discord_thread_id, last_owner_token, summary
 │       ├── trace.json       # tool call log (tool, args, output, error, duration)
 │       └── versions/
 │           ├── 0.json       # messages + system_prompt + rolling summary
@@ -55,7 +57,6 @@ data/
 │   └── queue.json           # pending/running/done/failed tasks
 ├── schedule.json            # daily wakeup times + oneshot timers
 ├── wake_log.json            # tracks which daily slots fired today
-├── discord_threads.json     # discord thread_id → conversation_id
 └── memory.json              # persistent key-value store
 ```
 
@@ -86,10 +87,12 @@ DISCORD_CHANNEL_ID=
 ## Key Design Decisions
 
 - Zipper runs on the host (not Docker) so `bash` tool has full VPS access
-- Discord threads map 1:1 to conversations — replying in a thread continues the same conversation
-- New Discord message in the main channel = new conversation + new thread
+- Discord threads map 1:1 to conversations — replying in a thread continues the same conversation. The mapping is stored in each conversation's `meta.json` (`discord_thread_id`); `find_conversation_by_thread()` scans meta files to look it up.
+- New Discord message in the main channel = new conversation + new thread (discord_bot creates the thread, zipper creates the conversation)
+- discord_bot is a thin relay: it only creates threads and forwards messages. All conversation logic lives in zipper. Zipper pushes responses back via `/send`.
+- Interrupt system: new message to an active conversation writes a new `last_owner_token` to meta. The displaced task sees the mismatch at its next yield and exits silently.
 - Cron wakeups hit `/wake` endpoint with a `time` field; zipper builds the check-in prompt and is instructed to send a Discord summary itself when done
-- Oneshot timers in `schedule.json` are removed after firing; their cron entries are cleaned up next time `setup_cron.py` runs
+- Oneshot timers in `schedule.json` are removed after firing; their cron entries are cleaned up next time `utils/setup_cron.py` runs
 - `pop_last_message` rolls back conversation on API failure to prevent corruption
 - Messages are validated before each API call to strip orphaned `tool_result` blocks
 

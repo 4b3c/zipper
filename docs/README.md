@@ -14,8 +14,8 @@ Zipper can:
 ## Architecture
 
 **Entry Points:**
-- `main.py` — FastAPI server on port 4199. Routes: `/chat`, `/wake`, `/status`
-- `discord_bot.py` — Discord bot on port 4200. Maps threads to conversations
+- `main.py` — FastAPI server on port 4199. Routes: `/chat`, `/discord`, `/wake`, `/status`
+- `discord_bot.py` — Discord bot on port 4200. Thin relay: creates threads, forwards messages to zipper, sends zipper's responses back to Discord.
 - `run.py` — CLI dev tool for testing
 
 **Core Loop:**
@@ -54,7 +54,7 @@ Post in a thread in the configured Discord server. Zipper will reply in the same
 
 **Task Queue** — Recurring tasks survive restarts. Mark a task done with `task(update, status="done")` and the next occurrence is created automatically
 
-**Model Routing** — Include "opus", "sonnet", or "haiku" in your message to pick which Claude model to use
+**Model Routing** — Zipper self-rates each response with complexity/difficulty/ambiguity scores. The total determines the model for the next turn: high scores use Opus, medium use Sonnet, low use Haiku.
 
 ## Development
 

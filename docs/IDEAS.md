@@ -10,8 +10,8 @@ Three pillars: **orientation** (understanding its own state before acting), **pr
 
 ### Tier 1: Actually blocking strong self-development
 
-**1. Default model is Haiku**
-`llm.py:33` — anything without the word "opus" or "sonnet" in the user message uses Haiku. Haiku is being used for code edits. This is a serious capability ceiling. Self-development tasks should default to Sonnet, with Haiku only for trivial retrieval work. The keyword-matching approach (`if "opus" in last.lower()`) is also fragile — "music made with opus software" would trigger Opus.
+~~**1. Default model is Haiku**
+`llm.py:33` — anything without the word "opus" or "sonnet" in the user message uses Haiku. Haiku is being used for code edits. This is a serious capability ceiling. Self-development tasks should default to Sonnet, with Haiku only for trivial retrieval work. The keyword-matching approach (`if "opus" in last.lower()`) is also fragile — "music made with opus software" would trigger Opus.~~ ✓ done — replaced with self-rating system: Zipper appends `{{c:X, d:X, a:X}}` to each response; total score selects the next model (>11=Opus, >6=Sonnet, else Haiku). First turn still uses Haiku.
 
 ~~**2. No grep / search-in-files tool**
 The `file` tool can only `list` (one flat directory) or `read` (one file). There's no way to search across files for a symbol, function name, or pattern. Every cross-file navigation requires knowing to use bash with the right flags, and the agent has to rediscover this every session. This is the single biggest friction point in codebase navigation.~~ ✓ done
@@ -57,7 +57,7 @@ If Zipper ever needs to install dependencies, run a full test suite, or do a bui
 
 | # | What | Why it unblocks |
 |---|------|----------------|
-| 1 | **Upgrade default model to Sonnet** | Every code edit is currently Haiku-quality |
+| ~~1~~ | ~~**Upgrade default model to Sonnet**~~ | ✓ done — self-rating routes to Opus/Sonnet/Haiku dynamically |
 | ~~2~~ | ~~**`grep` / search-in-files tool**~~ | ✓ done |
 | 3 | **Auto-inject memory + codebase map into system prompt** | Eliminates cold-start rediscovery every session |
 | ~~4~~ | ~~**Strengthen `file edit`** — uniqueness check, return diff~~ | ✓ done |

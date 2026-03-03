@@ -125,7 +125,7 @@ def get_thread_id_for_conversation(conversation_id: str) -> int | None:
         return None
 
 
-async def inject_prompt_to_thread(prompt: str, thread_id: int, conversation_id: str | None = None) -> bool:
+async def inject_prompt_to_thread(prompt: str, thread_id: int) -> bool:
     """Send a synthetic prompt to zipper for a given thread."""
     ok = await post_to_zipper(prompt, thread_id)
     if not ok:
