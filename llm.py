@@ -115,7 +115,7 @@ def _sanitize_messages(messages: list) -> list:
     while i < len(msgs) - 1:
         if msgs[i].get("role") == "user" and not _is_tool_result_message(msgs[i]) \
                 and msgs[i + 1].get("role") == "user":
-            msgs.insert(i + 1, {"role": "assistant", "content": [{"type": "text", "text": ""}]})
+            msgs.insert(i + 1, {"role": "assistant", "content": [{"type": "text", "text": "[interrupted]"}]})
         i += 1
 
     # fix consecutive assistant messages: merge into one
@@ -160,7 +160,7 @@ async def run_task(description: str, conversation_id: str) -> str:
     set_system_prompt(conversation_id, system)
 
     result = await llm_loop(conversation_id, messages, system, owner_token)
-    if _conversation_owners.get(conversation_id) == owner_token:
+    if _owns(conversation_id, owner_token):
         await maybe_compact(conversation_id)
     return result
 
@@ -168,7 +168,15 @@ async def run_task(description: str, conversation_id: str) -> str:
 def serialize_content(content) -> list:
     result = []
     for block in content:
-        if hasattr(block, "model_dump"):
+        if isinstance(block, dict):
+            result.append(block)
+            continue
+        t = getattr(block, "type", None)
+        if t == "text":
+            result.append({"type": "text", "text": block.text})
+        elif t == "tool_use":
+            result.append({"type": "tool_use", "id": block.id, "name": block.name, "input": block.input})
+        elif hasattr(block, "model_dump"):
             result.append(block.model_dump())
         else:
             result.append(block)
