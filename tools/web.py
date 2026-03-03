@@ -104,3 +104,36 @@ def run(args: dict) -> str:
         return _fetch(url)
 
     return f"error: unknown mode: {mode}"
+
+
+SCHEMA = {
+    "name": "web",
+    "description": "Search the web or fetch a URL. search mode queries Brave Search; fetch mode HTTP GETs a URL and returns the page text.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "mode": {
+                "type": "string",
+                "enum": ["search", "fetch"],
+                "description": "search — Brave web search. fetch — HTTP GET a URL, returns page text with HTML stripped.",
+            },
+            "query": {
+                "type": "string",
+                "description": "Search query. Required for search mode.",
+            },
+            "url": {
+                "type": "string",
+                "description": "URL to fetch. Required for fetch mode.",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Number of search results to return. Default 5. Search mode only.",
+            },
+            "help": {
+                "type": "boolean",
+                "description": "Return usage guide for this tool without performing any action.",
+            },
+        },
+        "required": ["mode"],
+    },
+}

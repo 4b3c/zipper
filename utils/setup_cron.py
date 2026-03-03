@@ -4,23 +4,21 @@ Each entry hits the zipper /wake endpoint at the scheduled time.
 
 Usage: python setup_cron.py
 """
-import json
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 
-ROOT = Path(__file__).parent.parent  # Go up from utils/ to app root
-SCHEDULE_PATH = ROOT / "data" / "schedule.json"
-ZIPPER_URL = "http://localhost:4199"
+# Ensure app root is on sys.path when run as a standalone script
+_here = Path(__file__).resolve().parent.parent
+if str(_here) not in sys.path:
+    sys.path.insert(0, str(_here))
+
+from utils.constants import ZIPPER_URL
+from storage.schedule import load_schedule
+
+ROOT = Path(__file__).parent.parent
 LOG = ROOT / "logs" / "cron.log"
-
-
-def load_schedule() -> dict:
-    if not SCHEDULE_PATH.exists():
-        print(f"[setup] no schedule file found at {SCHEDULE_PATH}")
-        return {"daily": [], "oneshot": []}
-    return json.loads(SCHEDULE_PATH.read_text())
 
 
 def generate_daily_entries(daily_times: list[str]) -> list[str]:

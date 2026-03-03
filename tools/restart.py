@@ -1,9 +1,10 @@
 import subprocess
-import json
-import urllib.request
-import urllib.error
+import sys
+from pathlib import Path
 
 from tools.signals import BreakLoop
+
+ROOT = Path(__file__).parent.parent
 
 
 def run(args: dict, conversation_id: str) -> str:
@@ -13,61 +14,16 @@ def run(args: dict, conversation_id: str) -> str:
         if not conversation_id:
             return "error: no conversation_id available, cannot resume after restart"
 
-        # register watchdog on the Discord bot process (survives zipper restart)
-        bot_url = "http://127.0.0.1:4200"
-        payload = json.dumps({"conversation_id": conversation_id}).encode()
-        req = urllib.request.Request(
-            f"{bot_url}/watch-restart",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
+        # Spawn restart_watcher.py as a detached subprocess — it survives the zipper restart,
+        # monitors recovery, and resumes this conversation via /chat.
+        watcher = ROOT / "utils" / "restart_watcher.py"
+        subprocess.Popen(
+            [sys.executable, str(watcher), conversation_id, str(ROOT)],
+            close_fds=True,
+            start_new_session=True,
         )
-        registration_error = None
-        registration_response = None
-        try:
-            with urllib.request.urlopen(req, timeout=5) as r:
-                if r.status != 200:
-                    raise RuntimeError(f"watchdog registration returned HTTP {r.status}")
-                raw = r.read()
-                registration_response = json.loads(raw or b"{}")
-                if not isinstance(registration_response, dict):
-                    raise RuntimeError("watchdog registration returned non-object JSON")
-                if registration_response.get("ok") is not True:
-                    raise RuntimeError(
-                        f"watchdog registration rejected request: {json.dumps(registration_response)}"
-                    )
-                if str(registration_response.get("conversation_id", "")).strip() != conversation_id:
-                    raise RuntimeError(
-                        "watchdog registration returned mismatched conversation_id"
-                    )
-                thread_id = registration_response.get("thread_id")
-                if thread_id is None:
-                    raise RuntimeError("watchdog registration returned no thread_id")
-                try:
-                    int(thread_id)
-                except (TypeError, ValueError):
-                    raise RuntimeError("watchdog registration returned invalid thread_id")
-        except urllib.error.HTTPError as e:
-            body = ""
-            try:
-                body = e.read().decode("utf-8", errors="replace").strip()
-            except Exception:
-                pass
-            if body:
-                registration_error = f"HTTP {e.code}: {body}"
-            else:
-                registration_error = f"HTTP {e.code}"
-        except Exception as e:
-            registration_error = str(e)
 
-        # Never restart unless watchdog acknowledged the request meaningfully.
-        if registration_error:
-            return (
-                "error: restart aborted because watchdog did not acknowledge the restart request. "
-                f"{registration_error}"
-            )
-
-        # trigger the restart — this process will die here
+        # Trigger the restart — this process will die here
         subprocess.Popen(
             ["systemctl", "restart", "zipper"],
             close_fds=True,
@@ -92,3 +48,30 @@ def run(args: dict, conversation_id: str) -> str:
         return "dashboard not yet implemented"
 
     return f"error: unknown mode: {mode}"
+
+
+SCHEMA = {
+    "name": "restart",
+    "description": "Restart a zipper service component.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "mode": {
+                "type": "string",
+                "enum": ["zipper", "discord", "dashboard"],
+                "description": (
+                    "zipper — restart the main zipper process via systemctl. "
+                    "Spawns a watcher that resumes this conversation with the result. "
+                    "If startup fails, code changes are stashed and previous state is restored. "
+                    "discord — restart the zipper-discord systemd user service synchronously. "
+                    "dashboard — restart the dashboard (not yet implemented)."
+                ),
+            },
+            "help": {
+                "type": "boolean",
+                "description": "Return usage guide for this tool without performing any action.",
+            },
+        },
+        "required": ["mode"],
+    },
+}

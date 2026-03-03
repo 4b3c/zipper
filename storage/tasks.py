@@ -3,21 +3,15 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from utils.text import title_to_slug
+from storage.schedule import add_oneshot
+
 WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-
-
-def _title_to_slug(title: str) -> str:
-    slug = title.lower()
-    slug = re.sub(r"[^a-z0-9\s-]", "", slug)
-    slug = re.sub(r"\s+", "-", slug)
-    slug = re.sub(r"-+", "-", slug)
-    slug = slug.strip("-")
-    return (slug[:50].rstrip("-")) or "task"
 
 
 def _generate_task_id(title: str, existing: list) -> str:
     existing_ids = {t["id"] for t in existing}
-    slug = _title_to_slug(title)
+    slug = title_to_slug(title, fallback="task", max_length=50)
     candidate = slug
     counter = 1
     while candidate in existing_ids:
@@ -50,10 +44,10 @@ def _next_due(schedule: str, from_dt: datetime) -> datetime | None:
 
     return None
 
+
 ROOT = Path(__file__).parent.parent
 QUEUE_PATH = ROOT / "data" / "tasks" / "queue.json"
 ARCHIVE_PATH = ROOT / "data" / "tasks" / "archive.json"
-SCHEDULE_PATH = ROOT / "data" / "schedule.json"
 
 
 def _archive(task: dict):
@@ -65,25 +59,6 @@ def _archive(task: dict):
     archive.append(task)
     ARCHIVE_PATH.parent.mkdir(parents=True, exist_ok=True)
     ARCHIVE_PATH.write_text(json.dumps(archive, indent=2))
-
-
-def _add_oneshot(title: str, at: datetime):
-    if SCHEDULE_PATH.exists():
-        schedule = json.loads(SCHEDULE_PATH.read_text())
-    else:
-        schedule = {"daily": [], "oneshot": []}
-
-    oneshot_id = _title_to_slug(title) + "-" + at.strftime("%Y%m%dT%H%M")
-    # avoid duplicates
-    if any(e["id"] == oneshot_id for e in schedule.get("oneshot", [])):
-        return
-
-    schedule.setdefault("oneshot", []).append({
-        "id": oneshot_id,
-        "at": at.isoformat(),
-        "prompt": f"Check for due tasks and work through them.",
-    })
-    SCHEDULE_PATH.write_text(json.dumps(schedule, indent=2))
 
 
 def _load() -> list:
@@ -153,7 +128,7 @@ def update_task_status(task_id: str, status: str, result: str = None, error: str
                 due_at=next_dt.isoformat(),
                 schedule=completed_task["schedule"],
             )
-            _add_oneshot(completed_task["title"], next_dt)
+            add_oneshot(completed_task["title"], next_dt)
 
 
 def patch_task(task_id: str, fields: dict):

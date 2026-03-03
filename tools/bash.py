@@ -28,3 +28,27 @@ def run(args: dict) -> str:
         return f"error: command timed out after {timeout}s"
     except Exception as e:
         return f"error: {e}"
+
+
+SCHEMA = {
+    "name": "bash",
+    "description": "Execute a shell command. Returns stdout and stderr.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "command": {
+                "type": "string",
+                "description": "Shell command to run.",
+            },
+            "timeout": {
+                "type": "integer",
+                "description": "Timeout in seconds. Default 30.",
+            },
+            "help": {
+                "type": "boolean",
+                "description": "Return usage guide for this tool without performing any action.",
+            },
+        },
+        "required": ["command"],
+    },
+}

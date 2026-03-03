@@ -93,3 +93,67 @@ def run(args: dict) -> str:
         return json.dumps(tasks, indent=2)
 
     return f"error: unknown mode: {mode}"
+
+
+SCHEMA = {
+    "name": "task",
+    "description": "Manage the task queue. Use this to create, list, update, and complete tasks.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "mode": {
+                "type": "string",
+                "enum": ["list", "create", "update", "due", "archive"],
+                "description": (
+                    "list — all tasks, optionally filtered by status. "
+                    "create — add a new task. "
+                    "update — patch any fields on an existing task (title, description, due_at, schedule, status, result, error). Only id is required. "
+                    "due — tasks that are due now (pending and past due_at). "
+                    "archive — completed/failed tasks, most recent first."
+                ),
+            },
+            "status": {
+                "type": "string",
+                "enum": ["pending", "running", "done", "failed"],
+                "description": "Filter for list mode, or new status for update mode.",
+            },
+            "id": {
+                "type": "string",
+                "description": "Task ID. Required for update.",
+            },
+            "title": {
+                "type": "string",
+                "description": "Short task title. Required for create. Used as the task ID slug.",
+            },
+            "description": {
+                "type": "string",
+                "description": "Full task details. Optional for create — defaults to title if omitted.",
+            },
+            "due_at": {
+                "type": "string",
+                "description": "ISO 8601 datetime when the task is due. Defaults to now.",
+            },
+            "schedule": {
+                "type": "string",
+                "description": "Optional human-readable recurrence note (e.g. 'every monday').",
+            },
+            "result": {
+                "type": "string",
+                "description": "Result summary. Optional for update.",
+            },
+            "error": {
+                "type": "string",
+                "description": "Error message. Optional for update when marking failed.",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Max entries to return for archive mode. Default 20.",
+            },
+            "help": {
+                "type": "boolean",
+                "description": "Return usage guide for this tool without performing any action.",
+            },
+        },
+        "required": ["mode"],
+    },
+}

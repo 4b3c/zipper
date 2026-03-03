@@ -1,4 +1,3 @@
-import json
 import asyncio
 from datetime import datetime, date
 from pathlib import Path
@@ -10,14 +9,13 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import uvicorn
 
-from llm import run_task
+from llm import run_conversation
 from storage.conversations import create_conversation, conversation_exists, find_conversation_by_thread
 from storage.tasks import get_due_tasks
-from utils.utils import notify_discord_async
+from storage.schedule import load_schedule, save_schedule, load_wake_log, save_wake_log
+from utils.notify import notify_discord_async
 
 ROOT = Path(__file__).parent
-SCHEDULE_PATH = ROOT / "data" / "schedule.json"
-WAKE_LOG_PATH = ROOT / "data" / "wake_log.json"
 
 app = FastAPI()
 
@@ -43,28 +41,24 @@ class WakeRequest(BaseModel):
     time: str  # HH:MM
 
 
-# --- Schedule helpers ---
+# --- Helpers ---
 
-def load_schedule() -> dict:
-    if not SCHEDULE_PATH.exists():
-        return {"daily": [], "oneshot": []}
-    return json.loads(SCHEDULE_PATH.read_text())
-
-
-def save_schedule(schedule: dict):
-    SCHEDULE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    SCHEDULE_PATH.write_text(json.dumps(schedule, indent=2))
-
-
-def load_wake_log() -> dict:
-    if not WAKE_LOG_PATH.exists():
-        return {}
-    return json.loads(WAKE_LOG_PATH.read_text())
-
-
-def save_wake_log(log: dict):
-    WAKE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    WAKE_LOG_PATH.write_text(json.dumps(log, indent=2))
+def _build_task_section(fallback: str = "\n\nNo tasks are currently due.", include_title: bool = False) -> str:
+    """Build the task section string for wake prompts."""
+    due_tasks = get_due_tasks()
+    if due_tasks:
+        if include_title:
+            task_lines = "\n".join(
+                f"- [{t['id']}] {t['title']}: {t['description']} (due {t['due_at'][:16].replace('T', ' ')})"
+                for t in due_tasks
+            )
+        else:
+            task_lines = "\n".join(
+                f"- [{t['id']}] {t['description']} (due {t['due_at'][:16].replace('T', ' ')})"
+                for t in due_tasks
+            )
+        return f"\n\nThe following tasks are due:\n{task_lines}\n\nWork through them, mark each done or failed using the task tool when finished."
+    return fallback
 
 
 # --- Routes ---
@@ -77,7 +71,7 @@ def status():
 async def _discord_respond(prompt: str, conversation_id: str, discord_thread_id: int):
     """Background task: run LLM and push result to discord via /send."""
     try:
-        result = await run_task(prompt, conversation_id)
+        result = await run_conversation(prompt, conversation_id)
         if result:
             await notify_discord_async(result, thread_id=discord_thread_id)
     except Exception as e:
@@ -115,7 +109,7 @@ async def chat(req: ChatRequest):
             title=req.prompt[:60],
             source=req.source,
         )
-    result = await run_task(req.prompt, conversation_id)
+    result = await run_conversation(req.prompt, conversation_id)
     return {"conversation_id": conversation_id, "result": result}
 
 
@@ -133,23 +127,17 @@ async def wake(req: WakeRequest):
             schedule["oneshot"] = [e for e in schedule["oneshot"] if e["id"] != entry["id"]]
             save_schedule(schedule)
 
-            due_tasks = get_due_tasks()
-            if due_tasks:
-                task_lines = "\n".join(
-                    f"- [{t['id']}] {t['title']}: {t['description']} (due {t['due_at'][:16].replace('T', ' ')})"
-                    for t in due_tasks
-                )
-                task_section = f"\n\nThe following tasks are due:\n{task_lines}\n\nWork through them, mark each done or failed using the task tool when finished."
-            else:
-                task_section = f"\n\n{entry['prompt']}"
-
+            task_section = _build_task_section(
+                fallback=f"\n\n{entry['prompt']}",
+                include_title=True,
+            )
             prompt = (
                 f"You have been woken up by a scheduled reminder for {entry['at']}. "
                 f"It is now {now.strftime('%Y-%m-%d %H:%M')}."
                 f"{task_section}"
             )
             conversation_id = create_conversation(title=f"Oneshot: {entry['prompt'][:50]}", source="cron")
-            result = await run_task(prompt, conversation_id)
+            result = await run_conversation(prompt, conversation_id)
             return {"conversation_id": conversation_id, "result": result}
 
     # daily check-in
@@ -160,16 +148,7 @@ async def wake(req: WakeRequest):
     wake_log[slot] = date.today().isoformat()
     save_wake_log(wake_log)
 
-    due_tasks = get_due_tasks()
-    if due_tasks:
-        task_lines = "\n".join(
-            f"- [{t['id']}] {t['description']} (due {t['due_at'][:16].replace('T', ' ')})"
-            for t in due_tasks
-        )
-        task_section = f"\n\nThe following tasks are due:\n{task_lines}\n\nWork through them, mark each done or failed using the task tool when finished."
-    else:
-        task_section = "\n\nNo tasks are currently due."
-
+    task_section = _build_task_section()
     prompt = (
         f"You have woken up for your scheduled check-in at {slot}. "
         f"Today is {now.strftime('%A, %B %d %Y')}. "
@@ -179,7 +158,7 @@ async def wake(req: WakeRequest):
         f"{task_section}"
     )
     conversation_id = create_conversation(title=f"Check-in {slot}", source="cron")
-    result = await run_task(prompt, conversation_id)
+    result = await run_conversation(prompt, conversation_id)
     return {"conversation_id": conversation_id, "result": result}
 
 

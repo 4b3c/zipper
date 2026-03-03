@@ -1,5 +1,5 @@
 from pathlib import Path
-from tools.file import run as file_run, _list_tree, PROJECT_ROOT, DEFAULT_HIDDEN_DIRS
+from tools.file import run as file_run, _list_tree, ROOT, DEFAULT_HIDDEN_DIRS
 from tools.bash import run as bash_run
 from tools.web import run as web_run
 from tools.restart import run as restart_run
@@ -7,9 +7,16 @@ from tools.task import run as task_run
 from tools.discord import run as discord_run
 from storage.trace import get_trace
 
-_CODEBASE_MD = PROJECT_ROOT / "prompts" / "codebase.md"
-_BASH_MD = PROJECT_ROOT / "prompts" / "bash.md"
-_DISCORD_MD = PROJECT_ROOT / "prompts" / "discord.md"
+import tools.file as _file_tool
+import tools.bash as _bash_tool
+import tools.web as _web_tool
+import tools.discord as _discord_tool
+import tools.restart as _restart_tool
+import tools.task as _task_tool
+
+_CODEBASE_MD = ROOT / "prompts" / "codebase.md"
+_BASH_MD = ROOT / "prompts" / "bash.md"
+_DISCORD_MD = ROOT / "prompts" / "discord.md"
 _FILE_TOOL_USAGE = """
 ## File Tool Modes
 - list — recursive tree (project root default). Hidden entries shown as stubs. Pass include_data=true to expand data/.
@@ -33,7 +40,7 @@ def _file_onboarding(args: dict) -> str:
 
     # skip tree if this call is already listing files — output would be identical
     if args.get("mode") != "list":
-        tree = _list_tree(PROJECT_ROOT, PROJECT_ROOT, DEFAULT_HIDDEN_DIRS)
+        tree = _list_tree(ROOT, ROOT, DEFAULT_HIDDEN_DIRS)
         parts.append("## Current File Tree")
         parts.append("\n".join(tree))
         parts.append("")
@@ -64,7 +71,7 @@ Workflow: search to find relevant URLs, then fetch to read the content.
 Restarts zipper service components. Always use this after modifying source code — never use bash to restart manually.
 
 Modes:
-- zipper — async restart of the main process via systemctl. Registers a watchdog with the discord bot that resumes this conversation once zipper is healthy. If startup fails, code changes are stashed and the previous state is restored automatically.
+- zipper — async restart of the main process via systemctl. Spawns a watcher that resumes this conversation once zipper is healthy. If startup fails, code changes are stashed and the previous state is restored automatically.
 - discord — synchronous restart of the zipper-discord service. Returns when done.
 
 Workflow after a code change: edit files → test with bash if possible → restart(zipper) → verify the watchdog result → push to GitHub.
@@ -91,273 +98,12 @@ Recurrence: "daily", "weekly", "every N hours", "every N days", "every monday" (
 }
 
 TOOLS = [
-    {
-        "name": "file",
-        "description": "Read, write, edit, list, or grep files on the filesystem. Ignores .venv, __pycache__, .git, .env automatically.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "mode": {
-                    "type": "string",
-                    "enum": ["list", "read", "write", "edit", "delete", "grep"],
-                    "description": (
-                        "list — recursive file tree (defaults to project root, hides data/ by default). "
-                        "read — read one or multiple files, optionally a line range. "
-                        "write — write full file content. "
-                        "edit — exact search/replace (errors on 0 or 2+ matches). "
-                        "delete — delete a single file. "
-                        "grep — search files using a regex pattern."
-                    ),
-                },
-                "directory": {
-                    "type": "string",
-                    "description": "Target directory. Defaults to project root if omitted.",
-                },
-                "filename": {
-                    "type": "string",
-                    "description": "Filename. Required for read (single), write, edit.",
-                },
-                "filenames": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of filenames to read in one call. Use instead of filename for multi-file reads.",
-                },
-                "content": {
-                    "type": "string",
-                    "description": "File content. Required for write.",
-                },
-                "search": {
-                    "type": "string",
-                    "description": "Exact string to find. Required for edit.",
-                },
-                "replace": {
-                    "type": "string",
-                    "description": "String to replace with. Required for edit.",
-                },
-                "pattern": {
-                    "type": "string",
-                    "description": "Regex pattern to search for. Required for grep. Use re syntax (e.g. 'def \\w+', 'import.*os').",
-                },
-                "glob": {
-                    "type": "string",
-                    "description": "Filename glob filter for grep (e.g. '*.py'). Defaults to all files.",
-                },
-                "line_start": {
-                    "type": "integer",
-                    "description": "First line to return (1-indexed). For read mode.",
-                },
-                "line_end": {
-                    "type": "integer",
-                    "description": "Last line to return (inclusive). For read mode.",
-                },
-                "include_data": {
-                    "type": "boolean",
-                    "description": "Include the data/ directory in list/grep. Default false.",
-                },
-                "all": {
-                    "type": "boolean",
-                    "description": "For edit: replace all occurrences instead of erroring on multiple matches. Default false.",
-                },
-                "help": {
-                    "type": "boolean",
-                    "description": "Return usage guide for this tool without performing any action.",
-                },
-            },
-            "required": ["mode"],
-        },
-    },
-    {
-        "name": "web",
-        "description": "Search the web or fetch a URL. search mode queries Brave Search; fetch mode HTTP GETs a URL and returns the page text.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "mode": {
-                    "type": "string",
-                    "enum": ["search", "fetch"],
-                    "description": "search — Brave web search. fetch — HTTP GET a URL, returns page text with HTML stripped.",
-                },
-                "query": {
-                    "type": "string",
-                    "description": "Search query. Required for search mode.",
-                },
-                "url": {
-                    "type": "string",
-                    "description": "URL to fetch. Required for fetch mode.",
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Number of search results to return. Default 5. Search mode only.",
-                },
-                "help": {
-                    "type": "boolean",
-                    "description": "Return usage guide for this tool without performing any action.",
-                },
-            },
-            "required": ["mode"],
-        },
-    },
-    {
-        "name": "discord",
-        "description": "Interact with Discord. Send messages, read history, edit messages, or add reactions.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "mode": {
-                    "type": "string",
-                    "enum": ["send", "history", "edit", "react"],
-                    "description": (
-                        "send — post a message, returns message_id for use with edit/react. "
-                        "history — fetch recent messages from a channel or thread. "
-                        "edit — edit a previously sent message by message_id. "
-                        "react — add an emoji reaction to a message by message_id."
-                    ),
-                },
-                "message": {
-                    "type": "string",
-                    "description": "Message content. Required for send (unless file is provided).",
-                },
-                "file": {
-                    "type": "string",
-                    "description": "Path to file to upload. Optional for send. Can be used with or without message.",
-                },
-                "content": {
-                    "type": "string",
-                    "description": "Replacement content. Required for edit.",
-                },
-                "emoji": {
-                    "type": "string",
-                    "description": "Unicode emoji to react with (e.g. '✅', '👍', '🎉'). Standard emoji only — no custom server emoji. Required for react.",
-                },
-                "message_id": {
-                    "type": "string",
-                    "description": "ID of the message to edit or react to.",
-                },
-                "thread_id": {
-                    "type": "integer",
-                    "description": "Discord thread ID. Omit to target the main channel.",
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Number of messages to return. Default 5, max 100. history mode only.",
-                },
-                "help": {
-                    "type": "boolean",
-                    "description": "Return usage guide for this tool without performing any action.",
-                },
-            },
-            "required": ["mode"],
-        },
-    },
-    {
-        "name": "restart",
-        "description": "Restart a zipper service component.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "mode": {
-                    "type": "string",
-                    "enum": ["zipper", "discord", "dashboard"],
-                    "description": (
-                        "zipper — restart the main zipper process via systemctl. "
-                        "Spawns a watcher that resumes this conversation with the result. "
-                        "If startup fails, code changes are stashed and previous state is restored. "
-                        "discord — restart the zipper-discord systemd user service synchronously. "
-                        "dashboard — restart the dashboard (not yet implemented)."
-                    ),
-                },
-                "help": {
-                    "type": "boolean",
-                    "description": "Return usage guide for this tool without performing any action.",
-                },
-            },
-            "required": ["mode"],
-        },
-    },
-    {
-        "name": "task",
-        "description": "Manage the task queue. Use this to create, list, update, and complete tasks.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "mode": {
-                    "type": "string",
-                    "enum": ["list", "create", "update", "due", "archive"],
-                    "description": (
-                        "list — all tasks, optionally filtered by status. "
-                        "create — add a new task. "
-                        "update — patch any fields on an existing task (title, description, due_at, schedule, status, result, error). Only id is required. "
-                        "due — tasks that are due now (pending and past due_at). "
-                        "archive — completed/failed tasks, most recent first."
-                    ),
-                },
-                "status": {
-                    "type": "string",
-                    "enum": ["pending", "running", "done", "failed"],
-                    "description": "Filter for list mode, or new status for update mode.",
-                },
-                "id": {
-                    "type": "string",
-                    "description": "Task ID. Required for update.",
-                },
-                "title": {
-                    "type": "string",
-                    "description": "Short task title. Required for create. Used as the task ID slug.",
-                },
-                "description": {
-                    "type": "string",
-                    "description": "Full task details. Optional for create — defaults to title if omitted.",
-                },
-                "due_at": {
-                    "type": "string",
-                    "description": "ISO 8601 datetime when the task is due. Defaults to now.",
-                },
-                "schedule": {
-                    "type": "string",
-                    "description": "Optional human-readable recurrence note (e.g. 'every monday').",
-                },
-                "result": {
-                    "type": "string",
-                    "description": "Result summary. Optional for update.",
-                },
-                "error": {
-                    "type": "string",
-                    "description": "Error message. Optional for update when marking failed.",
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Max entries to return for archive mode. Default 20.",
-                },
-                "help": {
-                    "type": "boolean",
-                    "description": "Return usage guide for this tool without performing any action.",
-                },
-            },
-            "required": ["mode"],
-        },
-    },
-    {
-        "name": "bash",
-        "description": "Execute a shell command. Returns stdout and stderr.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "command": {
-                    "type": "string",
-                    "description": "Shell command to run.",
-                },
-                "timeout": {
-                    "type": "integer",
-                    "description": "Timeout in seconds. Default 30.",
-                },
-                "help": {
-                    "type": "boolean",
-                    "description": "Return usage guide for this tool without performing any action.",
-                },
-            },
-            "required": ["command"],
-        },
-    },
+    _file_tool.SCHEMA,
+    _web_tool.SCHEMA,
+    _discord_tool.SCHEMA,
+    _restart_tool.SCHEMA,
+    _task_tool.SCHEMA,
+    _bash_tool.SCHEMA,
 ]
 
 

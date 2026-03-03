@@ -2,7 +2,8 @@ import fnmatch
 import re
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parent.parent
+ROOT = Path(__file__).parent.parent
+PROJECT_ROOT = ROOT  # backward-compatible alias
 
 IGNORED_DIRS = {".venv", "__pycache__", ".git"}
 IGNORED_FILES = {".env"}
@@ -219,3 +220,80 @@ def run(args: dict) -> str:
         return header
 
     return f"error: unknown mode: {mode}"
+
+
+SCHEMA = {
+    "name": "file",
+    "description": "Read, write, edit, list, or grep files on the filesystem. Ignores .venv, __pycache__, .git, .env automatically.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "mode": {
+                "type": "string",
+                "enum": ["list", "read", "write", "edit", "delete", "grep"],
+                "description": (
+                    "list — recursive file tree (defaults to project root, hides data/ by default). "
+                    "read — read one or multiple files, optionally a line range. "
+                    "write — write full file content. "
+                    "edit — exact search/replace (errors on 0 or 2+ matches). "
+                    "delete — delete a single file. "
+                    "grep — search files using a regex pattern."
+                ),
+            },
+            "directory": {
+                "type": "string",
+                "description": "Target directory. Defaults to project root if omitted.",
+            },
+            "filename": {
+                "type": "string",
+                "description": "Filename. Required for read (single), write, edit.",
+            },
+            "filenames": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of filenames to read in one call. Use instead of filename for multi-file reads.",
+            },
+            "content": {
+                "type": "string",
+                "description": "File content. Required for write.",
+            },
+            "search": {
+                "type": "string",
+                "description": "Exact string to find. Required for edit.",
+            },
+            "replace": {
+                "type": "string",
+                "description": "String to replace with. Required for edit.",
+            },
+            "pattern": {
+                "type": "string",
+                "description": "Regex pattern to search for. Required for grep. Use re syntax (e.g. 'def \\w+', 'import.*os').",
+            },
+            "glob": {
+                "type": "string",
+                "description": "Filename glob filter for grep (e.g. '*.py'). Defaults to all files.",
+            },
+            "line_start": {
+                "type": "integer",
+                "description": "First line to return (1-indexed). For read mode.",
+            },
+            "line_end": {
+                "type": "integer",
+                "description": "Last line to return (inclusive). For read mode.",
+            },
+            "include_data": {
+                "type": "boolean",
+                "description": "Include the data/ directory in list/grep. Default false.",
+            },
+            "all": {
+                "type": "boolean",
+                "description": "For edit: replace all occurrences instead of erroring on multiple matches. Default false.",
+            },
+            "help": {
+                "type": "boolean",
+                "description": "Return usage guide for this tool without performing any action.",
+            },
+        },
+        "required": ["mode"],
+    },
+}

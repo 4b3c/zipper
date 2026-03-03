@@ -12,7 +12,11 @@ import urllib.request
 import json
 import subprocess
 from pathlib import Path
-from utils.utils import notify_discord
+
+# Ensure the app root is on sys.path so we can import app modules
+_here = Path(__file__).resolve().parent.parent
+if str(_here) not in sys.path:
+    sys.path.insert(0, str(_here))
 
 
 def load_env(project_dir: str):
@@ -26,39 +30,28 @@ def load_env(project_dir: str):
         key, _, value = line.partition("=")
         os.environ.setdefault(key.strip(), value.strip())
 
-STATUS_URL = "http://localhost:4199/status"
-CHAT_URL = "http://localhost:4199/chat"
+
 POLL_INTERVAL = 2       # seconds between health checks
 STARTUP_TIMEOUT = 45    # seconds to wait for zipper to come back up
 SETTLE_DELAY = 3        # seconds after detecting it's up before posting
 
 
-def is_up() -> bool:
+def is_up(status_url: str) -> bool:
     try:
-        with urllib.request.urlopen(STATUS_URL, timeout=3) as r:
+        with urllib.request.urlopen(status_url, timeout=3) as r:
             return r.status == 200
     except Exception:
         return False
 
 
-def get_discord_thread_id(conversation_id: str, project_dir: str) -> int | None:
-    meta_path = Path(project_dir) / "data" / "conversations" / conversation_id / "meta.json"
-    if not meta_path.exists():
-        return None
-    try:
-        return json.loads(meta_path.read_text()).get("discord_thread_id")
-    except Exception:
-        return None
-
-
-def post_resume(conversation_id: str, message: str) -> str:
+def post_resume(chat_url: str, conversation_id: str, message: str) -> str:
     payload = json.dumps({
         "prompt": message,
         "conversation_id": conversation_id,
         "source": "restart_watcher",
     }).encode()
     req = urllib.request.Request(
-        CHAT_URL,
+        chat_url,
         data=payload,
         headers={"Content-Type": "application/json"},
         method="POST",
@@ -88,9 +81,16 @@ def main():
 
     load_env(project_dir)
 
+    from utils.constants import ZIPPER_URL
+    from utils.notify import notify_discord
+    from storage.conversations import get_conversation_thread_id
+
+    status_url = f"{ZIPPER_URL}/status"
+    chat_url = f"{ZIPPER_URL}/chat"
+
     # wait for zipper to go down first (up to 10s)
     for _ in range(10):
-        if not is_up():
+        if not is_up(status_url):
             break
         time.sleep(1)
 
@@ -98,16 +98,17 @@ def main():
     deadline = time.time() + STARTUP_TIMEOUT
     came_up = False
     while time.time() < deadline:
-        if is_up():
+        if is_up(status_url):
             came_up = True
             break
         time.sleep(POLL_INTERVAL)
 
-    thread_id = get_discord_thread_id(conversation_id, project_dir)
+    thread_id = get_conversation_thread_id(conversation_id)
 
     if came_up:
         time.sleep(SETTLE_DELAY)
         result = post_resume(
+            chat_url,
             conversation_id,
             "Restart successful. Zipper came back up cleanly. "
             "Now verify that your changes work as intended.",
@@ -127,7 +128,7 @@ def main():
         deadline = time.time() + STARTUP_TIMEOUT
         recovered = False
         while time.time() < deadline:
-            if is_up():
+            if is_up(status_url):
                 recovered = True
                 break
             time.sleep(POLL_INTERVAL)
@@ -135,6 +136,7 @@ def main():
         if recovered:
             time.sleep(SETTLE_DELAY)
             result = post_resume(
+                chat_url,
                 conversation_id,
                 f"RESTART FAILED: Your code changes caused a crash and zipper could not start. "
                 f"Changes have been automatically stashed (git stash). "

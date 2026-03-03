@@ -1,27 +1,8 @@
-import json
-import urllib.request
 from pathlib import Path
 import requests
 
-BOT_URL = "http://127.0.0.1:4200"
-
-
-def _post(endpoint: str, payload: dict) -> dict:
-    data = json.dumps(payload).encode()
-    req = urllib.request.Request(
-        f"{BOT_URL}/{endpoint}",
-        data=data,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=10) as r:
-            return json.loads(r.read())
-    except urllib.request.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace").strip()
-        return {"error": f"HTTP {e.code}: {body}"}
-    except Exception as e:
-        return {"error": str(e)}
+from utils.constants import BOT_URL
+from utils.http import post_json
 
 
 def _post_multipart(endpoint: str, files: dict, data: dict = None) -> dict:
@@ -57,8 +38,8 @@ def run(args: dict) -> str:
             payload = {"message": message}
             if args.get("thread_id"):
                 payload["thread_id"] = args["thread_id"]
-            resp = _post("send", payload)
-        
+            resp = post_json(f"{BOT_URL}/send", payload)
+
         if "error" in resp:
             return f"error: {resp['error']}"
         return f"ok: sent (message_id: {resp.get('message_id')})"
@@ -67,7 +48,7 @@ def run(args: dict) -> str:
         payload = {"limit": args.get("limit", 5)}
         if args.get("thread_id"):
             payload["thread_id"] = args["thread_id"]
-        resp = _post("history", payload)
+        resp = post_json(f"{BOT_URL}/history", payload)
         if "error" in resp:
             return f"error: {resp['error']}"
         messages = resp.get("messages", [])
@@ -92,7 +73,7 @@ def run(args: dict) -> str:
         payload = {"message_id": message_id, "content": content}
         if args.get("thread_id"):
             payload["thread_id"] = args["thread_id"]
-        resp = _post("edit", payload)
+        resp = post_json(f"{BOT_URL}/edit", payload)
         if "error" in resp:
             return f"error: {resp['error']}"
         return "ok: message edited"
@@ -107,9 +88,63 @@ def run(args: dict) -> str:
         payload = {"message_id": message_id, "emoji": emoji}
         if args.get("thread_id"):
             payload["thread_id"] = args["thread_id"]
-        resp = _post("react", payload)
+        resp = post_json(f"{BOT_URL}/react", payload)
         if "error" in resp:
             return f"error: {resp['error']}"
         return f"ok: reacted with {emoji}"
 
     return f"error: unknown mode: {mode}"
+
+
+SCHEMA = {
+    "name": "discord",
+    "description": "Interact with Discord. Send messages, read history, edit messages, or add reactions.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "mode": {
+                "type": "string",
+                "enum": ["send", "history", "edit", "react"],
+                "description": (
+                    "send — post a message, returns message_id for use with edit/react. "
+                    "history — fetch recent messages from a channel or thread. "
+                    "edit — edit a previously sent message by message_id. "
+                    "react — add an emoji reaction to a message by message_id."
+                ),
+            },
+            "message": {
+                "type": "string",
+                "description": "Message content. Required for send (unless file is provided).",
+            },
+            "file": {
+                "type": "string",
+                "description": "Path to file to upload. Optional for send. Can be used with or without message.",
+            },
+            "content": {
+                "type": "string",
+                "description": "Replacement content. Required for edit.",
+            },
+            "emoji": {
+                "type": "string",
+                "description": "Unicode emoji to react with (e.g. '✅', '👍', '🎉'). Standard emoji only — no custom server emoji. Required for react.",
+            },
+            "message_id": {
+                "type": "string",
+                "description": "ID of the message to edit or react to.",
+            },
+            "thread_id": {
+                "type": "integer",
+                "description": "Discord thread ID. Omit to target the main channel.",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Number of messages to return. Default 5, max 100. history mode only.",
+            },
+            "help": {
+                "type": "boolean",
+                "description": "Return usage guide for this tool without performing any action.",
+            },
+        },
+        "required": ["mode"],
+    },
+}

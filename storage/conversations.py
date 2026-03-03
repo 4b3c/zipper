@@ -1,40 +1,24 @@
 import json
-import re
 import uuid
 from datetime import datetime
 from pathlib import Path
+
+from utils.text import title_to_slug
 
 ROOT = Path(__file__).parent.parent
 DATA_DIR = ROOT / "data" / "conversations"
 
 
-def _title_to_slug(title: str) -> str:
-    """Convert a title to a URL-safe slug.
-    
-    - Convert to lowercase
-    - Strip special characters (keep only alphanumerics, spaces, and hyphens)
-    - Replace spaces with hyphens
-    - Remove consecutive hyphens
-    - Strip leading/trailing hyphens
-    """
-    slug = title.lower()
-    slug = re.sub(r"[^a-z0-9\s-]", "", slug)
-    slug = re.sub(r"\s+", "-", slug)
-    slug = re.sub(r"-+", "-", slug)
-    slug = slug.strip("-")
-    return slug or "conversation"
-
-
 def _generate_conversation_id(title: str) -> str:
     """Generate a slug-based conversation ID, handling collisions."""
-    slug = _title_to_slug(title)
+    slug = title_to_slug(title, fallback="conversation")
     candidate = slug
     counter = 1
-    
+
     while _conversation_path(candidate).exists():
         candidate = f"{slug}-{counter}"
         counter += 1
-    
+
     return candidate
 
 
@@ -91,20 +75,28 @@ def update_meta(conversation_id: str, **kwargs):
     _meta_path(conversation_id).write_text(json.dumps(meta, indent=2))
 
 
-def get_active_version(conversation_id: str) -> dict:
+def get_latest_version(conversation_id: str) -> dict:
     versions_path = _versions_path(conversation_id)
     version_files = sorted(versions_path.glob("*.json"), key=lambda f: int(f.stem))
     if not version_files:
         create_version(conversation_id, summary="", messages=[])
-        return get_active_version(conversation_id)
+        return get_latest_version(conversation_id)
     latest = version_files[-1]
     return json.loads(latest.read_text())
 
 
-def _active_version_path(conversation_id: str) -> Path:
+# Keep old name as alias for callers not yet updated
+get_active_version = get_latest_version
+
+
+def _latest_version_path(conversation_id: str) -> Path:
     versions_path = _versions_path(conversation_id)
     version_files = sorted(versions_path.glob("*.json"), key=lambda f: int(f.stem))
     return version_files[-1]
+
+
+# Keep old name as alias
+_active_version_path = _latest_version_path
 
 
 def create_version(conversation_id: str, summary: str, messages: list):
@@ -116,7 +108,7 @@ def create_version(conversation_id: str, summary: str, messages: list):
 
 
 def set_system_prompt(conversation_id: str, system_prompt: str):
-    version_path = _active_version_path(conversation_id)
+    version_path = _latest_version_path(conversation_id)
     version = json.loads(version_path.read_text())
     version["system_prompt"] = system_prompt
     version_path.write_text(json.dumps(version, indent=2))
@@ -124,7 +116,7 @@ def set_system_prompt(conversation_id: str, system_prompt: str):
 
 def pop_last_message(conversation_id: str):
     """Remove the last message from the active version. Used to roll back on API failure."""
-    version_path = _active_version_path(conversation_id)
+    version_path = _latest_version_path(conversation_id)
     version = json.loads(version_path.read_text())
     if version["messages"]:
         version["messages"].pop()
@@ -133,14 +125,14 @@ def pop_last_message(conversation_id: str):
 
 def save_messages(conversation_id: str, messages: list):
     """Overwrite messages in the active version. Used to persist sanitization."""
-    version_path = _active_version_path(conversation_id)
+    version_path = _latest_version_path(conversation_id)
     version = json.loads(version_path.read_text())
     version["messages"] = messages
     version_path.write_text(json.dumps(version, indent=2))
 
 
 def append_message(conversation_id: str, role: str, content):
-    version_path = _active_version_path(conversation_id)
+    version_path = _latest_version_path(conversation_id)
     version = json.loads(version_path.read_text())
     version["messages"].append({"role": role, "content": content})
     version_path.write_text(json.dumps(version, indent=2))
@@ -162,6 +154,15 @@ def find_conversation_by_thread(discord_thread_id: int) -> str | None:
         except Exception:
             pass
     return None
+
+
+def get_conversation_thread_id(conversation_id: str) -> int | None:
+    """Return the discord_thread_id for a conversation, or None if not set."""
+    try:
+        thread_id = get_conversation(conversation_id).get("discord_thread_id")
+        return int(thread_id) if thread_id else None
+    except Exception:
+        return None
 
 
 def list_conversations() -> list:
