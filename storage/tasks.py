@@ -1,21 +1,10 @@
 import json
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from utils.text import title_to_slug
 from storage.schedule import add_oneshot
-
-
-def _normalize_datetime(dt_str: str) -> str:
-    """Ensure datetime has UTC timezone info in ISO format."""
-    if not dt_str:
-        return datetime.now(timezone.utc).isoformat()
-    # If already has timezone, return as-is
-    if '+' in dt_str or dt_str.endswith('Z'):
-        return dt_str
-    # If naive, assume UTC
-    return dt_str + '+00:00'
 
 
 WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
@@ -94,7 +83,7 @@ def create_task(title: str, description: str = None, due_at: str = None, schedul
         "status": "pending",
         "schedule": schedule,
         "created_at": datetime.now().isoformat(),
-        "due_at": _normalize_datetime(due_at or datetime.now(timezone.utc).isoformat()),
+        "due_at": due_at or datetime.now().isoformat(),
         "conversation_id": conversation_id,
         "result": None,
         "error": None,
@@ -106,7 +95,7 @@ def create_task(title: str, description: str = None, due_at: str = None, schedul
 
 def get_due_tasks() -> list:
     tasks = _load()
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now().isoformat()
     return [t for t in tasks if t["status"] == "pending" and t["due_at"] <= now]
 
 
