@@ -11,12 +11,14 @@ from storage.conversations import (
     pop_last_message,
     create_version,
     get_conversation,
+    get_conversation_thread_id,
     update_meta,
 )
 from storage.trace import append_trace_entry
 from tools import TOOLS, execute_tool
 from tools.signals import BreakLoop
 from llm.messages import serialize_content, _sanitize_messages
+from utils.notify import notify_discord_async
 
 RATING_RE = re.compile(r'\{\{c:(\d),\s*d:(\d),\s*a:(\d)\}\}')
 
@@ -72,6 +74,7 @@ async def llm_loop(conversation_id: str, messages: list, system: str, owner_toke
         print(f"[llm] {model} (ratings={ratings})")
 
         retry_delay = 5
+        retries = 0
         while True:
             try:
                 response = None
@@ -87,12 +90,29 @@ async def llm_loop(conversation_id: str, messages: list, system: str, owner_toke
                             return ""
                     response = await stream.get_final_message()
                 break  # success
-            except __import__('anthropic').RateLimitError:
+            except __import__('anthropic').APIStatusError as e:
+                status = getattr(e, 'status_code', 0)
+                is_overloaded = status == 529 or 'overloaded' in str(e).lower()
+                if status != 429 and not is_overloaded:
+                    if owns():
+                        pop_last_message(conversation_id)
+                    raise
                 if not owns():
                     return ""
-                print(f"[llm] rate limited, retrying in {retry_delay}s")
+                retries += 1
+                label = "overloaded" if is_overloaded else "rate limited"
+                print(f"[llm] {label}, retry {retries}/5 in {retry_delay}s")
+                if retries >= 5:
+                    if owns():
+                        pop_last_message(conversation_id)
+                    thread_id = get_conversation_thread_id(conversation_id)
+                    await notify_discord_async(
+                        f"⚠️ Claude API is {label} — gave up after 5 retries. Please try again later.",
+                        thread_id=thread_id,
+                    )
+                    return ""
                 await asyncio.sleep(retry_delay)
-                retry_delay = min(retry_delay * 2, 60)
+                retry_delay = min(retry_delay * 2, 120)
                 if not owns():
                     return ""
                 continue
