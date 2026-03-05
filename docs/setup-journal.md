@@ -46,3 +46,19 @@ Chose Audiobookshelf over Jellyfin/Navidrome because it handles long-form audio 
 **Gotchas:**
 - Files must be inside a subfolder — Audiobookshelf won't scan loose files sitting directly in the library root
 - The host path `/opt/audiobookshelf/data` is mounted into the container as `/data`, so library paths in the UI must use `/data/podcasts` not the full host path
+
+---
+
+## 2026-03-05
+
+### Locked down zipper + zipper-discord to tailscale only
+
+Both services were listening on `0.0.0.0`, making them publicly accessible.
+
+**Change:** Both services now bind on `127.0.0.1` only:
+- `main.py`: uvicorn bind changed from `0.0.0.0` to `127.0.0.1`
+- `bot/__init__.py`: reads `BOT_HOST` from env; added `BOT_HOST=127.0.0.1` to `.env`
+
+**nginx:** Created `/etc/nginx/sites-available/zipper` with two server blocks listening on the tailscale IP (`100.117.22.95`) for ports 4199 and 4200, proxying to the local services. Enabled via symlink in `sites-enabled/`.
+
+Inter-service communication is unaffected — `BOT_URL` and `ZIPPER_URL` in `utils/constants.py` already use `127.0.0.1`.
