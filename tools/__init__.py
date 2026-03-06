@@ -5,6 +5,7 @@ from tools.web import run as web_run
 from tools.restart import run as restart_run
 from tools.task import run as task_run
 from tools.discord import run as discord_run
+from tools.memory import run as memory_run
 from storage.trace import get_trace
 
 import tools.file as _file_tool
@@ -13,6 +14,7 @@ import tools.web as _web_tool
 import tools.discord as _discord_tool
 import tools.restart as _restart_tool
 import tools.task as _task_tool
+import tools.memory as _memory_tool
 
 _CODEBASE_MD = ROOT / "prompts" / "codebase.md"
 _BASH_MD = ROOT / "prompts" / "bash.md"
@@ -95,6 +97,21 @@ Modes:
 
 Recurrence: "daily", "weekly", "every N hours", "every N days", "every monday" (any weekday). Marking a scheduled task done automatically creates the next occurrence.
 """.strip(),
+
+    "memory": """
+[first use — memory tool guide]
+Persistent key/value store that survives restarts, plus quick context snapshots.
+
+Modes:
+- list — show all stored keys and values.
+- get — retrieve a single value by key.
+- set — store a value (any type) under a key.
+- delete — remove a key.
+- recent_conversations — one-sentence summary of each of the last 5 non-test conversations.
+- recent_logs — last 30 lines of the zipper systemd service log.
+
+Use memory to persist facts, preferences, or state across conversations. Use recent_conversations and recent_logs to quickly orient yourself when starting a new session.
+""".strip(),
 }
 
 TOOLS = [
@@ -104,6 +121,7 @@ TOOLS = [
     _restart_tool.SCHEMA,
     _task_tool.SCHEMA,
     _bash_tool.SCHEMA,
+    _memory_tool.SCHEMA,
 ]
 
 
@@ -153,6 +171,8 @@ def execute_tool(name: str, args: dict, conversation_id: str = "") -> str:
         result = task_run(args)
     elif name == "discord":
         result = discord_run(args)
+    elif name == "memory":
+        result = memory_run(args)
     else:
         raise ValueError(f"Unknown tool: {name}")
 

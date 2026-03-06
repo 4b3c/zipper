@@ -217,20 +217,23 @@ async def run_gold_test(gold_path: Path) -> dict:
         sandbox_created.append(p)
 
     conversation_id = None
-    tmp_queue = tmp_archive = None
+    tmp_queue = tmp_archive = tmp_memory = None
 
     try:
         mock_client = MockClient(gold["turns"])
 
         conversation_id = create_conversation(title=f"[test] {name}", source="test")
 
-        # Isolated task storage
+        # Isolated task + memory storage
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as f:
             f.write("[]")
             tmp_queue = f.name
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as f:
             f.write("[]")
             tmp_archive = f.name
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as f:
+            f.write("{}")
+            tmp_memory = f.name
 
         with (
             patch("llm.client", mock_client),
@@ -240,6 +243,7 @@ async def run_gold_test(gold_path: Path) -> dict:
             patch("storage.tasks.QUEUE_PATH", Path(tmp_queue)),
             patch("storage.tasks.ARCHIVE_PATH", Path(tmp_archive)),
             patch("tools.task.ARCHIVE_PATH", Path(tmp_archive)),
+            patch("storage.memory.MEMORY_PATH", Path(tmp_memory)),
         ):
             final_response = await run_conversation(gold.get("prompt", "test"), conversation_id)
 
@@ -261,6 +265,8 @@ async def run_gold_test(gold_path: Path) -> dict:
             os.unlink(tmp_queue)
         if tmp_archive and os.path.exists(tmp_archive):
             os.unlink(tmp_archive)
+        if tmp_memory and os.path.exists(tmp_memory):
+            os.unlink(tmp_memory)
 
 
 def _check_label(check: dict) -> str:
