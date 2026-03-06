@@ -1,3 +1,4 @@
+import copy
 from pathlib import Path
 from tools.file import run as file_run, _list_tree, ROOT, DEFAULT_HIDDEN_DIRS
 from tools.bash import run as bash_run
@@ -6,6 +7,8 @@ from tools.restart import run as restart_run
 from tools.task import run as task_run
 from tools.discord import run as discord_run
 from tools.memory import run as memory_run
+from tools.search_tools import run as search_tools_run
+from tools.summarize import run as summarize_run
 from storage.trace import get_trace
 
 import tools.file as _file_tool
@@ -15,6 +18,8 @@ import tools.discord as _discord_tool
 import tools.restart as _restart_tool
 import tools.task as _task_tool
 import tools.memory as _memory_tool
+import tools.search_tools as _search_tools_tool
+import tools.summarize as _summarize_tool
 
 _CODEBASE_MD = ROOT / "prompts" / "codebase.md"
 _BASH_MD = ROOT / "prompts" / "bash.md"
@@ -112,18 +117,49 @@ Modes:
 
 Use memory to persist facts, preferences, or state across conversations. Use recent_conversations and recent_logs to quickly orient yourself when starting a new session.
 """.strip(),
+
+    "search_tools": """
+[first use — search_tools guide]
+Look up full parameter documentation for any tool by name or keyword.
+Tool schemas sent to the API are intentionally slim — call this whenever you need to know exact parameters, modes, or usage rules.
+
+Usage: search_tools(query="file") or search_tools(query="edit") or search_tools(query="discord send")
+""".strip(),
+
+    "summarize": """
+[first use — summarize guide]
+Condense a long text using a fast model (Haiku). Useful for reducing large tool outputs or file contents before reasoning over them.
+
+Parameters:
+- text (required) — the text to summarize.
+- direction (optional) — a focus, e.g. "how errors are handled". Preserves detail relevant to that focus, lossy elsewhere.
+
+Example: summarize(text=file_contents, direction="what API endpoints are defined")
+""".strip(),
 }
 
 _CODE_EXEC = "code_execution_20260120"
 
+
+def _slim(schema: dict) -> dict:
+    """Strip parameter descriptions from a schema to reduce context tokens.
+    Keeps type, enum, items, and required — Claude uses search_tools for full docs."""
+    s = copy.deepcopy(schema)
+    for prop in s["input_schema"]["properties"].values():
+        prop.pop("description", None)
+    return s
+
+
 TOOLS = [
-    {**_file_tool.SCHEMA,    "allowed_callers": [_CODE_EXEC]},
-    {**_web_tool.SCHEMA,     "allowed_callers": [_CODE_EXEC]},
-    {**_discord_tool.SCHEMA, "allowed_callers": ["direct", _CODE_EXEC]},
-    {**_restart_tool.SCHEMA, "allowed_callers": ["direct"]},
-    {**_task_tool.SCHEMA,    "allowed_callers": [_CODE_EXEC]},
-    {**_bash_tool.SCHEMA,    "allowed_callers": [_CODE_EXEC]},
-    {**_memory_tool.SCHEMA,  "allowed_callers": [_CODE_EXEC]},
+    {**_slim(_file_tool.SCHEMA),         "allowed_callers": [_CODE_EXEC]},
+    {**_slim(_web_tool.SCHEMA),          "allowed_callers": [_CODE_EXEC]},
+    {**_slim(_discord_tool.SCHEMA),      "allowed_callers": ["direct", _CODE_EXEC]},
+    {**_slim(_restart_tool.SCHEMA),      "allowed_callers": ["direct"]},
+    {**_slim(_task_tool.SCHEMA),         "allowed_callers": [_CODE_EXEC]},
+    {**_slim(_bash_tool.SCHEMA),         "allowed_callers": [_CODE_EXEC]},
+    {**_slim(_memory_tool.SCHEMA),       "allowed_callers": [_CODE_EXEC]},
+    {**_slim(_summarize_tool.SCHEMA),    "allowed_callers": [_CODE_EXEC]},
+    {**_search_tools_tool.SCHEMA,        "allowed_callers": ["direct"]},
     {"type": _CODE_EXEC, "name": "code_execution"},
 ]
 
@@ -140,6 +176,8 @@ _EMPTY_TRIGGERS = {
     "bash": lambda a: not a.get("command", "").strip(),
     "web": lambda a: not a.get("query", "").strip() and not a.get("url", "").strip(),
     "discord": lambda a: False,  # mode is always required; use help=true
+    "search_tools": lambda a: not a.get("query", "").strip(),
+    "summarize": lambda a: not a.get("text", "").strip(),
 }
 
 
@@ -176,6 +214,10 @@ def execute_tool(name: str, args: dict, conversation_id: str = "") -> str:
         result = discord_run(args)
     elif name == "memory":
         result = memory_run(args)
+    elif name == "search_tools":
+        result = search_tools_run(args)
+    elif name == "summarize":
+        result = summarize_run(args)
     else:
         raise ValueError(f"Unknown tool: {name}")
 
