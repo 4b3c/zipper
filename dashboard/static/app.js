@@ -119,7 +119,7 @@ function showRatingPopup(btn) {
     const popup = document.getElementById('rating-popup');
     if (!popup) return;
     clearTimeout(_ratingPopupTimer);
-    popup.textContent = `${btn.dataset.label}: ${btn.dataset.value}/3`;
+    popup.textContent = `${btn.dataset.label}: ${btn.dataset.value}/5`;
     const rect = btn.getBoundingClientRect();
     popup.style.display = 'block';
     // Position above the button, centered
@@ -209,6 +209,7 @@ function disableInput() {
     const btn = document.querySelector('#chat-form button[type="submit"]');
     if (ta) ta.disabled = true;
     if (btn) btn.disabled = true;
+    document.getElementById('conv-status')?.classList.add('visible');
 }
 
 function enableInput() {
@@ -216,6 +217,7 @@ function enableInput() {
     const btn = document.querySelector('#chat-form button[type="submit"]');
     if (ta) { ta.disabled = false; ta.focus(); }
     if (btn) btn.disabled = false;
+    document.getElementById('conv-status')?.classList.remove('visible');
 }
 
 // WebSocket setup
@@ -296,14 +298,7 @@ function handleWebSocketMessage(event) {
                 // Update sidebar item too
                 markActiveSidebarItem(currentConversationId);
             }
-            if (msg.status !== undefined) {
-                const statusEl = document.getElementById('conv-status');
-                if (statusEl) {
-                    const s = msg.status === 'inactive' ? '' : (msg.status || '');
-                    statusEl.textContent = s;
-                    statusEl.classList.toggle('visible', s.length > 0);
-                }
-            }
+            document.getElementById('conv-status')?.classList.remove('visible');
             enableInput();
             scrollToBottom();
             if (currentConversationId) updateContextMeter(currentConversationId);
@@ -311,6 +306,7 @@ function handleWebSocketMessage(event) {
 
         case 'error':
             hideTyping();
+            document.getElementById('conv-status')?.classList.remove('visible');
             currentAssistantContent = null;
             currentMessageElement = null;
             const errDiv = document.createElement('div');
@@ -352,13 +348,8 @@ async function updateContextMeter(conversationId) {
 // Display conversation title/status in the top bar
 function displayConversationMetadata(metadata) {
     const titleEl = document.getElementById('conv-title');
-    const statusEl = document.getElementById('conv-status');
     if (titleEl) titleEl.textContent = metadata.title || 'Untitled';
-    if (statusEl) {
-        const s = metadata.status || '';
-        statusEl.textContent = s;
-        statusEl.classList.toggle('visible', s.length > 0);
-    }
+    // dot is driven by live WS state, not stored status
 }
 
 // Set up conversation view when loaded
@@ -508,6 +499,8 @@ async function handleFormSubmit(e) {
         const send = () => ws?.send(JSON.stringify({ text }));
         if (ws?.readyState === WebSocket.OPEN) send();
         else ws?.addEventListener('open', send, { once: true });
+        // Poll until the server generates a real title
+        pollForTitle(newId);
         return;
     }
 
@@ -523,6 +516,27 @@ async function handleFormSubmit(e) {
     document.querySelector('.btn-send')?.classList.remove('ready');
     disableInput();
     showTyping();
+}
+
+// Poll until the server generates a real title for a new conversation
+async function pollForTitle(conversationId) {
+    const defaultTitles = new Set(['New Conversation', 'Untitled', '']);
+    for (let i = 0; i < 20; i++) {
+        await new Promise(r => setTimeout(r, 1500));
+        if (currentConversationId !== conversationId) return;
+        try {
+            const r = await fetch(`/api/conversations/${conversationId}/metadata`);
+            if (!r.ok) continue;
+            const meta = await r.json();
+            const title = meta.title || '';
+            if (!defaultTitles.has(title)) {
+                const titleEl = document.getElementById('conv-title');
+                if (titleEl) titleEl.textContent = title;
+                refreshConversationList();
+                return;
+            }
+        } catch (e) { /* ignore */ }
+    }
 }
 
 // Handle sidebar conversation selection
@@ -551,7 +565,7 @@ async function deleteConversation(event, conversationId) {
             currentConversationId = null;
             hideContextMeter();
             document.getElementById('conv-title').textContent = '';
-            document.getElementById('conv-status').classList.remove('visible');
+            document.getElementById('conv-status')?.classList.remove('visible');
             document.getElementById('chat-container').innerHTML = `
                 <div class="empty-state">
                     <div class="text-center">
@@ -655,6 +669,7 @@ async function showNewConversationView() {
     document.querySelectorAll('.conv-item').forEach(a => a.classList.remove('active'));
     document.getElementById('conv-title').textContent = '';
     document.getElementById('conv-status')?.classList.remove('visible');
+
 
     const container = document.getElementById('chat-container');
     container.innerHTML = `

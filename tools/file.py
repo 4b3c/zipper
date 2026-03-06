@@ -29,28 +29,56 @@ def _iter_tree(root: Path, hidden_dirs: set) -> list[Path]:
     return results
 
 
+DIR_FILE_LIMIT = 30
+
+
 def _list_tree(root: Path, base: Path, hidden_dirs: set) -> list[str]:
-    """Recursively build a listing, showing ignored/hidden entries as '(hidden)' stubs."""
+    """Recursively build a listing, showing ignored/hidden entries as '(hidden)' stubs.
+    Directories with more than DIR_FILE_LIMIT direct files are truncated."""
     results = []
     try:
         entries = sorted(root.iterdir(), key=lambda e: (e.is_file(), e.name))
     except PermissionError:
         return results
-    for entry in entries:
+
+    dirs = [e for e in entries if e.is_dir()]
+    files = [e for e in entries if e.is_file()]
+
+    for entry in dirs:
         try:
             rel = entry.relative_to(base)
         except ValueError:
             rel = Path(entry.name)
-        if entry.is_dir():
-            if entry.name in IGNORED_DIRS or entry.name in hidden_dirs:
-                results.append(f"{rel}/ (hidden)")
-            else:
-                results.extend(_list_tree(entry, base, hidden_dirs))
+        if entry.name in IGNORED_DIRS or entry.name in hidden_dirs:
+            results.append(f"{rel}/ (hidden)")
         else:
-            if entry.name in IGNORED_FILES:
-                results.append(f"{rel} (hidden)")
-            else:
-                results.append(str(rel))
+            results.extend(_list_tree(entry, base, hidden_dirs))
+
+    visible_files = [f for f in files if f.name not in IGNORED_FILES]
+    hidden_files = [f for f in files if f.name in IGNORED_FILES]
+
+    for entry in hidden_files:
+        try:
+            rel = entry.relative_to(base)
+        except ValueError:
+            rel = Path(entry.name)
+        results.append(f"{rel} (hidden)")
+
+    truncated = len(visible_files) > DIR_FILE_LIMIT
+    for entry in visible_files[:DIR_FILE_LIMIT]:
+        try:
+            rel = entry.relative_to(base)
+        except ValueError:
+            rel = Path(entry.name)
+        results.append(str(rel))
+
+    if truncated:
+        try:
+            dir_rel = root.relative_to(base)
+        except ValueError:
+            dir_rel = Path(root.name)
+        results.append(f"{dir_rel}/ ... ({len(visible_files) - DIR_FILE_LIMIT} more files)")
+
     return results
 
 

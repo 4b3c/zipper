@@ -14,6 +14,8 @@ from storage.conversations import create_conversation, conversation_exists, find
 from storage.tasks import get_due_tasks
 from storage.schedule import load_schedule, save_schedule, load_wake_log, save_wake_log
 from utils.notify import notify_discord_async
+from utils.http import post_json
+from utils.constants import BOT_URL
 
 ROOT = Path(__file__).parent
 
@@ -118,9 +120,28 @@ async def wake(req: WakeRequest):
     now = datetime.now()
     wake_log = load_wake_log()
 
-    # check oneshots
+    # fire scheduled notifications (direct discord send, no LLM)
     schedule = load_schedule()
     current_dt = now.replace(second=0, microsecond=0)
+    fired_notifs = []
+    for entry in schedule.get("notifications", []):
+        entry_dt = datetime.fromisoformat(entry["at"]).replace(second=0, microsecond=0, tzinfo=None)
+        if current_dt >= entry_dt:
+            fired_notifs.append(entry["id"])
+            payload = {"message": entry["message"]}
+            if entry.get("thread_id"):
+                payload["thread_id"] = entry["thread_id"]
+            try:
+                post_json(f"{BOT_URL}/send", payload, timeout=15)
+            except Exception as e:
+                print(f"[main] notification send error: {e}")
+    if fired_notifs:
+        schedule["notifications"] = [
+            e for e in schedule.get("notifications", []) if e["id"] not in fired_notifs
+        ]
+        save_schedule(schedule)
+
+    # check oneshots
     for entry in schedule.get("oneshot", []):
         entry_dt = datetime.fromisoformat(entry["at"]).replace(second=0, microsecond=0, tzinfo=None)
         if current_dt >= entry_dt:

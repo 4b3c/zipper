@@ -9,6 +9,7 @@ from tools.discord import run as discord_run
 from tools.memory import run as memory_run
 from tools.search_tools import run as search_tools_run
 from tools.summarize import run as summarize_run
+from tools.todo import run as todo_run
 from storage.trace import get_trace
 
 import tools.file as _file_tool
@@ -20,6 +21,7 @@ import tools.task as _task_tool
 import tools.memory as _memory_tool
 import tools.search_tools as _search_tools_tool
 import tools.summarize as _summarize_tool
+import tools.todo as _todo_tool
 
 _CODEBASE_MD = ROOT / "prompts" / "codebase.md"
 _BASH_MD = ROOT / "prompts" / "bash.md"
@@ -136,6 +138,31 @@ Parameters:
 
 Example: summarize(text=file_contents, direction="what API endpoints are defined")
 """.strip(),
+
+    "todo": """
+[first use — todo tool guide]
+Manages the user's todo list and schedules direct Discord notifications.
+
+Modes:
+- add — add a new item. Required: title. Optional: description, category, priority, subtasks (list of strings), due_at, thread_id, reminder_message, task_id.
+- list — all todos, filter by status (pending/in_progress/done/cancelled) or category.
+- update — patch any field on a todo. id required. Use subtask_done=N (0-based index) to check off a subtask.
+- schedule_notification — schedule a Discord message for a future time without waking Zipper. Required: message, at (ISO 8601). Optional: thread_id.
+
+Categories:
+- zipper_now — Zipper is handling this immediately. Add as in_progress or done.
+- zipper_scheduled — Zipper will handle it later; link via task_id to the task queue entry.
+- remind_user — user needs a reminder; set due_at and Zipper auto-schedules a notification.
+- user_todo — backlog item for the user, no action needed.
+
+When classifying a new todo:
+1. Can Zipper do it right now? → category=zipper_now, do the work, mark done.
+2. Can Zipper do it at a specific later time? → category=zipper_scheduled, create a task entry too.
+3. Does the user need a reminder? → category=remind_user, set due_at (notification fires automatically).
+4. Just tracking it? → category=user_todo.
+
+For large tasks, break into subtasks= list of step titles.
+""".strip(),
 }
 
 _CODE_EXEC = "code_execution_20260120"
@@ -159,6 +186,7 @@ TOOLS = [
     {**_slim(_bash_tool.SCHEMA),         "allowed_callers": [_CODE_EXEC]},
     {**_slim(_memory_tool.SCHEMA),       "allowed_callers": [_CODE_EXEC]},
     {**_slim(_summarize_tool.SCHEMA),    "allowed_callers": [_CODE_EXEC]},
+    {**_slim(_todo_tool.SCHEMA),          "allowed_callers": [_CODE_EXEC]},
     {**_search_tools_tool.SCHEMA,        "allowed_callers": ["direct"]},
     {"type": _CODE_EXEC, "name": "code_execution"},
 ]
@@ -218,6 +246,8 @@ def execute_tool(name: str, args: dict, conversation_id: str = "") -> str:
         result = search_tools_run(args)
     elif name == "summarize":
         result = summarize_run(args)
+    elif name == "todo":
+        result = todo_run(args)
     else:
         raise ValueError(f"Unknown tool: {name}")
 

@@ -4,7 +4,8 @@ This is Zipper's own source code. Update this file when you add new components.
 
 ### Entry Points
 - `main.py` — FastAPI server (port 4199). Routes: `/chat`, `/discord`, `/wake`, `/status`
-- `bot/discord_bot.py` — thin relay (port 4200). Creates Discord threads, forwards to `/discord`, serves `/send`, `/history`, `/edit`, `/react`, `/inject`
+- `discord_bot.py` — thin launcher: `from bot import main; asyncio.run(main())`
+- `bot/` — Discord bot package: `__init__.py` (startup), `client.py` (gateway + `on_message`), `server.py` (aiohttp HTTP server: `/send`, `/history`, `/edit`, `/react`, `/inject`, `/typing`)
 - `utils/restart_watcher.py` — spawned by `tools/restart.py` after a zipper restart; polls `/status`, resumes via `/chat`, rolls back via git stash on crash
 - `run.py` — CLI dev tool. POSTs to `/chat` from terminal
 - `utils/setup_cron.py` — writes crontab entries from `data/schedule.json` (daily recurring + date-pinned oneshot entries)
@@ -23,13 +24,17 @@ This is Zipper's own source code. Update this file when you add new components.
 - `setup_cron.py` — writes crontab entries from `data/schedule.json`
 
 ### Tools (`tools/`)
-- `__init__.py` — tool schemas (TOOLS list), dispatch (execute_tool), per-conversation onboarding
+- `__init__.py` — tool schemas (TOOLS list), dispatch (execute_tool), per-conversation onboarding, Haiku-safe tool filtering
 - `file.py` — filesystem operations: list, read, write, edit, delete, grep
 - `bash.py` — shell execution, 30s default timeout
 - `restart.py` — registers watchdog with discord bot, then triggers systemctl restart via BreakLoop
 - `task.py` — task queue CRUD
+- `todo.py` — user todo list CRUD + `schedule_notification` mode
 - `discord.py` — Discord interactions: send (returns message_id), history, edit, react
 - `web.py` — Brave Search (`search` mode) and HTTP GET (`fetch` mode, HTML stripped to text)
+- `memory.py` — persistent key/value store; also exposes `recent_conversations` and `recent_logs`
+- `summarize.py` — condense long text via Haiku
+- `search_tools.py` — look up full parameter docs for any tool by name/keyword
 - `signals.py` — `BreakLoop` exception, raised by tools to stop the LLM loop early
 
 ### Storage (`storage/`)
@@ -37,7 +42,8 @@ This is Zipper's own source code. Update this file when you add new components.
 - `trace.py` — append-only tool call log per conversation (`trace.json`)
 - `memory.py` — persistent key-value store (`data/memory.json`)
 - `tasks.py` — task queue (`data/tasks/queue.json`)
-- `schedule.py` — `load/save_schedule`, `load/save_wake_log`, `add_oneshot`
+- `schedule.py` — `load/save_schedule`, `load/save_wake_log`, `add_oneshot`, `add_notification` (direct Discord ping, no LLM wake)
+- `todos.py` — user todo list (`data/todos.json`)
 
 ### Dashboard (`dashboard/`)
 - `main.py` — FastAPI app (port 4201). Routes: `GET /`, `GET /api/conversations`, `GET /api/conversations/{id}/view`, `POST /api/conversations`, `WS /ws/conversations/{id}`
@@ -52,8 +58,8 @@ This is Zipper's own source code. Update this file when you add new components.
 - `discord.md` — Discord tool usage guide, injected into the discord tool's first-use onboarding
 
 ### Key Patterns
-- Model routing: self-rating system — Zipper appends `{{c:X, d:X, a:X}}` to responses; total score picks the next model (>11=Opus, >6=Sonnet, else Haiku). See `llm.py:select_model`.
-- Interrupt system: `run_task` writes `last_owner_token` to `meta.json` synchronously before any await. `_owns()` reads meta to check ownership at every yield point. Lost ownership → silent exit.
+- Model routing: self-rating system — Zipper appends `{{c:X, d:X, a:X}}` to responses; total score picks the next model (>10=Opus, >5=Sonnet, else Haiku). `_tools_for_model()` strips `allowed_callers` and drops the code_execution block for Haiku. See `llm/loop.py:select_model`.
+- Interrupt system: `run_conversation` writes `last_owner_token` to `meta.json` synchronously before any await. `_owns()` reads meta to check ownership at every yield point. Lost ownership → silent exit.
 - Discord flow: discord_bot creates thread → POSTs to `/discord` → zipper finds/creates conversation → fires background task → POSTs result to `/send` when done.
 - Restart flow: `restart(zipper)` → `tools/restart.py` spawns `utils/restart_watcher.py` as a detached subprocess, then triggers `systemctl restart zipper` → watcher polls `/status` → resumes via `/chat` when healthy.
 - Compaction: after 20 messages, old messages are summarized and a new version file is created

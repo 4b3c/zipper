@@ -1,4 +1,4 @@
-"""Schedule and wake-log persistence."""
+"""Schedule and wake-log persistence. Supports recurring daily entries, one-shot LLM wakeups, and direct Discord notifications (no LLM)."""
 
 import json
 from datetime import datetime
@@ -48,3 +48,27 @@ def add_oneshot(title: str, at: datetime):
         "prompt": "Check for due tasks and work through them.",
     })
     save_schedule(schedule)
+
+
+def add_notification(message: str, at: datetime, thread_id: int = None, notification_id: str = None):
+    """Schedule a direct Discord notification at the given time (no LLM wake-up)."""
+    schedule = load_schedule()
+
+    notif_id = notification_id or (
+        title_to_slug(message[:40], fallback="notif", max_length=40) + "-" + at.strftime("%Y%m%dT%H%M")
+    )
+    # avoid duplicates
+    if any(e["id"] == notif_id for e in schedule.get("notifications", [])):
+        return notif_id
+
+    entry = {
+        "id": notif_id,
+        "at": at.isoformat(),
+        "message": message,
+    }
+    if thread_id is not None:
+        entry["thread_id"] = thread_id
+
+    schedule.setdefault("notifications", []).append(entry)
+    save_schedule(schedule)
+    return notif_id

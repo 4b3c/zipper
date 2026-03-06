@@ -16,6 +16,21 @@ from storage.conversations import (
 )
 from storage.trace import append_trace_entry
 from tools import TOOLS, execute_tool
+
+_HAIKU_MODELS = {"claude-haiku-4-5-20251001"}
+
+
+def _tools_for_model(model: str) -> list:
+    """Strip allowed_callers for models that don't support code_execution."""
+    if model not in _HAIKU_MODELS:
+        return TOOLS
+    result = []
+    for tool in TOOLS:
+        if tool.get("type", "").startswith("code_execution"):
+            continue  # code_execution block not available on Haiku
+        t = {k: v for k, v in tool.items() if k != "allowed_callers"}
+        result.append(t)
+    return result
 from tools.signals import BreakLoop
 from llm.messages import serialize_content, _sanitize_messages
 from utils.notify import notify_discord_async
@@ -36,9 +51,9 @@ def select_model(ratings: tuple | None) -> str:
     if ratings is None:
         return "claude-haiku-4-5-20251001"
     total = sum(ratings)
-    if total > 11:
+    if total > 10:
         return "claude-opus-4-6"
-    if total > 6:
+    if total > 5:
         return "claude-sonnet-4-6"
     return "claude-haiku-4-5-20251001"
 
@@ -82,7 +97,7 @@ async def llm_loop(conversation_id: str, messages: list, system: str, owner_toke
                     model=model,
                     max_tokens=8096,
                     system=system,
-                    tools=TOOLS,
+                    tools=_tools_for_model(model),
                     messages=messages,
                 ) as stream:
                     async for event in stream:

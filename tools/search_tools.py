@@ -107,6 +107,25 @@ Condense a long text using a fast model (Haiku).
 **Use cases:** summarize a large file before reasoning about it, distill web page content, reduce tool output before passing it forward.
 """,
 
+    "todo": """\
+## todo
+Manage the user's todo list and schedule direct Discord notifications.
+
+**Modes:**
+- `add` — add a new item. Required: `title`. Optional: `description`, `category`, `priority`, `subtasks` (list of strings), `due_at` (ISO 8601), `thread_id`, `reminder_message`, `task_id`.
+- `list` — all todos, optional `status` filter (pending/in_progress/done/cancelled) or `category` filter.
+- `update` — patch any field. Required: `id`. Use `subtask_done=N` (0-based index) to check off a subtask. Setting `status=done` or `cancelled` stamps `completed_at`.
+- `schedule_notification` — schedule a Discord message at a future time without waking Zipper. Required: `message`, `at` (ISO 8601). Optional: `thread_id`.
+
+**Categories:**
+- `zipper_now` — Zipper handles it immediately this session. Add as in_progress/done.
+- `zipper_scheduled` — Zipper handles it later; also create a task entry and link via `task_id`.
+- `remind_user` — user needs a reminder; set `due_at` and a notification fires automatically.
+- `user_todo` — backlog item for the user, no action needed.
+
+**For large tasks:** pass `subtasks=["step 1", "step 2", ...]` to break into steps.
+""",
+
     "search_tools": """\
 ## search_tools
 Look up full documentation for any tool by name or keyword.
