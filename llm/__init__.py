@@ -1,5 +1,6 @@
 """LLM package — run_conversation, system prompt loading, compaction."""
 
+import asyncio
 import os
 import uuid
 from datetime import datetime
@@ -73,13 +74,13 @@ async def run_conversation(description: str, conversation_id: str) -> str:
 
     thread_id = get_conversation_thread_id(conversation_id)
     if thread_id:
-        asyncio.create_task(asyncio.get_event_loop().run_in_executor(None, _set_typing, thread_id, True))
+        asyncio.create_task(asyncio.to_thread(_set_typing, thread_id, True))
 
     try:
         result = await llm_loop(conversation_id, messages, system, owner_token)
     finally:
         if thread_id:
-            asyncio.create_task(asyncio.get_event_loop().run_in_executor(None, _set_typing, thread_id, False))
+            asyncio.create_task(asyncio.to_thread(_set_typing, thread_id, False))
 
     if _owns(conversation_id, owner_token):
         await maybe_compact(conversation_id)
