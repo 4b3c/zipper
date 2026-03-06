@@ -12,7 +12,10 @@ from storage.conversations import (
     save_messages,
     set_system_prompt,
     update_meta,
+    get_conversation_thread_id,
 )
+from utils.constants import BOT_URL
+from utils.http import post_json
 
 client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
@@ -31,6 +34,14 @@ def load_system_prompt() -> str:
         with open(path) as f:
             return f.read().replace("{{project_directory}}", os.path.dirname(root)).replace("{{current_time}}", current_time)
     return "You are Zipper, a self-building AI assistant."
+
+
+def _set_typing(thread_id: int, active: bool):
+    """Fire-and-forget typing indicator update (sync, called from executor)."""
+    try:
+        post_json(f"{BOT_URL}/typing", {"thread_id": thread_id, "active": active}, timeout=5)
+    except Exception:
+        pass
 
 
 async def run_conversation(description: str, conversation_id: str) -> str:
@@ -60,7 +71,16 @@ async def run_conversation(description: str, conversation_id: str) -> str:
 
     set_system_prompt(conversation_id, system)
 
-    result = await llm_loop(conversation_id, messages, system, owner_token)
+    thread_id = get_conversation_thread_id(conversation_id)
+    if thread_id:
+        asyncio.create_task(asyncio.get_event_loop().run_in_executor(None, _set_typing, thread_id, True))
+
+    try:
+        result = await llm_loop(conversation_id, messages, system, owner_token)
+    finally:
+        if thread_id:
+            asyncio.create_task(asyncio.get_event_loop().run_in_executor(None, _set_typing, thread_id, False))
+
     if _owns(conversation_id, owner_token):
         await maybe_compact(conversation_id)
     return result

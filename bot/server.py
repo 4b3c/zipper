@@ -8,6 +8,21 @@ from aiohttp import web
 from utils.text import smart_split
 from bot.client import client, post_to_zipper, resolve_thread, DISCORD_CHANNEL_ID
 
+# Active typing tasks keyed by thread_id
+_typing_tasks: dict[int, asyncio.Task] = {}
+
+
+async def _typing_loop(thread_id: int):
+    """Send a typing indicator every 8 seconds until cancelled."""
+    while True:
+        try:
+            channel = client.get_channel(thread_id)
+            if channel:
+                await channel.trigger_typing()
+        except Exception as e:
+            print(f"[discord] typing error for {thread_id}: {e}")
+        await asyncio.sleep(8)
+
 
 async def handle_inject(request: web.Request) -> web.Response:
     """Forward a synthetic prompt to zipper for a given thread."""
@@ -178,9 +193,37 @@ async def handle_react(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=500)
 
 
+async def handle_typing(request: web.Request) -> web.Response:
+    """Start or stop the typing indicator for a thread."""
+    try:
+        body = await request.json()
+        thread_id = body.get("thread_id")
+        active = body.get("active", False)
+        if thread_id is None:
+            return web.json_response({"error": "thread_id required"}, status=400)
+        thread_id = int(thread_id)
+
+        existing = _typing_tasks.pop(thread_id, None)
+        if existing:
+            existing.cancel()
+
+        if active:
+            if not client.is_ready():
+                return web.json_response({"error": "discord client not ready"}, status=503)
+            channel = client.get_channel(thread_id)
+            if channel:
+                await channel.trigger_typing()
+            _typing_tasks[thread_id] = asyncio.create_task(_typing_loop(thread_id))
+
+        return web.json_response({"ok": True})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
 def setup_routes(app: web.Application):
     app.router.add_post("/send", handle_send)
     app.router.add_post("/history", handle_history)
     app.router.add_post("/edit", handle_edit)
     app.router.add_post("/react", handle_react)
     app.router.add_post("/inject", handle_inject)
+    app.router.add_post("/typing", handle_typing)
