@@ -50,7 +50,7 @@ async def run_conversation(description: str, conversation_id: str) -> str:
     # Claim ownership immediately (no awaits before this) — any running task
     # for this conversation will see the mismatch at its next yield point and exit.
     owner_token = str(uuid.uuid4())
-    update_meta(conversation_id, last_owner_token=owner_token)
+    update_meta(conversation_id, last_owner_token=owner_token, status="active")
 
     version = get_latest_version(conversation_id)
     messages = _sanitize_messages(version["messages"])
@@ -81,6 +81,8 @@ async def run_conversation(description: str, conversation_id: str) -> str:
     finally:
         if thread_id:
             asyncio.create_task(asyncio.to_thread(_set_typing, thread_id, False))
+        if _owns(conversation_id, owner_token):
+            update_meta(conversation_id, status="inactive")
 
     if _owns(conversation_id, owner_token):
         await maybe_compact(conversation_id)

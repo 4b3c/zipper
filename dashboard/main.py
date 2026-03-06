@@ -26,6 +26,8 @@ from llm import run_conversation
 
 app = FastAPI(title="Zipper Dashboard", version="0.1")
 
+USER_NAME = os.environ.get("USER", "You")
+
 # Serve static files (CSS, JS)
 BASE_DIR = "/opt/zipper/app/dashboard"
 
@@ -44,114 +46,49 @@ async def list_convos(offset: int = 0):
     """Return paginated conversation list as HTML (for sidebar)."""
     conversations = list_conversations()
     
-    # Reverse to show newest first, then paginate
-    conversations.reverse()
+    # Sort by updated_at (most recent first)
+    conversations.sort(key=lambda c: c.get("updated_at", c.get("created_at", "")), reverse=True)
+    
     total = len(conversations)
     page_size = 10
     paginated = conversations[offset : offset + page_size]
     
-    html = '<div class="space-y-2" id="conversation-list-items">'
+    html = '<div class="space-y-0.5" id="conversation-list-items">'
     for convo in paginated:
         convo_id = convo["id"]
-        title = convo.get("title", "Untitled")
-        created = convo.get("created_at", "")
-        
-        html += f'''
-        <a href="/?conversation={convo_id}"
-           class="block p-3 rounded hover:bg-slate-700 transition text-sm">
-            <div class="font-medium text-white">{title}</div>
-            <div class="text-xs text-slate-400">{created[:10]}</div>
-        </a>
-        '''
-    
-    # Add "Load More" button if there are more conversations
+        title = escape_html(convo.get("title", "Untitled"))
+        updated = convo.get("updated_at", convo.get("created_at", ""))
+        status = convo.get("status", "")
+        summary = convo.get("summary", "")
+
+        # Relative-ish timestamp
+        timestamp = format_timestamp(updated) if updated else ""
+        if not timestamp and updated:
+            timestamp = updated[:10]
+
+        status_dot = '<span class="w-1.5 h-1.5 rounded-full bg-green-500 inline-block flex-shrink-0"></span>' if status == "active" else ""
+        summary_preview = escape_html((summary[:55] + "…") if summary and len(summary) > 55 else summary)
+
+        html += f'''<a href="/?conversation={convo_id}"
+   class="block px-2 py-2 rounded-lg hover:bg-slate-800 transition group">
+    <div class="flex items-center gap-1.5 mb-0.5">
+        {status_dot}
+        <div class="font-medium text-slate-200 text-xs truncate flex-1 group-hover:text-white">{title}</div>
+        <span class="text-[10px] text-slate-600 flex-shrink-0">{timestamp}</span>
+    </div>
+    {f'<div class="text-[11px] text-slate-500 truncate pl-3">{summary_preview}</div>' if summary_preview else ''}
+</a>'''
+
     if offset + page_size < total:
         remaining = total - (offset + page_size)
-        html += f'''
-        <button id="load-more-btn" 
-                class="w-full p-3 text-center text-xs text-slate-400 hover:text-slate-200 transition border-t border-slate-700 mt-2"
-                onclick="loadMoreConversations({offset + page_size})">
-            Load {min(page_size, remaining)} more...
-        </button>
-        '''
-    
+        html += f'''<button id="load-more-btn"
+        class="w-full mt-1 px-2 py-1.5 text-center text-xs text-slate-500 hover:text-slate-300 transition"
+        onclick="loadMoreConversations({offset + page_size})">
+    Load {min(page_size, remaining)} more…
+</button>'''
+
     html += '</div>'
     return html
-
-
-def format_message_content(content) -> str:
-    """
-    Format message content (text, tool_use, tool_result blocks) as rich HTML.
-    Handles Markdown formatting and creates collapsible bubbles.
-    """
-    if isinstance(content, str):
-        # Simple string — apply basic markdown + HTML escaping
-        return format_text_as_html(content)
-    
-    if not isinstance(content, list):
-        # Unknown format — escape and return
-        return escape_html(json.dumps(content, indent=2))
-    
-    # List of content blocks (text, tool_use, tool_result, etc.)
-    html_parts = []
-    for block in content:
-        if not isinstance(block, dict):
-            html_parts.append(f"<div>{escape_html(str(block))}</div>")
-            continue
-        
-        block_type = block.get("type")
-        
-        if block_type == "text":
-            text = block.get("text", "")
-            html_parts.append(format_text_as_html(text))
-        
-        elif block_type == "tool_use":
-            tool_name = block.get("name", "unknown")
-            tool_input = block.get("input", {})
-            tool_id = block.get("id", "")
-            html_parts.append(render_tool_call_bubble(tool_name, tool_input, tool_id))
-        
-        elif block_type == "tool_result":
-            tool_use_id = block.get("tool_use_id", "")
-            result_content = block.get("content", "")
-            html_parts.append(render_tool_result_bubble(tool_use_id, result_content))
-    
-    return "".join(html_parts)
-
-
-def format_text_as_html(text: str) -> str:
-    """
-    Convert plain text with Markdown-style formatting to HTML.
-    - **bold** → <strong>bold</strong>
-    - - bullet → <li>bullet</li>
-    - etc.
-    """
-    text = escape_html(text)
-    
-    # Convert **bold** to <strong>bold</strong>
-    text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
-    
-    # Convert - bullet lists (lines starting with -)
-    lines = text.split("\n")
-    result = []
-    in_list = False
-    for line in lines:
-        if line.strip().startswith("- "):
-            if not in_list:
-                result.append("<ul class='list-disc list-inside ml-2'>")
-                in_list = True
-            item_text = line.strip()[2:]
-            result.append(f"<li>{item_text}</li>")
-        else:
-            if in_list:
-                result.append("</ul>")
-                in_list = False
-            if line.strip():
-                result.append(f"<div>{line}</div>")
-    if in_list:
-        result.append("</ul>")
-    
-    return "<div class='text-white text-sm space-y-2'>" + "".join(result) + "</div>"
 
 
 def escape_html(text: str) -> str:
@@ -159,103 +96,223 @@ def escape_html(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def format_timestamp(ts: str) -> str:
+    """Format an ISO timestamp to a short time string."""
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        return dt.strftime("%-I:%M %p")
+    except Exception:
+        return ts[:16] if ts else ""
+
+
+def format_text_as_html(text: str) -> str:
+    """Wrap raw markdown text in a markdown-body div (rendered client-side by marked.js)."""
+    return f'<div class="markdown-body text-sm">{escape_html(text)}</div>'
+
+
+def format_message_content(content) -> str:
+    """
+    Format message content (text, tool_use, tool_result blocks) as rich HTML.
+    Text blocks use markdown-body (rendered by marked.js on the client).
+    Tool calls and results are collapsible bubbles.
+    """
+    if isinstance(content, str):
+        return format_text_as_html(content)
+
+    if not isinstance(content, list):
+        return f'<pre class="text-xs text-slate-400">{escape_html(json.dumps(content, indent=2))}</pre>'
+
+    html_parts = []
+    for block in content:
+        if not isinstance(block, dict):
+            html_parts.append(f"<div class='text-sm'>{escape_html(str(block))}</div>")
+            continue
+
+        block_type = block.get("type")
+
+        if block_type == "text":
+            html_parts.append(format_text_as_html(block.get("text", "")))
+        elif block_type == "tool_use":
+            html_parts.append(render_tool_call_bubble(
+                block.get("name", "unknown"),
+                block.get("input", {}),
+                block.get("id", ""),
+            ))
+        elif block_type == "tool_result":
+            html_parts.append(render_tool_result_bubble(
+                block.get("tool_use_id", ""),
+                block.get("content", ""),
+            ))
+
+    return "".join(html_parts)
+
+
 def render_tool_call_bubble(tool_name: str, tool_input: dict, tool_id: str = "") -> str:
-    """
-    Render a collapsible 'tool call' bubble.
-    Shows tool name and parameter count, expandable to see full input.
-    """
+    """Collapsible tool call bubble — pill summary + JSON input."""
     input_json = json.dumps(tool_input, indent=2)
     param_count = len(tool_input)
-    
-    # Generate unique ID for this details element
-    details_id = f"tool-{tool_id[:8]}" if tool_id else f"tool-{id(tool_input)}"
-    
-    return f'''
-    <details class="mb-3 group">
-        <summary class="cursor-pointer bg-blue-900/30 border border-blue-700 rounded p-3 text-sm font-mono text-blue-300 hover:bg-blue-900/50 transition">
-            🔧 called <strong>{escape_html(tool_name)}</strong> with {param_count} param{'s' if param_count != 1 else ''}
-        </summary>
-        <div class="mt-2 ml-4 bg-slate-900 border border-slate-700 rounded p-3">
-            <pre class="text-xs text-slate-300 overflow-x-auto whitespace-pre-wrap break-words"><code>{escape_html(input_json)}</code></pre>
-        </div>
-    </details>
-    '''
+    label = f"{escape_html(tool_name)} <span class='text-slate-500 font-normal'>({param_count} param{'s' if param_count != 1 else ''})</span>"
+
+    return f'''<details class="my-1.5">
+    <summary class="cursor-pointer select-none inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-xs text-slate-300 hover:border-slate-500 hover:text-white transition list-none">
+        <svg class="w-3 h-3 text-slate-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        <code class="font-mono font-medium">{label}</code>
+    </summary>
+    <div class="mt-2 rounded-lg bg-slate-900/80 border border-slate-700/60 overflow-hidden">
+        <div class="px-3 py-1 bg-slate-800/60 border-b border-slate-700/60 text-[10px] text-slate-500 font-mono uppercase tracking-wider">input</div>
+        <pre class="p-3 text-xs text-slate-300 overflow-x-auto"><code>{escape_html(input_json)}</code></pre>
+    </div>
+</details>'''
 
 
 def render_tool_result_bubble(tool_use_id: str, result_content) -> str:
-    """
-    Render a collapsible 'result' bubble.
-    Shows truncated result, expandable to see full output.
-    """
-    # Handle different result content types
-    if isinstance(result_content, dict):
+    """Collapsible tool result bubble."""
+    if isinstance(result_content, list):
+        # List of content blocks — extract text
+        parts = []
+        for item in result_content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                parts.append(item.get("text", ""))
+            else:
+                parts.append(json.dumps(item, indent=2))
+        result_text = "\n".join(parts)
+    elif isinstance(result_content, dict):
         result_text = json.dumps(result_content, indent=2)
     else:
         result_text = str(result_content)
+
+    char_count = len(result_text)
+    size_label = f"{char_count:,} chars" if char_count > 100 else ""
+
+    return f'''<details class="my-1.5">
+    <summary class="cursor-pointer select-none inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800/60 border border-slate-700/60 text-xs text-slate-400 hover:border-slate-500 hover:text-slate-300 transition list-none">
+        <svg class="w-3 h-3 text-slate-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+        <span>result</span>
+        {f'<span class="text-slate-600">{escape_html(size_label)}</span>' if size_label else ''}
+    </summary>
+    <div class="mt-2 rounded-lg bg-slate-900/80 border border-slate-700/60 overflow-hidden">
+        <div class="px-3 py-1 bg-slate-800/60 border-b border-slate-700/60 text-[10px] text-slate-500 font-mono uppercase tracking-wider">output</div>
+        <pre class="p-3 text-xs text-slate-300 overflow-x-auto max-h-72 overflow-y-auto"><code>{escape_html(result_text)}</code></pre>
+    </div>
+</details>'''
+
+
+def _is_tool_result_only(content) -> bool:
+    """Return True if content is purely tool_result blocks (no user text)."""
+    if not isinstance(content, list):
+        return False
+    return all(isinstance(b, dict) and b.get("type") == "tool_result" for b in content)
+
+
+def render_message(msg: dict) -> str:
+    """Render a single message as a chat bubble."""
+    role = msg.get("role", "user")
+    content = msg.get("content", "")
+    timestamp = msg.get("timestamp", "")
+    content_html = format_message_content(content)
+    time_str = format_timestamp(timestamp)
+    time_html = f' <span class="text-slate-500">· {time_str}</span>' if time_str else ""
+
+    # Tool result messages (role=user but contain only tool results) render inline, not as user bubbles
+    if role == "user" and _is_tool_result_only(content):
+        return f'''<div class="pl-10 space-y-1">{content_html}</div>'''
+
+    if role == "user":
+        return f'''<div class="flex justify-end">
+    <div class="flex flex-col items-end max-w-[80%] min-w-0">
+        <div class="user-bubble px-4 py-3 bg-blue-600 rounded-2xl rounded-tr-sm text-white text-sm min-w-0">{content_html}</div>
+        <div class="text-[11px] text-slate-500 mt-1 mr-1">{escape_html(USER_NAME)}{time_html}</div>
+    </div>
+</div>'''
+    else:
+        return f'''<div class="flex gap-3">
+    <div class="w-7 h-7 rounded-full bg-violet-700 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5 select-none">Z</div>
+    <div class="flex-1 min-w-0">
+        <div class="text-[11px] text-slate-400 mb-2">Zipper{time_html}</div>
+        <div class="space-y-1 min-w-0">{content_html}</div>
+    </div>
+</div>'''
+
+
+def render_messages_html(messages: list) -> str:
+    """Render all messages as HTML."""
+    if not messages:
+        return '<div class="text-slate-600 text-sm">No messages yet.</div>'
+    return "\n".join(render_message(msg) for msg in messages)
+
+
+@app.get("/api/conversations/{conversation_id}/metadata", response_class=JSONResponse)
+async def get_conversation_metadata(conversation_id: str):
+    """Get conversation metadata (title, status, summary, dates, etc.)."""
+    meta = get_conversation(conversation_id)
+    if not meta:
+        return JSONResponse({"error": "Conversation not found"}, status_code=404)
     
-    # Truncate for display
-    truncated = result_text[:200] + "..." if len(result_text) > 200 else result_text
-    details_id = f"result-{tool_use_id[:8]}" if tool_use_id else f"result-{id(result_content)}"
+    # Count messages in latest version
+    version = get_latest_version(conversation_id)
+    message_count = len(version.get("messages", []))
     
-    return f'''
-    <details class="mb-3 group">
-        <summary class="cursor-pointer bg-amber-900/30 border border-amber-700 rounded p-3 text-sm font-mono text-amber-300 hover:bg-amber-900/50 transition">
-            📦 result {f'({len(result_text)} bytes)' if len(result_text) > 100 else ''}
-        </summary>
-        <div class="mt-2 ml-4 bg-slate-900 border border-slate-700 rounded p-3">
-            <pre class="text-xs text-slate-300 overflow-x-auto whitespace-pre-wrap break-words max-h-64"><code>{escape_html(result_text)}</code></pre>
-        </div>
-    </details>
-    '''
+    return JSONResponse({
+        "id": meta.get("id"),
+        "title": meta.get("title", "Untitled"),
+        "status": meta.get("status", ""),
+        "summary": meta.get("summary", ""),
+        "created_at": meta.get("created_at", ""),
+        "updated_at": meta.get("updated_at", ""),
+        "message_count": message_count,
+        "source": meta.get("source", ""),
+        "discord_thread_id": meta.get("discord_thread_id")
+    })
 
 
 @app.get("/api/conversations/{conversation_id}/view", response_class=HTMLResponse)
 async def view_conversation(conversation_id: str):
     """Load and render a conversation thread."""
-    meta = get_conversation(conversation_id)
+    try:
+        meta = get_conversation(conversation_id)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return HTMLResponse(
+            "<div class='text-red-400 p-4'>Conversation not found. Try selecting one from the sidebar.</div>",
+            status_code=404
+        )
+    
     if not meta:
-        return "<div>Conversation not found</div>"
+        return HTMLResponse(
+            "<div class='text-red-400 p-4'>Conversation not found.</div>",
+            status_code=404
+        )
     
-    version = get_latest_version(conversation_id)
+    try:
+        version = get_latest_version(conversation_id)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return HTMLResponse(
+            "<div class='text-red-400 p-4'>Error loading conversation data.</div>",
+            status_code=500
+        )
+    
     messages = version.get("messages", [])
-    
-    messages_html = ""
-    for msg in messages:
-        role = msg.get("role", "user")
-        content = msg.get("content", "")
-        timestamp = msg.get("timestamp", "")
-        
-        # Format content using rich formatter
-        content_html = format_message_content(content)
-        
-        role_class = "bg-blue-900" if role == "user" else "bg-slate-700"
-        messages_html += f'''
-        <div class="mb-4 p-4 rounded {role_class} space-y-2">
-            <div class="text-xs text-slate-300">{role.title()} • {timestamp or 'just now'}</div>
-            {content_html}
-        </div>
-        '''
-    
-    return f'''
-    <div class="flex flex-col h-full overflow-hidden">
-        <div id="chat-messages" class="flex-1 overflow-y-auto space-y-4 p-4">
-            {messages_html if messages_html else '<div class="text-slate-400 text-sm">No messages yet</div>'}
-        </div>
-        <div id="message-input" class="border-t border-slate-600 p-4 flex-shrink-0">
-            <form id="chat-form" class="flex gap-2">
-                <input type="text" 
-                       name="text"
-                       placeholder="Message..." 
-                       class="flex-1 px-3 py-2 bg-slate-800 text-white rounded border border-slate-600 focus:outline-none focus:border-blue-500"
-                       required
-                       autocomplete="off">
-                <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex-shrink-0">
-                    Send
-                </button>
-            </form>
-        </div>
+    messages_html = render_messages_html(messages)
+
+    return f'''<div class="flex flex-col overflow-hidden flex-1">
+    <div id="chat-messages" class="flex-1 overflow-y-auto space-y-5 px-5 py-5">
+        {messages_html}
     </div>
-    '''
+    <div class="border-t border-slate-800 px-4 py-3 flex-shrink-0">
+        <form id="chat-form" class="flex gap-2 items-end">
+            <textarea id="chat-input"
+                      name="text"
+                      rows="1"
+                      placeholder="Message Zipper…"
+                      class="flex-1 px-3 py-2 bg-slate-800 text-white rounded-xl border border-slate-700 focus:outline-none focus:border-blue-500 text-sm placeholder-slate-500 transition"
+                      required
+                      autocomplete="off"></textarea>
+            <button type="submit"
+                    class="w-9 h-9 flex items-center justify-center bg-blue-600 text-white rounded-xl hover:bg-blue-500 transition flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </button>
+        </form>
+    </div>
+</div>'''
 
 
 # @app.websocket("/ws/conversations/{conversation_id}")
@@ -311,31 +368,7 @@ async def send_message(conversation_id: str, request: Request, background_tasks:
     
     version = get_latest_version(conversation_id)
     messages = version.get("messages", [])
-    
-    messages_html = ""
-    for msg in messages:
-        role = msg.get("role", "user")
-        content = msg.get("content", "")
-        timestamp = msg.get("timestamp", "")
-        
-        # Format content (could be string or list of blocks)
-        if isinstance(content, list):
-            content_text = json.dumps(content, indent=2)
-        else:
-            content_text = str(content)
-        
-        # Basic HTML escaping
-        content_text = content_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        
-        role_class = "bg-blue-900" if role == "user" else "bg-slate-700"
-        messages_html += f'''
-        <div class="mb-4 p-4 rounded {role_class}">
-            <div class="text-xs text-slate-300 mb-2">{role} • {timestamp}</div>
-            <div class="text-white whitespace-pre-wrap text-sm">{content_text}</div>
-        </div>
-        '''
-    
-    return HTMLResponse(messages_html)
+    return HTMLResponse(render_messages_html(messages))
 
 
 @app.post("/api/conversations", response_class=HTMLResponse)
@@ -431,6 +464,12 @@ async def memory_delete(key: str):
     return {"key": key, "status": "deleted"}
 
 
+@app.get("/api/config")
+async def config():
+    """Return public client configuration."""
+    return {"user": USER_NAME}
+
+
 @app.get("/health")
 async def health():
     """Health check."""
@@ -439,4 +478,4 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=4201, reload=False)
+    uvicorn.run(app, host="0.0.0.0", port=4201, reload=False)

@@ -1,188 +1,166 @@
 /**
  * Zipper Dashboard Frontend
- * WebSocket streaming for real-time message rendering
  */
 
 let currentConversationId = null;
-let ws = null;
 let currentMessageElement = null;
+let currentMessageWrapper = null;
 let pollInterval = null;
+let USER_NAME = 'You';
 
-// Syntax highlighting for code blocks
-function highlightCode() {
-    document.querySelectorAll('pre code').forEach(block => {
+// Configure marked.js
+if (typeof marked !== 'undefined') {
+    marked.setOptions({ breaks: true, gfm: true });
+}
+
+// Render all unrendered .markdown-body elements
+function renderMarkdown() {
+    document.querySelectorAll('.markdown-body:not([data-rendered])').forEach(el => {
+        const raw = el.textContent;
+        if (!raw.trim()) return;
         try {
-            hljs.highlightElement(block);
+            el.innerHTML = marked.parse(raw);
+            el.dataset.rendered = '1';
+            el.querySelectorAll('pre code').forEach(block => {
+                try { hljs.highlightElement(block); } catch (e) {}
+            });
         } catch (e) {
-            console.error('Syntax highlighting error:', e);
+            console.error('markdown render error', e);
         }
     });
 }
 
-// Scroll chat to bottom
-function scrollToBottom() {
-    const messagesContainer = document.getElementById('chat-messages');
-    if (messagesContainer) {
-        // Use a small timeout to ensure DOM has been painted
-        setTimeout(() => {
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        }, 0);
-    }
+// Escape HTML for safe insertion
+function escapeHtml(text) {
+    const d = document.createElement('div');
+    d.textContent = text;
+    return d.innerHTML;
 }
 
-// Append a token to the current streaming message (typewriter effect)
+// Scroll chat to bottom
+function scrollToBottom() {
+    const el = document.getElementById('chat-messages');
+    if (el) setTimeout(() => { el.scrollTop = el.scrollHeight; }, 0);
+}
+
+// Build an assistant message wrapper (avatar + label)
+function createAssistantWrapper(time) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'flex gap-3';
+    wrapper.innerHTML = `
+        <div class="w-7 h-7 rounded-full bg-violet-700 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5 select-none">Z</div>
+        <div class="flex-1 min-w-0">
+            <div class="text-[11px] text-slate-400 mb-2">Zipper${time ? ' <span class="text-slate-500">· ' + escapeHtml(time) + '</span>' : ''}</div>
+            <div class="content space-y-1 min-w-0 text-sm text-slate-100"></div>
+        </div>`;
+    return wrapper;
+}
+
+// Append a streaming token to the current message
 function appendToken(token) {
     if (!currentMessageElement) {
-        // Create new assistant message
-        currentMessageElement = document.createElement('div');
-        currentMessageElement.className = 'mb-4 p-4 rounded bg-slate-700 text-white whitespace-pre-wrap break-words text-sm';
-        currentMessageElement.id = 'streaming-message';
-        document.getElementById('chat-messages').appendChild(currentMessageElement);
+        currentMessageWrapper = createAssistantWrapper('');
+        currentMessageWrapper.id = 'streaming-message-wrapper';
+        document.getElementById('chat-messages').appendChild(currentMessageWrapper);
+        currentMessageElement = currentMessageWrapper.querySelector('.content');
+        // Use a pre-like div for streaming (markdown rendered on completion)
+        const textNode = document.createElement('div');
+        textNode.id = 'streaming-text';
+        textNode.className = 'whitespace-pre-wrap text-slate-100 text-sm';
+        currentMessageElement.appendChild(textNode);
+        currentMessageElement = textNode;
     }
-    
     currentMessageElement.textContent += token;
     scrollToBottom();
 }
 
-// Add a complete message to the chat
+// Add a complete message bubble
 function addMessage(role, content) {
-    const msgDiv = document.createElement('div');
-    msgDiv.className = `mb-4 p-4 rounded ${role === 'user' ? 'bg-blue-900' : 'bg-slate-700'} text-white whitespace-pre-wrap break-words text-sm`;
-    
-    // Format content based on type
-    if (typeof content === 'object') {
-        msgDiv.innerHTML = `<pre>${JSON.stringify(content, null, 2)}</pre>`;
-    } else {
-        msgDiv.textContent = content;
-    }
-    
-    const roleDiv = document.createElement('div');
-    roleDiv.className = 'text-xs text-slate-300 mb-2';
-    roleDiv.textContent = role + ' • ' + new Date().toLocaleTimeString();
-    
-    msgDiv.insertBefore(roleDiv, msgDiv.firstChild);
-    
-    document.getElementById('chat-messages').appendChild(msgDiv);
-    scrollToBottom();
-}
+    const messages = document.getElementById('chat-messages');
+    if (!messages) return;
 
-// Render a tool call result
-function addToolResult(toolName, result) {
-    const msgDiv = document.createElement('div');
-    msgDiv.className = 'mb-4 p-4 rounded bg-amber-900/30 border border-amber-700 text-white';
-    
-    const titleDiv = document.createElement('div');
-    titleDiv.className = 'text-sm font-bold text-amber-200 mb-2';
-    titleDiv.textContent = `🔧 ${toolName}`;
-    
-    const codeDiv = document.createElement('pre');
-    codeDiv.className = 'bg-slate-900 p-3 rounded overflow-x-auto text-xs whitespace-pre-wrap';
-    const codeContent = document.createElement('code');
-    codeContent.className = 'language-bash';
-    
-    // Truncate very long outputs
-    const displayResult = result.length > 5000 ? result.substring(0, 5000) + '\n... (truncated)' : result;
-    codeContent.textContent = displayResult;
-    
-    codeDiv.appendChild(codeContent);
-    
-    msgDiv.appendChild(titleDiv);
-    msgDiv.appendChild(codeDiv);
-    
-    document.getElementById('chat-messages').appendChild(msgDiv);
-    highlightCode();
+    const wrapper = document.createElement('div');
+    const text = typeof content === 'object' ? JSON.stringify(content, null, 2) : String(content);
+
+    if (role === 'user') {
+        wrapper.className = 'flex justify-end';
+        wrapper.innerHTML = `
+            <div class="flex flex-col items-end max-w-[80%] min-w-0">
+                <div class="user-bubble px-4 py-3 bg-blue-600 rounded-2xl rounded-tr-sm text-white text-sm min-w-0">
+                    <div class="markdown-body">${escapeHtml(text)}</div>
+                </div>
+                <div class="text-[11px] text-slate-500 mt-1 mr-1">${escapeHtml(USER_NAME)}</div>
+            </div>`;
+    } else {
+        const asst = createAssistantWrapper('');
+        const contentEl = asst.querySelector('.content');
+        const mdDiv = document.createElement('div');
+        mdDiv.className = 'markdown-body text-sm';
+        mdDiv.textContent = text;
+        contentEl.appendChild(mdDiv);
+        messages.appendChild(asst);
+        renderMarkdown();
+        scrollToBottom();
+        return;
+    }
+
+    messages.appendChild(wrapper);
+    renderMarkdown();
     scrollToBottom();
 }
 
 // Show typing indicator
 function showTyping() {
-    const typingDiv = document.createElement('div');
-    typingDiv.id = 'typing-indicator';
-    typingDiv.className = 'mb-4 p-4 rounded bg-slate-700 text-slate-400 text-sm';
-    typingDiv.innerHTML = '<span class="animate-pulse">Zipper is thinking...</span>';
-    document.getElementById('chat-messages').appendChild(typingDiv);
+    if (document.getElementById('typing-indicator')) return;
+    const el = document.createElement('div');
+    el.id = 'typing-indicator';
+    el.className = 'flex gap-3';
+    el.innerHTML = `
+        <div class="w-7 h-7 rounded-full bg-violet-700 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5 select-none">Z</div>
+        <div class="flex-1 min-w-0">
+            <div class="text-[11px] text-slate-400 mb-2">Zipper</div>
+            <div class="flex gap-1 items-center h-5">
+                <div class="w-1.5 h-1.5 rounded-full bg-slate-500 animate-bounce bounce-1"></div>
+                <div class="w-1.5 h-1.5 rounded-full bg-slate-500 animate-bounce bounce-2"></div>
+                <div class="w-1.5 h-1.5 rounded-full bg-slate-500 animate-bounce bounce-3"></div>
+            </div>
+        </div>`;
+    document.getElementById('chat-messages')?.appendChild(el);
     scrollToBottom();
 }
 
-// Remove typing indicator
 function hideTyping() {
-    const typingDiv = document.getElementById('typing-indicator');
-    if (typingDiv) {
-        typingDiv.remove();
-    }
+    document.getElementById('typing-indicator')?.remove();
 }
 
-// Handle WebSocket messages
-function handleWebSocketMessage(event) {
-    const msg = JSON.parse(event.data);
-    
-    switch (msg.type) {
-        case 'token':
-            // Streaming text token
-            appendToken(msg.data || '');
-            break;
-        
-        case 'tool_call':
-            // Tool invocation
-            console.log('Tool called:', msg.tool, msg.args);
-            addMessage('system', `🔧 Calling ${msg.tool}...`);
-            break;
-        
-        case 'tool_result':
-            // Tool output
-            if (msg.tool && msg.result) {
-                addToolResult(msg.tool, msg.result);
-            }
-            break;
-        
-        case 'message':
-            // Complete message (when not streaming tokens)
-            appendToken(msg.content || '');
-            break;
-        
-        case 'done':
-            // Finalize — move streaming to permanent
-            hideTyping();
-            if (currentMessageElement) {
-                // Message is already in DOM, just remove streaming marker
-                currentMessageElement.id = '';
-                currentMessageElement = null;
-            }
-            enableInput();
-            break;
-        
-        case 'error':
-            hideTyping();
-            const errDiv = document.createElement('div');
-            errDiv.className = 'mb-4 p-4 rounded bg-red-900/30 border border-red-700 text-red-200 text-sm';
-            errDiv.textContent = '❌ ' + (msg.message || 'An error occurred');
-            document.getElementById('chat-messages').appendChild(errDiv);
-            enableInput();
-            break;
-    }
-}
-
-// Enable/disable the input form
+// Enable/disable the input
 function disableInput() {
-    const form = document.getElementById('chat-form');
-    if (form) {
-        const input = form.querySelector('input');
-        const btn = form.querySelector('button');
-        if (input) input.disabled = true;
-        if (btn) btn.disabled = true;
-    }
+    const ta = document.getElementById('chat-input');
+    const btn = document.querySelector('#chat-form button[type="submit"]');
+    if (ta) ta.disabled = true;
+    if (btn) btn.disabled = true;
 }
 
 function enableInput() {
-    const form = document.getElementById('chat-form');
-    if (form) {
-        const input = form.querySelector('input');
-        const btn = form.querySelector('button');
-        if (input) {
-            input.disabled = false;
-            input.focus();
+    const ta = document.getElementById('chat-input');
+    const btn = document.querySelector('#chat-form button[type="submit"]');
+    if (ta) { ta.disabled = false; ta.focus(); }
+    if (btn) btn.disabled = false;
+}
+
+// Display conversation title/status in the top bar
+function displayConversationMetadata(metadata) {
+    const titleEl = document.getElementById('conv-title');
+    const statusEl = document.getElementById('conv-status');
+    if (titleEl) titleEl.textContent = metadata.title || 'Untitled';
+    if (statusEl) {
+        if (metadata.status === 'active') {
+            statusEl.innerHTML = '<span class="inline-block w-1.5 h-1.5 rounded-full bg-green-500 mr-1"></span>active';
+            statusEl.className = 'ml-3 text-xs text-green-400';
+        } else {
+            statusEl.textContent = metadata.status || '';
+            statusEl.className = 'ml-3 text-xs text-slate-500';
         }
-        if (btn) btn.disabled = false;
     }
 }
 
@@ -192,13 +170,50 @@ async function loadConversation(conversationId) {
     const html = await response.text();
     const chatContainer = document.getElementById('chat-container');
     chatContainer.innerHTML = html;
-    
+
     currentConversationId = conversationId;
-    
-    // Attach form submit handler
+    currentMessageElement = null;
+    currentMessageWrapper = null;
+
+    // Render markdown and highlight code in loaded messages
+    renderMarkdown();
+
+    // Scroll to bottom
+    const messagesContainer = document.getElementById('chat-messages');
+    if (messagesContainer) {
+        setTimeout(() => {
+            void messagesContainer.offsetHeight;
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }, 60);
+    }
+
+    // Load metadata for top bar
+    try {
+        const metaResponse = await fetch(`/api/conversations/${conversationId}/metadata`);
+        const metadata = await metaResponse.json();
+        displayConversationMetadata(metadata);
+    } catch (err) {
+        console.error('Error loading conversation metadata:', err);
+    }
+
+    // Attach form handlers
     const form = document.getElementById('chat-form');
-    if (form) {
-        form.addEventListener('submit', handleFormSubmit);
+    if (form) form.addEventListener('submit', handleFormSubmit);
+
+    // Auto-grow textarea
+    const ta = document.getElementById('chat-input');
+    if (ta) {
+        ta.addEventListener('input', () => {
+            ta.style.height = 'auto';
+            ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
+        });
+        ta.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+            }
+        });
+        ta.focus();
     }
 }
 
@@ -255,33 +270,26 @@ async function loadConversation(conversationId) {
 // Poll for updated conversation view
 async function pollForUpdates() {
     if (!currentConversationId) return;
-    
+
     try {
         const response = await fetch(`/api/conversations/${currentConversationId}/view`);
         if (!response.ok) return;
-        
+
         const html = await response.text();
-        
-        // Extract just the messages section
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = html;
         const newMessages = tempDiv.querySelector('#chat-messages')?.innerHTML;
-        
+
         if (newMessages) {
             const messagesContainer = document.getElementById('chat-messages');
-            if (messagesContainer) {
-                const currentContent = messagesContainer.innerHTML;
-                // Only update if content has changed
-                if (currentContent !== newMessages) {
-                    messagesContainer.innerHTML = newMessages;
-                    scrollToBottom();
-                    highlightCode();
-                    
-                    // Check if we're still waiting (has typing indicator)
-                    if (!document.getElementById('typing-indicator')) {
-                        // No more typing, stop polling
-                        stopPolling();
-                    }
+            if (messagesContainer && messagesContainer.innerHTML !== newMessages) {
+                messagesContainer.innerHTML = newMessages;
+                renderMarkdown();
+                scrollToBottom();
+                // Stop polling once the response is in and typing is gone
+                if (!document.getElementById('typing-indicator')) {
+                    stopPolling();
+                    enableInput();
                 }
             }
         }
@@ -305,48 +313,46 @@ function stopPolling() {
 // Handle form submission
 async function handleFormSubmit(e) {
     e.preventDefault();
-    const input = e.target.querySelector('input[name="text"]');
-    const text = input.value.trim();
-    
+    const ta = document.getElementById('chat-input');
+    const text = ta?.value.trim();
+
     if (!text || !currentConversationId) return;
-    
+
     try {
-        // Disable input and show typing indicator
         disableInput();
         showTyping();
-        
-        // Send message via HTTP POST
+
         const response = await fetch(`/api/conversations/${currentConversationId}/message`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: text })
+            body: JSON.stringify({ text })
         });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-        
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
         const html = await response.text();
-        
-        // Replace messages with updated list
         const messagesContainer = document.getElementById('chat-messages');
         if (messagesContainer) {
             messagesContainer.innerHTML = html;
+            renderMarkdown();
             scrollToBottom();
-            highlightCode();
+            // Re-show typing since LLM response hasn't arrived yet
+            showTyping();
         }
-        
-        input.value = '';
-        
-        // Start polling for LLM response
+
+        if (ta) {
+            ta.value = '';
+            ta.style.height = 'auto';
+        }
+
         startPolling();
-        
+
     } catch (err) {
         console.error('Error sending message:', err);
         hideTyping();
         const errDiv = document.createElement('div');
-        errDiv.className = 'mb-4 p-4 rounded bg-red-900/30 border border-red-700 text-red-200 text-sm';
-        errDiv.textContent = '❌ Failed to send message: ' + err.message;
+        errDiv.className = 'flex gap-3';
+        errDiv.innerHTML = `<div class="flex-1 px-4 py-2 rounded-xl bg-red-900/30 border border-red-800 text-red-300 text-sm">Failed to send: ${escapeHtml(err.message)}</div>`;
         document.getElementById('chat-messages')?.appendChild(errDiv);
         enableInput();
         stopPolling();
@@ -396,7 +402,7 @@ async function loadMoreConversations(offset) {
             // Add click handlers to new conversation links
             listContainer.querySelectorAll('a').forEach(link => {
                 link.addEventListener('click', (e) => {
-                    const convoId = link.href.match(/conversation=([a-f0-9]+)/)?.[1];
+                    const convoId = link.href.match(/conversation=([^&"]+)/)?.[1];
                     if (convoId) {
                         selectConversation(convoId, e);
                     }
@@ -421,7 +427,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Add click handlers to conversation links
             listContainer.querySelectorAll('a').forEach(link => {
                 link.addEventListener('click', (e) => {
-                    const convoId = link.href.match(/conversation=([a-f0-9]+)/)?.[1];
+                    const convoId = link.href.match(/conversation=([^&"]+)/)?.[1];
                     if (convoId) {
                         selectConversation(convoId, e);
                     }
