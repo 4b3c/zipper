@@ -376,7 +376,9 @@ async def get_conversation_metadata(conversation_id: str):
 async def get_context_length(conversation_id: str):
     """Count tokens in the conversation context using the Anthropic count_tokens API."""
     TOKEN_LIMIT = 200_000
-    messages_raw = get_full_history(conversation_id)
+    # Use the current compaction window — same messages the LLM loop actually sends
+    version = get_latest_version(conversation_id)
+    messages_raw = version.get("messages", [])
     message_count = len(messages_raw)
 
     # Strip to role+content only for the API
@@ -400,7 +402,7 @@ async def get_context_length(conversation_id: str):
     except Exception:
         # Fallback: rough char estimate + fixed overhead for system prompt + tools
         total_chars = sum(len(str(m.get("content", ""))) for m in messages_raw)
-        token_count = int(total_chars / 3.5) + 2500  # +2500 for system + tool schemas
+        token_count = int(total_chars / 3.5) + 2500  # +2500 for system prompt + tool schemas
         estimated = True
 
     percent = round(token_count / TOKEN_LIMIT * 100, 1)
