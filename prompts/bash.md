@@ -20,15 +20,17 @@
 
 ## Systemd Services
 
-Both run as system services (`systemctl`):
+All run as system services (`systemctl`):
 - `zipper` — the main FastAPI process (port 4199)
 - `zipper-discord` — the Discord bot (port 4200)
+- `zipper-dashboard` — the web dashboard (port 4201)
 
 Useful commands:
 ```
 systemctl status zipper
 journalctl -u zipper -n 50 --no-pager
 journalctl -u zipper-discord -n 50 --no-pager
+journalctl -u zipper-dashboard -n 50 --no-pager
 ```
 
 Do not restart `zipper` directly — use the `restart` tool so the watchdog can resume the conversation.

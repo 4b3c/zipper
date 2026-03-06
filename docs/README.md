@@ -15,11 +15,11 @@ Zipper can:
 
 **Entry Points:**
 - `main.py` — FastAPI server on port 4199. Routes: `/chat`, `/discord`, `/wake`, `/status`
-- `discord_bot.py` — Discord bot on port 4200. Thin relay: creates threads, forwards messages to zipper, sends zipper's responses back to Discord.
+- `bot/discord_bot.py` — Discord bot on port 4200. Thin relay: creates threads, forwards messages to zipper, sends zipper's responses back to Discord.
 - `run.py` — CLI dev tool for testing
 
 **Core Loop:**
-- `llm.py` — LLM execution engine. Calls Claude, executes tools, loops until turn complete
+- `llm/` — LLM execution engine. Calls Claude, executes tools, loops until turn complete
 - `tools/` — Tool implementations: file, bash, task, discord, web, restart
 - `storage/` — Conversation history, task queue, memory, trace logs
 
@@ -48,9 +48,9 @@ Post in a thread in the configured Discord server. Zipper will reply in the same
 **Conversations** — Each `/chat` call or Discord thread is a conversation. State is persisted in `data/conversations/`
 
 **Self-Repair** — Use `restart(zipper)` after code changes. It:
-1. Registers a watchdog with the Discord bot
-2. Restarts the main process
-3. Resumes this conversation when healthy
+1. Spawns a detached restart watcher process
+2. Restarts the main process via systemctl
+3. Watcher polls until healthy, then resumes the conversation
 
 **Task Queue** — Recurring tasks survive restarts. Mark a task done with `task(update, status="done")` and the next occurrence is created automatically
 
@@ -75,9 +75,9 @@ curl -X POST http://localhost:4199/chat ...
 
 ## Files
 
-- `llm.py` — Main LLM loop
+- `llm/` — LLM loop package
 - `main.py` — FastAPI server
-- `discord_bot.py` — Discord integration
+- `bot/discord_bot.py` — Discord integration
 - `tools/` — Tool implementations
 - `storage/` — Conversation, task, and memory persistence
 - `prompts/` — Behavior and tool documentation

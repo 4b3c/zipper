@@ -15,12 +15,12 @@ Zipper is a self-building, self-repairing AI assistant that runs 24/7 on a VPS. 
 
 ### Entry Points
 - `main.py` — FastAPI server, exposes `/chat`, `/discord`, `/wake`, `/status`
-- `discord_bot.py` — thin relay: creates Discord threads, forwards messages to zipper's `/discord` endpoint, serves HTTP API (port 4200) for zipper to push responses back
+- `bot/discord_bot.py` — thin relay: creates Discord threads, forwards messages to zipper's `/discord` endpoint, serves HTTP API (port 4200) for zipper to push responses back
 - `run.py` — dev tool, POSTs to `/chat` from CLI
 - `utils/setup_cron.py` — generates crontab entries from `data/schedule.json` (daily recurring + date-pinned oneshot entries). Run after any schedule change.
 - `utils/restart_watcher.py` — spawned by `tools/restart.py` after a zipper restart; polls `/status`, resumes the conversation via `/chat`, handles rollback on crash
 
-### LLM Loop (`llm.py`)
+### LLM Loop (`llm/`)
 - Calls Claude, parses tool calls, executes them, loops until `end_turn`
 - Model routing by self-rating: Zipper appends `{{c:X, d:X, a:X}}` to each response; total score picks the next model (>11=Opus, >6=Sonnet, else Haiku)
 - Interrupt system: each `run_task` call writes a `last_owner_token` to the conversation meta synchronously (before any await). Concurrent tasks check ownership at every yield point and exit silently if they lost it.
@@ -71,7 +71,7 @@ data/
 - OS: Ubuntu
 - Zipper runs directly via systemd: `systemctl start zipper`
 - Discord bot runs directly via systemd: `systemctl start zipper-discord`
-- Service files: `/etc/systemd/system/zipper.service`, `/etc/systemd/system/zipper-discord.service`
+- Service files: `/etc/systemd/system/zipper.service`, `/etc/systemd/system/zipper-discord.service`, `/etc/systemd/system/zipper-dashboard.service`
 - Logs: `journalctl -u zipper -n 50 --no-pager`
 - Code lives at `/opt/zipper/app`
 
@@ -114,5 +114,4 @@ python run.py "follow up" <conversation_id>
 - No streaming responses yet (Discord gets full reply after completion)
 - Self-repair not yet formally implemented (zipper can fix itself ad-hoc but no dedicated failure→repair pipeline)
 - `zipper-device` repo (remote device agents) not yet built
-- Dashboard (web UI) not yet built
 - Git commits show as repo owner, not Zipper — set `user.email` to an unrecognized email to show name-only
