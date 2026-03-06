@@ -12,15 +12,13 @@ from bot.client import client, post_to_zipper, resolve_thread, DISCORD_CHANNEL_I
 _typing_tasks: dict[int, asyncio.Task] = {}
 
 
-async def _typing_loop(thread_id: int):
+async def _typing_loop(channel):
     """Send a typing indicator every 8 seconds until cancelled."""
     while True:
         try:
-            channel = client.get_channel(thread_id)
-            if channel:
-                await channel.trigger_typing()
+            await channel._state.http.send_typing(channel.id)
         except Exception as e:
-            print(f"[discord] typing error for {thread_id}: {e}")
+            print(f"[discord] typing error: {e}")
         await asyncio.sleep(8)
 
 
@@ -210,13 +208,13 @@ async def handle_typing(request: web.Request) -> web.Response:
         if active:
             if not client.is_ready():
                 return web.json_response({"error": "discord client not ready"}, status=503)
-            channel = client.get_channel(thread_id)
-            if channel:
-                await channel.trigger_typing()
-            _typing_tasks[thread_id] = asyncio.create_task(_typing_loop(thread_id))
+            channel = client.get_channel(thread_id) or await client.fetch_channel(thread_id)
+            await channel._state.http.send_typing(channel.id)
+            _typing_tasks[thread_id] = asyncio.create_task(_typing_loop(channel))
 
         return web.json_response({"ok": True})
     except Exception as e:
+        print(f"[discord] typing setup error: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
 
