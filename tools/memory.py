@@ -92,7 +92,7 @@ def run(args: dict) -> str:
     if mode == "recent_logs":
         try:
             result = subprocess.run(
-                ["journalctl", "-u", "zipper", "-n", "30", "--no-pager", "-o", "short"],
+                ["/usr/bin/journalctl", "-u", "zipper", "-n", "30", "--no-pager", "-o", "short"],
                 capture_output=True, text=True, timeout=10,
             )
             lines = (result.stdout or "").strip()

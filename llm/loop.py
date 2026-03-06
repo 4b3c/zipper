@@ -54,7 +54,7 @@ def strip_ratings(text: str) -> str:
     return RATING_RE.sub("", text).strip()
 
 
-async def llm_loop(conversation_id: str, messages: list, system: str, owner_token: str) -> str:
+async def llm_loop(conversation_id: str, messages: list, system: str, owner_token: str, stream_callback=None) -> str:
     # Import client here to avoid circular import issues at module level
     from llm import client
 
@@ -85,9 +85,16 @@ async def llm_loop(conversation_id: str, messages: list, system: str, owner_toke
                     tools=TOOLS,
                     messages=messages,
                 ) as stream:
-                    async for _ in stream:
+                    async for event in stream:
                         if not owns():
                             return ""
+                        if (stream_callback
+                                and event.type == "content_block_delta"
+                                and getattr(event.delta, "type", None) == "text_delta"):
+                            try:
+                                await stream_callback("token", text=event.delta.text)
+                            except Exception:
+                                stream_callback = None  # client disconnected, stop sending
                     response = await stream.get_final_message()
                 break  # success
             except __import__('anthropic').APIStatusError as e:
@@ -152,6 +159,12 @@ async def llm_loop(conversation_id: str, messages: list, system: str, owner_toke
                 tool_input = block["input"]
                 tool_id = block["id"]
 
+                if stream_callback:
+                    try:
+                        await stream_callback("tool_call", tool=tool_name, args=tool_input, tool_id=tool_id)
+                    except Exception:
+                        stream_callback = None
+
                 start = datetime.now()
                 try:
                     # Run synchronous tool in a thread pool so the event loop
@@ -174,6 +187,11 @@ async def llm_loop(conversation_id: str, messages: list, system: str, owner_toke
                     if not owns():
                         return ""
                     tool_results.append({"type": "tool_result", "tool_use_id": tool_id, "content": msg})
+                    if stream_callback:
+                        try:
+                            await stream_callback("tool_result", tool_use_id=tool_id, result=msg)
+                        except Exception:
+                            stream_callback = None
                     append_message(conversation_id, "user", tool_results)
                     return ""
                 except Exception as e:
@@ -200,6 +218,11 @@ async def llm_loop(conversation_id: str, messages: list, system: str, owner_toke
                     "tool_use_id": tool_id,
                     "content": output,
                 })
+                if stream_callback:
+                    try:
+                        await stream_callback("tool_result", tool_use_id=tool_id, result=output)
+                    except Exception:
+                        stream_callback = None
 
             if not owns():
                 return ""

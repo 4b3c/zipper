@@ -11,7 +11,7 @@ import requests
 from datetime import datetime
 from typing import Optional
 
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
@@ -19,10 +19,10 @@ from starlette.requests import Request
 import sys
 sys.path.insert(0, "/opt/zipper/app")
 
-from storage.conversations import list_conversations, get_conversation, create_conversation as create_conv, get_latest_version
+from storage.conversations import list_conversations, get_conversation, create_conversation as create_conv, get_latest_version, get_full_history
 from storage.memory import get, set, delete, all as list_all
 from storage.tasks import list_tasks, create_task, update_task_status, patch_task
-from llm import run_conversation
+from llm import run_conversation, client as llm_client
 
 app = FastAPI(title="Zipper Dashboard", version="0.1")
 
@@ -50,7 +50,7 @@ async def list_convos(offset: int = 0):
     conversations.sort(key=lambda c: c.get("updated_at", c.get("created_at", "")), reverse=True)
     
     total = len(conversations)
-    page_size = 10
+    page_size = 20
     paginated = conversations[offset : offset + page_size]
     
     html = '<div class="space-y-0.5" id="conversation-list-items">'
@@ -66,24 +66,21 @@ async def list_convos(offset: int = 0):
         if not timestamp and updated:
             timestamp = updated[:10]
 
-        status_dot = '<span class="w-1.5 h-1.5 rounded-full bg-green-500 inline-block flex-shrink-0"></span>' if status == "active" else ""
+        status_dot = '<span class="dot-active"></span>' if status == "active" else ""
         summary_preview = escape_html((summary[:55] + "…") if summary and len(summary) > 55 else summary)
 
-        html += f'''<a href="/?conversation={convo_id}"
-   class="block px-2 py-2 rounded-lg hover:bg-slate-800 transition group">
-    <div class="flex items-center gap-1.5 mb-0.5">
+        html += f'''<a href="/?conversation={convo_id}" class="conv-item">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
         {status_dot}
-        <div class="font-medium text-slate-200 text-xs truncate flex-1 group-hover:text-white">{title}</div>
-        <span class="text-[10px] text-slate-600 flex-shrink-0">{timestamp}</span>
+        <div class="conv-item-title">{title}</div>
+        <span class="conv-item-meta" style="margin-left:auto;flex-shrink:0;">{timestamp}</span>
     </div>
-    {f'<div class="text-[11px] text-slate-500 truncate pl-3">{summary_preview}</div>' if summary_preview else ''}
+    {f'<div class="conv-item-summary">{summary_preview}</div>' if summary_preview else ''}
 </a>'''
 
     if offset + page_size < total:
         remaining = total - (offset + page_size)
-        html += f'''<button id="load-more-btn"
-        class="w-full mt-1 px-2 py-1.5 text-center text-xs text-slate-500 hover:text-slate-300 transition"
-        onclick="loadMoreConversations({offset + page_size})">
+        html += f'''<button class="load-more" onclick="loadMoreConversations({offset + page_size})">
     Load {min(page_size, remaining)} more…
 </button>'''
 
@@ -105,9 +102,26 @@ def format_timestamp(ts: str) -> str:
         return ts[:16] if ts else ""
 
 
+RATING_RE = re.compile(r'\{\{c:(\d),\s*d:(\d),\s*a:(\d)\}\}')
+
+
 def format_text_as_html(text: str) -> str:
-    """Wrap raw markdown text in a markdown-body div (rendered client-side by marked.js)."""
-    return f'<div class="markdown-body text-sm">{escape_html(text)}</div>'
+    """Wrap raw markdown text in a markdown-body div (rendered client-side by marked.js).
+    Extract any ratings tag and render it as a collapsible button instead.
+    """
+    m = RATING_RE.search(text)
+    rating_html = ""
+    if m:
+        text = RATING_RE.sub("", text).strip()
+        c, d, a = m.group(1), m.group(2), m.group(3)
+        rating_html = (
+            f'<div class="ratings-bar">'
+            f'<button class="rating-btn" data-label="Complexity" data-value="{c}" onclick="showRatingPopup(this)">C</button>'
+            f'<button class="rating-btn" data-label="Difficulty" data-value="{d}" onclick="showRatingPopup(this)">D</button>'
+            f'<button class="rating-btn" data-label="Ambiguity" data-value="{a}" onclick="showRatingPopup(this)">A</button>'
+            f'</div>'
+        )
+    return f'<div class="markdown-body">{escape_html(text)}</div>{rating_html}'
 
 
 def format_message_content(content) -> str:
@@ -133,68 +147,69 @@ def format_message_content(content) -> str:
         if block_type == "text":
             html_parts.append(format_text_as_html(block.get("text", "")))
         elif block_type == "tool_use":
-            html_parts.append(render_tool_call_bubble(
+            html_parts.append(render_tool_block(
                 block.get("name", "unknown"),
                 block.get("input", {}),
                 block.get("id", ""),
+                result_text=None,
             ))
         elif block_type == "tool_result":
-            html_parts.append(render_tool_result_bubble(
-                block.get("tool_use_id", ""),
-                block.get("content", ""),
-            ))
+            # Standalone tool_result (not grouped) — show minimal output block
+            tid = block.get("tool_use_id", "")
+            result_text = extract_result_text(block.get("content", ""))
+            html_parts.append(render_tool_block("(result)", {}, tid, result_text))
 
     return "".join(html_parts)
 
 
-def render_tool_call_bubble(tool_name: str, tool_input: dict, tool_id: str = "") -> str:
-    """Collapsible tool call bubble — pill summary + JSON input."""
-    input_json = json.dumps(tool_input, indent=2)
-    param_count = len(tool_input)
-    label = f"{escape_html(tool_name)} <span class='text-slate-500 font-normal'>({param_count} param{'s' if param_count != 1 else ''})</span>"
-
-    return f'''<details class="my-1.5">
-    <summary class="cursor-pointer select-none inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-xs text-slate-300 hover:border-slate-500 hover:text-white transition list-none">
-        <svg class="w-3 h-3 text-slate-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-        <code class="font-mono font-medium">{label}</code>
-    </summary>
-    <div class="mt-2 rounded-lg bg-slate-900/80 border border-slate-700/60 overflow-hidden">
-        <div class="px-3 py-1 bg-slate-800/60 border-b border-slate-700/60 text-[10px] text-slate-500 font-mono uppercase tracking-wider">input</div>
-        <pre class="p-3 text-xs text-slate-300 overflow-x-auto"><code>{escape_html(input_json)}</code></pre>
-    </div>
-</details>'''
-
-
-def render_tool_result_bubble(tool_use_id: str, result_content) -> str:
-    """Collapsible tool result bubble."""
+def extract_result_text(result_content) -> str:
+    """Extract plain text from a tool result (list, dict, or str)."""
     if isinstance(result_content, list):
-        # List of content blocks — extract text
         parts = []
         for item in result_content:
             if isinstance(item, dict) and item.get("type") == "text":
                 parts.append(item.get("text", ""))
             else:
                 parts.append(json.dumps(item, indent=2))
-        result_text = "\n".join(parts)
+        return "\n".join(parts)
     elif isinstance(result_content, dict):
-        result_text = json.dumps(result_content, indent=2)
+        return json.dumps(result_content, indent=2)
     else:
-        result_text = str(result_content)
+        return str(result_content)
 
-    char_count = len(result_text)
-    size_label = f"{char_count:,} chars" if char_count > 100 else ""
 
-    return f'''<details class="my-1.5">
-    <summary class="cursor-pointer select-none inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800/60 border border-slate-700/60 text-xs text-slate-400 hover:border-slate-500 hover:text-slate-300 transition list-none">
-        <svg class="w-3 h-3 text-slate-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
-        <span>result</span>
-        {f'<span class="text-slate-600">{escape_html(size_label)}</span>' if size_label else ''}
-    </summary>
-    <div class="mt-2 rounded-lg bg-slate-900/80 border border-slate-700/60 overflow-hidden">
-        <div class="px-3 py-1 bg-slate-800/60 border-b border-slate-700/60 text-[10px] text-slate-500 font-mono uppercase tracking-wider">output</div>
-        <pre class="p-3 text-xs text-slate-300 overflow-x-auto max-h-72 overflow-y-auto"><code>{escape_html(result_text)}</code></pre>
-    </div>
-</details>'''
+def render_tool_block(tool_name: str, tool_input: dict, tool_id: str, result_text=None) -> str:
+    """Render a collapsible tool call+result block (codeblock style)."""
+    input_str = json.dumps(tool_input, indent=2) if isinstance(tool_input, dict) else str(tool_input)
+    input_section = (
+        f'<div class="tool-section">'
+        f'<div class="tool-section-label">Input</div>'
+        f'<pre class="tool-code">{escape_html(input_str)}</pre>'
+        f'</div>'
+    )
+    if result_text is not None:
+        result_section = (
+            f'<div class="tool-section">'
+            f'<div class="tool-section-label">Output</div>'
+            f'<pre class="tool-code" data-result-for="{escape_html(tool_id)}">{escape_html(result_text)}</pre>'
+            f'</div>'
+        )
+    else:
+        result_section = (
+            f'<div class="tool-section">'
+            f'<div class="tool-section-label">Output</div>'
+            f'<pre class="tool-code tool-code-pending" data-result-for="{escape_html(tool_id)}">…</pre>'
+            f'</div>'
+        )
+    return (
+        f'<div class="tool-block" data-tool-id="{escape_html(tool_id)}">'
+        f'<div class="tool-block-header" onclick="this.closest(\'.tool-block\').classList.toggle(\'open\')">'
+        f'<span class="tool-block-name">Ran: {escape_html(tool_name)}</span>'
+        f'<span class="tool-block-arrow">&#9658;</span>'
+        f'</div>'
+        f'<div class="tool-block-body">{input_section}{result_section}</div>'
+        f'</div>'
+    )
 
 
 def _is_tool_result_only(content) -> bool:
@@ -215,30 +230,122 @@ def render_message(msg: dict) -> str:
 
     # Tool result messages (role=user but contain only tool results) render inline, not as user bubbles
     if role == "user" and _is_tool_result_only(content):
-        return f'''<div class="pl-10 space-y-1">{content_html}</div>'''
+        return f'<div style="padding-left:36px;">{content_html}</div>'
 
     if role == "user":
-        return f'''<div class="flex justify-end">
-    <div class="flex flex-col items-end max-w-[80%] min-w-0">
-        <div class="user-bubble px-4 py-3 bg-blue-600 rounded-2xl rounded-tr-sm text-white text-sm min-w-0">{content_html}</div>
-        <div class="text-[11px] text-slate-500 mt-1 mr-1">{escape_html(USER_NAME)}{time_html}</div>
+        return f'''<div class="msg-user">
+    <div class="msg-user-inner">
+        <div class="bubble-user">{content_html}</div>
+        <div class="msg-meta">{escape_html(USER_NAME)}{time_html}</div>
     </div>
 </div>'''
     else:
-        return f'''<div class="flex gap-3">
-    <div class="w-7 h-7 rounded-full bg-violet-700 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5 select-none">Z</div>
-    <div class="flex-1 min-w-0">
-        <div class="text-[11px] text-slate-400 mb-2">Zipper{time_html}</div>
-        <div class="space-y-1 min-w-0">{content_html}</div>
+        return f'''<div class="msg-assistant">
+    <div class="avatar-sm">Z</div>
+    <div class="msg-assistant-body">
+        <div class="msg-label">Zipper{time_html}</div>
+        <div class="msg-content">{content_html}</div>
     </div>
 </div>'''
 
 
+def group_messages_for_display(messages: list) -> list:
+    """
+    Group consecutive assistant + tool_result-only user messages into logical units.
+    Returns list of ("assistant_group", [msgs]) or ("user", msg) tuples.
+    """
+    groups = []
+    i = 0
+    while i < len(messages):
+        msg = messages[i]
+        if msg.get("role") == "assistant":
+            group = [msg]
+            j = i + 1
+            # Absorb alternating tool_result user turns and subsequent assistant turns
+            while j < len(messages):
+                nxt = messages[j]
+                if nxt.get("role") == "user" and _is_tool_result_only(nxt.get("content", [])):
+                    group.append(nxt)
+                    j += 1
+                    if j < len(messages) and messages[j].get("role") == "assistant":
+                        group.append(messages[j])
+                        j += 1
+                else:
+                    break
+            groups.append(("assistant_group", group))
+            i = j
+        else:
+            groups.append(("user", msg))
+            i += 1
+    return groups
+
+
+def render_assistant_group(group: list) -> str:
+    """Render a logical group (assistant + tool turns) as one message bubble."""
+    # Build map: tool_use_id → result text from tool_result user messages
+    tool_results: dict = {}
+    for msg in group:
+        if msg.get("role") == "user":
+            content = msg.get("content", [])
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "tool_result":
+                        tid = block.get("tool_use_id", "")
+                        tool_results[tid] = extract_result_text(block.get("content", ""))
+
+    parts_html = []
+    for msg in group:
+        if msg.get("role") != "assistant":
+            continue
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            if content.strip():
+                parts_html.append(format_text_as_html(content))
+        elif isinstance(content, list):
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                btype = block.get("type")
+                if btype == "text":
+                    text = block.get("text", "")
+                    if text.strip():
+                        parts_html.append(format_text_as_html(text))
+                elif btype == "tool_use":
+                    tid = block.get("id", "")
+                    parts_html.append(render_tool_block(
+                        block.get("name", "unknown"),
+                        block.get("input", {}),
+                        tid,
+                        tool_results.get(tid),
+                    ))
+
+    content_html = "".join(parts_html)
+    timestamp = group[0].get("timestamp", "")
+    time_str = format_timestamp(timestamp)
+    time_html = f' · {time_str}' if time_str else ""
+
+    return (
+        f'<div class="msg-assistant">'
+        f'<div class="avatar-sm">Z</div>'
+        f'<div class="msg-assistant-body">'
+        f'<div class="msg-label">Zipper{time_html}</div>'
+        f'<div class="msg-content">{content_html}</div>'
+        f'</div></div>'
+    )
+
+
 def render_messages_html(messages: list) -> str:
-    """Render all messages as HTML."""
+    """Render all messages as HTML, grouping assistant+tool turns."""
     if not messages:
-        return '<div class="text-slate-600 text-sm">No messages yet.</div>'
-    return "\n".join(render_message(msg) for msg in messages)
+        return '<div style="color:var(--tx-3);font-size:0.875rem;">No messages yet.</div>'
+    groups = group_messages_for_display(messages)
+    parts = []
+    for gtype, data in groups:
+        if gtype == "assistant_group":
+            parts.append(render_assistant_group(data))
+        else:
+            parts.append(render_message(data))
+    return "\n".join(parts)
 
 
 @app.get("/api/conversations/{conversation_id}/metadata", response_class=JSONResponse)
@@ -248,9 +355,7 @@ async def get_conversation_metadata(conversation_id: str):
     if not meta:
         return JSONResponse({"error": "Conversation not found"}, status_code=404)
     
-    # Count messages in latest version
-    version = get_latest_version(conversation_id)
-    message_count = len(version.get("messages", []))
+    message_count = len(get_full_history(conversation_id))
     
     return JSONResponse({
         "id": meta.get("id"),
@@ -283,32 +388,24 @@ async def view_conversation(conversation_id: str):
         )
     
     try:
-        version = get_latest_version(conversation_id)
+        messages = get_full_history(conversation_id)
     except (FileNotFoundError, json.JSONDecodeError):
         return HTMLResponse(
             "<div class='text-red-400 p-4'>Error loading conversation data.</div>",
             status_code=500
         )
-    
-    messages = version.get("messages", [])
+
     messages_html = render_messages_html(messages)
 
-    return f'''<div class="flex flex-col overflow-hidden flex-1">
-    <div id="chat-messages" class="flex-1 overflow-y-auto space-y-5 px-5 py-5">
+    return f'''<div style="display:flex;flex-direction:column;overflow:hidden;flex:1;">
+    <div id="chat-messages" class="flex-1 overflow-y-auto" style="padding:22px;display:flex;flex-direction:column;gap:18px;">
         {messages_html}
     </div>
-    <div class="border-t border-slate-800 px-4 py-3 flex-shrink-0">
-        <form id="chat-form" class="flex gap-2 items-end">
-            <textarea id="chat-input"
-                      name="text"
-                      rows="1"
-                      placeholder="Message Zipper…"
-                      class="flex-1 px-3 py-2 bg-slate-800 text-white rounded-xl border border-slate-700 focus:outline-none focus:border-blue-500 text-sm placeholder-slate-500 transition"
-                      required
-                      autocomplete="off"></textarea>
-            <button type="submit"
-                    class="w-9 h-9 flex items-center justify-center bg-blue-600 text-white rounded-xl hover:bg-blue-500 transition flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed">
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 12h14M12 5l7 7-7 7"/></svg>
+    <div class="input-bar">
+        <form id="chat-form" style="display:flex;gap:8px;align-items:flex-end;">
+            <textarea id="chat-input" name="text" rows="1" placeholder="Message Zipper…" required autocomplete="off"></textarea>
+            <button type="submit" class="btn-send">
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 12h14M12 5l7 7-7 7"/></svg>
             </button>
         </form>
     </div>
@@ -341,6 +438,89 @@ async def view_conversation(conversation_id: str):
 #     pass
 
 
+async def _maybe_generate_title(conversation_id: str, first_message: str):
+    """If this is the first message, use Haiku to generate a title and summary."""
+    meta = get_conversation(conversation_id)
+    if meta.get("title", "New Conversation") != "New Conversation":
+        return  # already titled
+    try:
+        resp = await llm_client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=128,
+            messages=[{"role": "user", "content": (
+                f"In one short sentence (max 8 words), give a title for a conversation that starts with this message. "
+                f"Reply with ONLY the title, no quotes, no punctuation at the end.\n\nMessage: {first_message[:400]}"
+            )}],
+        )
+        title = resp.content[0].text.strip().rstrip(".")
+        if title:
+            from storage.conversations import update_meta
+            update_meta(conversation_id, title=title)
+    except Exception:
+        pass
+
+
+@app.websocket("/ws/conversations/{conversation_id}")
+async def websocket_chat(websocket: WebSocket, conversation_id: str):
+    """
+    WebSocket endpoint for streaming conversation.
+    Client sends: {"text": "user message"}
+    Server sends: {"type": "token"|"tool_call"|"tool_result"|"done"|"error", ...}
+    """
+    await websocket.accept()
+    is_first_message = True
+    try:
+        while True:
+            data = await websocket.receive_json()
+            text = (data.get("text") or "").strip()
+            if not text:
+                continue
+
+            async def stream_callback(event_type, **kwargs):
+                try:
+                    if event_type == "tool_call":
+                        html = render_tool_block(
+                            kwargs["tool"], kwargs["args"], kwargs.get("tool_id", ""), result_text=None
+                        )
+                        await websocket.send_json({"type": "tool_call_html", "html": html})
+                    elif event_type == "tool_result":
+                        result_text = extract_result_text(kwargs.get("result", ""))
+                        await websocket.send_json({
+                            "type": "tool_result_data",
+                            "tool_use_id": kwargs.get("tool_use_id", ""),
+                            "result": result_text,
+                        })
+                    else:
+                        await websocket.send_json({"type": event_type, **kwargs})
+                except Exception:
+                    raise  # propagate so llm_loop nulls the callback
+
+            try:
+                first = is_first_message
+                is_first_message = False
+                await run_conversation(
+                    description=text,
+                    conversation_id=conversation_id,
+                    stream_callback=stream_callback,
+                )
+                if first:
+                    asyncio.create_task(_maybe_generate_title(conversation_id, text))
+                meta = get_conversation(conversation_id)
+                await websocket.send_json({
+                    "type": "done",
+                    "title": meta.get("title", ""),
+                    "status": meta.get("status", "inactive"),
+                })
+            except Exception as e:
+                try:
+                    await websocket.send_json({"type": "error", "message": str(e)})
+                except Exception:
+                    pass
+
+    except WebSocketDisconnect:
+        pass
+
+
 @app.post("/api/conversations/{conversation_id}/message")
 async def send_message(conversation_id: str, request: Request, background_tasks: BackgroundTasks):
     """
@@ -359,16 +539,14 @@ async def send_message(conversation_id: str, request: Request, background_tasks:
     append_message(conversation_id, "user", text)
     
     # Run the conversation in background
-    background_tasks.add_task(run_conversation, conversation_id=conversation_id)
+    background_tasks.add_task(run_conversation, description="dashboard", conversation_id=conversation_id)
     
     # Return updated view immediately
     meta = get_conversation(conversation_id)
     if not meta:
         return JSONResponse({"error": "Conversation not found"}, status_code=404)
     
-    version = get_latest_version(conversation_id)
-    messages = version.get("messages", [])
-    return HTMLResponse(render_messages_html(messages))
+    return HTMLResponse(render_messages_html(get_full_history(conversation_id)))
 
 
 @app.post("/api/conversations", response_class=HTMLResponse)

@@ -3,10 +3,15 @@
  */
 
 let currentConversationId = null;
-let currentMessageElement = null;
-let currentMessageWrapper = null;
-let pollInterval = null;
+let currentMessageElement = null;   // streaming text node
+let currentAssistantContent = null; // .content div of the active assistant bubble
+let ws = null;
 let USER_NAME = 'You';
+
+// Token streaming smooth animation
+let tokenBuffer = '';
+let tokenAnimationFrame = null;
+const TOKEN_BATCH_DELAY = 16; // ~60fps
 
 // Configure marked.js
 if (typeof marked !== 'undefined') {
@@ -46,31 +51,92 @@ function scrollToBottom() {
 // Build an assistant message wrapper (avatar + label)
 function createAssistantWrapper(time) {
     const wrapper = document.createElement('div');
-    wrapper.className = 'flex gap-3';
+    wrapper.className = 'msg-assistant';
     wrapper.innerHTML = `
-        <div class="w-7 h-7 rounded-full bg-violet-700 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5 select-none">Z</div>
-        <div class="flex-1 min-w-0">
-            <div class="text-[11px] text-slate-400 mb-2">Zipper${time ? ' <span class="text-slate-500">· ' + escapeHtml(time) + '</span>' : ''}</div>
-            <div class="content space-y-1 min-w-0 text-sm text-slate-100"></div>
+        <div class="avatar-sm">Z</div>
+        <div class="msg-assistant-body">
+            <div class="msg-label">Zipper${time ? ' · ' + escapeHtml(time) : ''}</div>
+            <div class="content msg-content"></div>
         </div>`;
     return wrapper;
 }
 
-// Append a streaming token to the current message
+// Ensure an assistant wrapper exists for streaming, return its .content div
+function ensureAssistantContent() {
+    if (!currentAssistantContent) {
+        hideTyping();
+        const messages = document.getElementById('chat-messages');
+        // Clear empty-state placeholder
+        const placeholder = messages?.querySelector('[style*="color:var(--tx-3)"]');
+        if (placeholder && messages.children.length === 1) placeholder.remove();
+        const wrapper = createAssistantWrapper('');
+        wrapper.id = 'streaming-message-wrapper';
+        messages?.appendChild(wrapper);
+        currentAssistantContent = wrapper.querySelector('.content');
+    }
+    return currentAssistantContent;
+}
+
+// Append a streaming text token (buffered for smooth animation)
 function appendToken(token) {
+    const content = ensureAssistantContent();
     if (!currentMessageElement) {
-        currentMessageWrapper = createAssistantWrapper('');
-        currentMessageWrapper.id = 'streaming-message-wrapper';
-        document.getElementById('chat-messages').appendChild(currentMessageWrapper);
-        currentMessageElement = currentMessageWrapper.querySelector('.content');
-        // Use a pre-like div for streaming (markdown rendered on completion)
         const textNode = document.createElement('div');
-        textNode.id = 'streaming-text';
-        textNode.className = 'whitespace-pre-wrap text-slate-100 text-sm';
-        currentMessageElement.appendChild(textNode);
+        textNode.className = 'streaming-text';
+        content.appendChild(textNode);
         currentMessageElement = textNode;
     }
-    currentMessageElement.textContent += token;
+    
+    // Buffer tokens and flush on animation frame
+    tokenBuffer += token;
+    
+    if (tokenAnimationFrame === null) {
+        tokenAnimationFrame = requestAnimationFrame(() => {
+            if (tokenBuffer && currentMessageElement) {
+                currentMessageElement.textContent += tokenBuffer;
+                tokenBuffer = '';
+            }
+            scrollToBottom();
+            tokenAnimationFrame = null;
+        });
+    }
+}
+
+// Inject a tool block HTML into the current assistant message
+function injectToolHtml(html) {
+    const content = ensureAssistantContent();
+    // Seal the current text node — next text tokens start a new one
+    currentMessageElement = null;
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    content.appendChild(div.firstElementChild ?? div);
+    scrollToBottom();
+}
+
+// Show a small popup near a rating button
+let _ratingPopupTimer = null;
+function showRatingPopup(btn) {
+    const popup = document.getElementById('rating-popup');
+    if (!popup) return;
+    clearTimeout(_ratingPopupTimer);
+    popup.textContent = `${btn.dataset.label}: ${btn.dataset.value}/3`;
+    const rect = btn.getBoundingClientRect();
+    popup.style.display = 'block';
+    // Position above the button, centered
+    const pw = popup.offsetWidth;
+    popup.style.left = Math.max(4, rect.left + rect.width / 2 - pw / 2) + 'px';
+    popup.style.top = (rect.top - popup.offsetHeight - 6) + 'px';
+    _ratingPopupTimer = setTimeout(() => { popup.style.display = 'none'; }, 1800);
+}
+
+// Fill in the output section of a pending tool block
+function fillToolResult(toolUseId, resultText) {
+    if (!currentAssistantContent) return;
+    const pre = currentAssistantContent.querySelector(`[data-result-for="${CSS.escape(toolUseId)}"]`);
+    if (pre) {
+        pre.textContent = resultText;
+        pre.classList.remove('tool-code-pending');
+    }
     scrollToBottom();
 }
 
@@ -79,17 +145,21 @@ function addMessage(role, content) {
     const messages = document.getElementById('chat-messages');
     if (!messages) return;
 
+    // Clear empty-state placeholder if present
+    const placeholder = messages.querySelector('[style*="color:var(--tx-3)"]');
+    if (placeholder && messages.children.length === 1) placeholder.remove();
+
     const wrapper = document.createElement('div');
     const text = typeof content === 'object' ? JSON.stringify(content, null, 2) : String(content);
 
     if (role === 'user') {
-        wrapper.className = 'flex justify-end';
+        wrapper.className = 'msg-user';
         wrapper.innerHTML = `
-            <div class="flex flex-col items-end max-w-[80%] min-w-0">
-                <div class="user-bubble px-4 py-3 bg-blue-600 rounded-2xl rounded-tr-sm text-white text-sm min-w-0">
+            <div class="msg-user-inner">
+                <div class="bubble-user">
                     <div class="markdown-body">${escapeHtml(text)}</div>
                 </div>
-                <div class="text-[11px] text-slate-500 mt-1 mr-1">${escapeHtml(USER_NAME)}</div>
+                <div class="msg-meta">${escapeHtml(USER_NAME)}</div>
             </div>`;
     } else {
         const asst = createAssistantWrapper('');
@@ -114,15 +184,15 @@ function showTyping() {
     if (document.getElementById('typing-indicator')) return;
     const el = document.createElement('div');
     el.id = 'typing-indicator';
-    el.className = 'flex gap-3';
+    el.className = 'msg-assistant';
     el.innerHTML = `
-        <div class="w-7 h-7 rounded-full bg-violet-700 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5 select-none">Z</div>
-        <div class="flex-1 min-w-0">
-            <div class="text-[11px] text-slate-400 mb-2">Zipper</div>
-            <div class="flex gap-1 items-center h-5">
-                <div class="w-1.5 h-1.5 rounded-full bg-slate-500 animate-bounce bounce-1"></div>
-                <div class="w-1.5 h-1.5 rounded-full bg-slate-500 animate-bounce bounce-2"></div>
-                <div class="w-1.5 h-1.5 rounded-full bg-slate-500 animate-bounce bounce-3"></div>
+        <div class="avatar-sm">Z</div>
+        <div class="msg-assistant-body">
+            <div class="msg-label">Zipper</div>
+            <div style="display:flex;gap:4px;align-items:center;height:18px;">
+                <div style="width:5px;height:5px;border-radius:50%;background:var(--tx-3);" class="animate-bounce bounce-1"></div>
+                <div style="width:5px;height:5px;border-radius:50%;background:var(--tx-3);" class="animate-bounce bounce-2"></div>
+                <div style="width:5px;height:5px;border-radius:50%;background:var(--tx-3);" class="animate-bounce bounce-3"></div>
             </div>
         </div>`;
     document.getElementById('chat-messages')?.appendChild(el);
@@ -148,19 +218,120 @@ function enableInput() {
     if (btn) btn.disabled = false;
 }
 
+// WebSocket setup
+function setupWebSocket(conversationId) {
+    if (ws) {
+        ws.onmessage = null;
+        ws.onclose = null;
+        ws.close();
+        ws = null;
+    }
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${proto}//${location.host}/ws/conversations/${conversationId}`);
+    ws.addEventListener('message', handleWebSocketMessage);
+    ws.addEventListener('close', () => { ws = null; });
+    ws.addEventListener('error', () => { ws = null; });
+}
+
+// Handle incoming WebSocket messages
+function handleWebSocketMessage(event) {
+    const msg = JSON.parse(event.data);
+
+    switch (msg.type) {
+        case 'token':
+            appendToken(msg.text || '');
+            break;
+
+        case 'tool_call_html':
+            injectToolHtml(msg.html || '');
+            break;
+
+        case 'tool_result_data':
+            fillToolResult(msg.tool_use_id || '', msg.result || '');
+            break;
+
+        case 'done':
+            // Flush any remaining buffered tokens
+            if (tokenAnimationFrame !== null) {
+                cancelAnimationFrame(tokenAnimationFrame);
+                if (tokenBuffer && currentMessageElement) {
+                    currentMessageElement.textContent += tokenBuffer;
+                    tokenBuffer = '';
+                }
+                tokenAnimationFrame = null;
+            }
+            hideTyping();
+            // Render markdown on streamed text nodes, stripping any ratings tag
+            if (currentAssistantContent) {
+                currentAssistantContent.querySelectorAll('.streaming-text').forEach(el => {
+                    let raw = el.textContent;
+                    if (!raw.trim()) { el.remove(); return; }
+                    // Extract and replace ratings tag
+                    const ratingMatch = raw.match(/\{\{c:(\d),\s*d:(\d),\s*a:(\d)\}\}/);
+                    let ratingHtml = '';
+                    if (ratingMatch) {
+                        raw = raw.replace(ratingMatch[0], '').trim();
+                        const [, c, d, a] = ratingMatch;
+                        ratingHtml = `<div class="ratings-bar">`
+                            + `<button class="rating-btn" data-label="Complexity" data-value="${c}" onclick="showRatingPopup(this)">C</button>`
+                            + `<button class="rating-btn" data-label="Difficulty" data-value="${d}" onclick="showRatingPopup(this)">D</button>`
+                            + `<button class="rating-btn" data-label="Ambiguity" data-value="${a}" onclick="showRatingPopup(this)">A</button>`
+                            + `</div>`;
+                    }
+                    el.innerHTML = marked.parse(raw) + ratingHtml;
+                    el.classList.add('markdown-body');
+                    el.classList.remove('streaming-text', 'whitespace-pre-wrap');
+                    el.dataset.rendered = '1';
+                    el.querySelectorAll('pre code').forEach(b => {
+                        try { hljs.highlightElement(b); } catch(e) {}
+                    });
+                });
+            }
+            currentAssistantContent = null;
+            currentMessageElement = null;
+            // Update top bar title/status from server
+            if (msg.title) {
+                const titleEl = document.getElementById('conv-title');
+                if (titleEl) titleEl.textContent = msg.title;
+                // Update sidebar item too
+                markActiveSidebarItem(currentConversationId);
+            }
+            if (msg.status !== undefined) {
+                const statusEl = document.getElementById('conv-status');
+                if (statusEl) {
+                    const s = msg.status === 'inactive' ? '' : (msg.status || '');
+                    statusEl.textContent = s;
+                    statusEl.classList.toggle('visible', s.length > 0);
+                }
+            }
+            enableInput();
+            scrollToBottom();
+            break;
+
+        case 'error':
+            hideTyping();
+            currentAssistantContent = null;
+            currentMessageElement = null;
+            const errDiv = document.createElement('div');
+            errDiv.className = 'msg-error';
+            errDiv.innerHTML = `
+                <div class="msg-error-icon">!</div>
+                <div class="msg-assistant-body" style="color:#fca5a5;font-size:0.9rem;padding-top:2px;">${escapeHtml(msg.message || 'An error occurred')}</div>`;
+            document.getElementById('chat-messages')?.appendChild(errDiv);
+            enableInput();
+            break;
+    }
+}
+
 // Display conversation title/status in the top bar
 function displayConversationMetadata(metadata) {
     const titleEl = document.getElementById('conv-title');
     const statusEl = document.getElementById('conv-status');
     if (titleEl) titleEl.textContent = metadata.title || 'Untitled';
     if (statusEl) {
-        if (metadata.status === 'active') {
-            statusEl.innerHTML = '<span class="inline-block w-1.5 h-1.5 rounded-full bg-green-500 mr-1"></span>active';
-            statusEl.className = 'ml-3 text-xs text-green-400';
-        } else {
-            statusEl.textContent = metadata.status || '';
-            statusEl.className = 'ml-3 text-xs text-slate-500';
-        }
+        const s = metadata.status || '';
+        statusEl.textContent = s;
+        statusEl.classList.toggle('visible', s.length > 0);
     }
 }
 
@@ -173,7 +344,10 @@ async function loadConversation(conversationId) {
 
     currentConversationId = conversationId;
     currentMessageElement = null;
-    currentMessageWrapper = null;
+    currentAssistantContent = null;
+
+    // Connect WebSocket for this conversation
+    setupWebSocket(conversationId);
 
     // Render markdown and highlight code in loaded messages
     renderMarkdown();
@@ -206,6 +380,8 @@ async function loadConversation(conversationId) {
         ta.addEventListener('input', () => {
             ta.style.height = 'auto';
             ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
+            const btn = document.querySelector('.btn-send');
+            if (btn) btn.classList.toggle('ready', ta.value.trim().length > 0);
         });
         ta.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -267,121 +443,85 @@ async function loadConversation(conversationId) {
 //     });
 // }
 
-// Poll for updated conversation view
-async function pollForUpdates() {
-    if (!currentConversationId) return;
 
-    try {
-        const response = await fetch(`/api/conversations/${currentConversationId}/view`);
-        if (!response.ok) return;
-
-        const html = await response.text();
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = html;
-        const newMessages = tempDiv.querySelector('#chat-messages')?.innerHTML;
-
-        if (newMessages) {
-            const messagesContainer = document.getElementById('chat-messages');
-            if (messagesContainer && messagesContainer.innerHTML !== newMessages) {
-                messagesContainer.innerHTML = newMessages;
-                renderMarkdown();
-                scrollToBottom();
-                // Stop polling once the response is in and typing is gone
-                if (!document.getElementById('typing-indicator')) {
-                    stopPolling();
-                    enableInput();
-                }
-            }
-        }
-    } catch (err) {
-        console.error('Polling error:', err);
-    }
-}
-
-function startPolling() {
-    stopPolling(); // Clear any existing interval
-    pollInterval = setInterval(pollForUpdates, 2000); // Poll every 2 seconds
-}
-
-function stopPolling() {
-    if (pollInterval) {
-        clearInterval(pollInterval);
-        pollInterval = null;
-    }
-}
-
-// Handle form submission
-async function handleFormSubmit(e) {
+// Handle form submission — send over WebSocket
+function handleFormSubmit(e) {
     e.preventDefault();
     const ta = document.getElementById('chat-input');
     const text = ta?.value.trim();
 
     if (!text || !currentConversationId) return;
 
-    try {
-        disableInput();
-        showTyping();
-
-        const response = await fetch(`/api/conversations/${currentConversationId}/message`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text })
-        });
-
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-        const html = await response.text();
-        const messagesContainer = document.getElementById('chat-messages');
-        if (messagesContainer) {
-            messagesContainer.innerHTML = html;
-            renderMarkdown();
-            scrollToBottom();
-            // Re-show typing since LLM response hasn't arrived yet
-            showTyping();
-        }
-
-        if (ta) {
-            ta.value = '';
-            ta.style.height = 'auto';
-        }
-
-        startPolling();
-
-    } catch (err) {
-        console.error('Error sending message:', err);
-        hideTyping();
-        const errDiv = document.createElement('div');
-        errDiv.className = 'flex gap-3';
-        errDiv.innerHTML = `<div class="flex-1 px-4 py-2 rounded-xl bg-red-900/30 border border-red-800 text-red-300 text-sm">Failed to send: ${escapeHtml(err.message)}</div>`;
-        document.getElementById('chat-messages')?.appendChild(errDiv);
-        enableInput();
-        stopPolling();
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        // Reconnect then retry
+        setupWebSocket(currentConversationId);
+        ws.addEventListener('open', () => {
+            ws.send(JSON.stringify({ text }));
+        }, { once: true });
+    } else {
+        ws.send(JSON.stringify({ text }));
     }
+
+    // Optimistically show user message
+    addMessage('user', text);
+
+    if (ta) {
+        ta.value = '';
+        ta.style.height = 'auto';
+    }
+    const btn = document.querySelector('.btn-send');
+    if (btn) btn.classList.remove('ready');
+
+    disableInput();
+    showTyping();
 }
 
 // Handle sidebar conversation selection
+function markActiveSidebarItem(conversationId) {
+    document.querySelectorAll('#conversation-list a.conv-item').forEach(a => {
+        const id = a.href.match(/conversation=([^&"]+)/)?.[1];
+        a.classList.toggle('active', id === conversationId);
+    });
+}
+
 async function selectConversation(conversationId, event) {
-    if (event) {
-        event.preventDefault();
-    }
-    
-    // Update URL
+    if (event) event.preventDefault();
     window.history.pushState({}, '', `/?conversation=${conversationId}`);
-    
-    // Load conversation
+    markActiveSidebarItem(conversationId);
     await loadConversation(conversationId);
 }
 
 // Handle new conversation creation
+async function refreshConversationList() {
+    try {
+        const response = await fetch('/api/conversations');
+        const html = await response.text();
+        const listContainer = document.getElementById('conversation-list');
+        if (listContainer) {
+            listContainer.innerHTML = html;
+            listContainer.querySelectorAll('a').forEach(link => {
+                link.addEventListener('click', (e) => {
+                    const convoId = link.href.match(/conversation=([^&"]+)/)?.[1];
+                    if (convoId) selectConversation(convoId, e);
+                });
+            });
+        }
+        if (currentConversationId) markActiveSidebarItem(currentConversationId);
+    } catch (err) {
+        console.error('Error refreshing conversation list:', err);
+    }
+}
+
 async function createNewConversation() {
     try {
         const response = await fetch('/api/conversations', { method: 'POST' });
         const html = await response.text();
-        
+
         // Extract conversation ID from script
         const match = html.match(/conversation=([a-f0-9]+)/);
         if (match) {
             await selectConversation(match[1]);
+            await refreshConversationList();
         }
     } catch (err) {
         console.error('Error creating conversation:', err);
@@ -393,22 +533,17 @@ async function loadMoreConversations(offset) {
     try {
         const response = await fetch(`/api/conversations?offset=${offset}`);
         const html = await response.text();
-        
-        // Replace the conversation list items and load more button
         const listContainer = document.getElementById('conversation-list');
         if (listContainer) {
             listContainer.innerHTML = html;
-            
-            // Add click handlers to new conversation links
             listContainer.querySelectorAll('a').forEach(link => {
                 link.addEventListener('click', (e) => {
                     const convoId = link.href.match(/conversation=([^&"]+)/)?.[1];
-                    if (convoId) {
-                        selectConversation(convoId, e);
-                    }
+                    if (convoId) selectConversation(convoId, e);
                 });
             });
         }
+        if (currentConversationId) markActiveSidebarItem(currentConversationId);
     } catch (err) {
         console.error('Error loading more conversations:', err);
     }
@@ -416,27 +551,14 @@ async function loadMoreConversations(offset) {
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', async () => {
-    // Load conversation list
+    // Load config (user name, etc.)
     try {
-        const response = await fetch('/api/conversations');
-        const html = await response.text();
-        const listContainer = document.getElementById('conversation-list');
-        if (listContainer) {
-            listContainer.innerHTML = html;
-            
-            // Add click handlers to conversation links
-            listContainer.querySelectorAll('a').forEach(link => {
-                link.addEventListener('click', (e) => {
-                    const convoId = link.href.match(/conversation=([^&"]+)/)?.[1];
-                    if (convoId) {
-                        selectConversation(convoId, e);
-                    }
-                });
-            });
-        }
-    } catch (err) {
-        console.error('Error loading conversations:', err);
-    }
+        const cfg = await fetch('/api/config').then(r => r.json());
+        if (cfg.user) USER_NAME = cfg.user;
+    } catch (e) {}
+
+    // Load conversation list
+    await refreshConversationList();
     
     // Add new chat button handler
     const newChatBtn = document.getElementById('new-chat-btn');
@@ -448,12 +570,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const conversationId = new URLSearchParams(window.location.search).get('conversation');
     if (conversationId) {
         await loadConversation(conversationId);
+        markActiveSidebarItem(conversationId);
     }
     
     // Add handlers for resource links (Tasks, Memory, Status)
-    const resourceLinks = document.querySelectorAll('.border-t.border-slate-700.p-4 a');
-    resourceLinks.forEach((link, index) => {
-        link.href = '#';
+    const resourceLinks = document.querySelectorAll('.sidebar-footer .sidebar-link');
+    resourceLinks.forEach((link) => {
         link.addEventListener('click', async (e) => {
             e.preventDefault();
             const text = link.textContent.trim();

@@ -34,6 +34,10 @@ def _versions_path(conversation_id: str) -> Path:
     return _conversation_path(conversation_id) / "versions"
 
 
+def _full_path(conversation_id: str) -> Path:
+    return _conversation_path(conversation_id) / "full.json"
+
+
 def conversation_exists(conversation_id: str) -> bool:
     return _conversation_path(conversation_id).exists()
 
@@ -61,6 +65,9 @@ def create_conversation(title: str, source: str, discord_thread_id: str = None, 
     # create first version
     create_version(conversation_id, summary="", messages=[])
 
+    # initialize full history log
+    _full_path(conversation_id).write_text(json.dumps({"messages": []}, indent=2))
+
     return conversation_id
 
 
@@ -73,6 +80,16 @@ def update_meta(conversation_id: str, **kwargs):
     meta.update(kwargs)
     meta["updated_at"] = datetime.now().isoformat()
     _meta_path(conversation_id).write_text(json.dumps(meta, indent=2))
+
+
+def get_full_history(conversation_id: str) -> list:
+    """Return all messages ever in this conversation (across compaction boundaries).
+    Falls back to latest version if full.json doesn't exist (older conversations).
+    """
+    full_path = _full_path(conversation_id)
+    if full_path.exists():
+        return json.loads(full_path.read_text()).get("messages", [])
+    return get_latest_version(conversation_id).get("messages", [])
 
 
 def get_latest_version(conversation_id: str) -> dict:
@@ -132,10 +149,20 @@ def save_messages(conversation_id: str, messages: list):
 
 
 def append_message(conversation_id: str, role: str, content):
+    msg = {"role": role, "content": content}
+
     version_path = _latest_version_path(conversation_id)
     version = json.loads(version_path.read_text())
-    version["messages"].append({"role": role, "content": content})
+    version["messages"].append(msg)
     version_path.write_text(json.dumps(version, indent=2))
+
+    # keep full history in sync
+    full_path = _full_path(conversation_id)
+    if full_path.exists():
+        full = json.loads(full_path.read_text())
+        full["messages"].append(msg)
+        full_path.write_text(json.dumps(full, indent=2))
+
     update_meta(conversation_id)
 
 

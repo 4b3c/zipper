@@ -45,7 +45,7 @@ def _set_typing(thread_id: int, active: bool):
         pass
 
 
-async def run_conversation(description: str, conversation_id: str) -> str:
+async def run_conversation(description: str, conversation_id: str, stream_callback=None) -> str:
     """Claim ownership of the conversation, append the user message, run the LLM loop."""
     # Claim ownership immediately (no awaits before this) — any running task
     # for this conversation will see the mismatch at its next yield point and exit.
@@ -77,7 +77,7 @@ async def run_conversation(description: str, conversation_id: str) -> str:
         asyncio.create_task(asyncio.to_thread(_set_typing, thread_id, True))
 
     try:
-        result = await llm_loop(conversation_id, messages, system, owner_token)
+        result = await llm_loop(conversation_id, messages, system, owner_token, stream_callback=stream_callback)
     finally:
         if thread_id:
             asyncio.create_task(asyncio.to_thread(_set_typing, thread_id, False))
