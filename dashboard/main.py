@@ -705,6 +705,69 @@ async def config():
     return {"user": USER_NAME}
 
 
+@app.get("/api/stats")
+async def get_stats():
+    """Return system and zipper stats for the home screen."""
+    import shutil as _shutil
+
+    stats: dict = {}
+
+    # System uptime
+    try:
+        uptime_sec = float(open("/proc/uptime").read().split()[0])
+        d = int(uptime_sec // 86400)
+        h = int((uptime_sec % 86400) // 3600)
+        m = int((uptime_sec % 3600) // 60)
+        stats["uptime"] = f"{d}d {h}h" if d else (f"{h}h {m}m" if h else f"{m}m")
+    except Exception:
+        stats["uptime"] = "—"
+
+    # CPU 1-minute load average
+    try:
+        stats["cpu_load"] = open("/proc/loadavg").read().split()[0]
+    except Exception:
+        stats["cpu_load"] = "—"
+
+    # Memory
+    try:
+        mem: dict = {}
+        for line in open("/proc/meminfo"):
+            k, v = line.split(":")
+            mem[k.strip()] = int(v.strip().split()[0])
+        used_kb = mem["MemTotal"] - mem["MemAvailable"]
+        total_kb = mem["MemTotal"]
+        used_gb = used_kb / 1024 / 1024
+        total_gb = total_kb / 1024 / 1024
+        stats["memory"] = f"{used_gb:.1f}/{total_gb:.0f}g"
+        stats["memory_pct"] = round(used_kb / total_kb * 100)
+    except Exception:
+        stats["memory"] = "—"
+        stats["memory_pct"] = 0
+
+    # Disk
+    try:
+        disk = _shutil.disk_usage("/opt/zipper/app")
+        stats["disk"] = f"{disk.used/1e9:.0f}/{disk.total/1e9:.0f}g"
+        stats["disk_pct"] = round(disk.used / disk.total * 100)
+    except Exception:
+        stats["disk"] = "—"
+        stats["disk_pct"] = 0
+
+    # Conversations
+    try:
+        stats["conversations"] = len(list_conversations())
+    except Exception:
+        stats["conversations"] = 0
+
+    # Pending tasks
+    try:
+        stats["pending_tasks"] = sum(1 for t in list_tasks() if t.get("status") == "pending")
+    except Exception:
+        stats["pending_tasks"] = 0
+
+    return JSONResponse(stats)
+
+
 @app.get("/health")
 async def health():
     """Health check."""

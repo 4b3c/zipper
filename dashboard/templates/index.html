@@ -318,6 +318,37 @@
             font-size: 12px; color: #fca5a5;
         }
 
+        /* Stat cards (new conversation / home view) */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 130px);
+            gap: 12px;
+        }
+        .stat-card {
+            width: 130px; height: 130px;
+            background: rgba(255,255,255,0.025);
+            border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 14px;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            gap: 2px; padding: 16px;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .stat-card:hover {
+            border-color: rgba(139,92,246,0.3);
+            background: rgba(139,92,246,0.04);
+        }
+        .stat-card-icon { color: var(--tx-4); margin-bottom: 6px; }
+        .stat-card-value {
+            font-size: 1.45rem; font-weight: 700; color: var(--tx);
+            line-height: 1; font-variant-numeric: tabular-nums;
+        }
+        .stat-card-label {
+            font-size: 0.62rem; color: var(--tx-3);
+            text-transform: uppercase; letter-spacing: 0.08em; margin-top: 5px;
+        }
+        .stat-card-sub { font-size: 0.67rem; color: var(--tx-4); margin-top: 1px; }
+
         /* Context length meter */
         #ctx-meter {
             display: none; align-items: center; gap: 8px;
@@ -378,15 +409,7 @@
                 </div>
             </div>
 
-            <div id="chat-container" class="flex-1 flex flex-col overflow-hidden">
-                <div class="empty-state">
-                    <div class="text-center">
-                        <div class="empty-logo">Z</div>
-                        <div style="font-size:1rem;font-weight:600;color:var(--tx-2);margin-bottom:4px;">Zipper</div>
-                        <div style="font-size:0.875rem;">Select a conversation or start a new one</div>
-                    </div>
-                </div>
-            </div>
+            <div id="chat-container" class="flex-1 flex flex-col overflow-hidden"></div>
         </div>
     </div>
 

@@ -363,6 +363,7 @@ function displayConversationMetadata(metadata) {
 
 // Set up conversation view when loaded
 async function loadConversation(conversationId) {
+    stopStatsRefresh();
     const response = await fetch(`/api/conversations/${conversationId}/view`);
     const html = await response.text();
     const chatContainer = document.getElementById('chat-container');
@@ -474,33 +475,52 @@ async function loadConversation(conversationId) {
 
 
 // Handle form submission — send over WebSocket
-function handleFormSubmit(e) {
+async function handleFormSubmit(e) {
     e.preventDefault();
     const ta = document.getElementById('chat-input');
     const text = ta?.value.trim();
+    if (!text) return;
 
-    if (!text || !currentConversationId) return;
+    // Lazy creation: no conversation yet — create one first
+    if (!currentConversationId) {
+        if (ta) { ta.value = ''; ta.style.height = 'auto'; }
+        document.querySelector('.btn-send')?.classList.remove('ready');
+        stopStatsRefresh();
+
+        let newId;
+        try {
+            const r = await fetch('/api/conversations', { method: 'POST' });
+            const html = await r.text();
+            const match = html.match(/conversation=([a-f0-9-]+)/);
+            if (!match) return;
+            newId = match[1];
+        } catch (err) { return; }
+
+        window.history.pushState({}, '', `/?conversation=${newId}`);
+        await loadConversation(newId);
+        refreshConversationList(); // fire and forget
+        markActiveSidebarItem(newId);
+
+        // Send the message into the freshly loaded conversation
+        addMessage('user', text);
+        disableInput();
+        showTyping();
+        const send = () => ws?.send(JSON.stringify({ text }));
+        if (ws?.readyState === WebSocket.OPEN) send();
+        else ws?.addEventListener('open', send, { once: true });
+        return;
+    }
 
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-        // Reconnect then retry
         setupWebSocket(currentConversationId);
-        ws.addEventListener('open', () => {
-            ws.send(JSON.stringify({ text }));
-        }, { once: true });
+        ws.addEventListener('open', () => ws.send(JSON.stringify({ text })), { once: true });
     } else {
         ws.send(JSON.stringify({ text }));
     }
 
-    // Optimistically show user message
     addMessage('user', text);
-
-    if (ta) {
-        ta.value = '';
-        ta.style.height = 'auto';
-    }
-    const btn = document.querySelector('.btn-send');
-    if (btn) btn.classList.remove('ready');
-
+    if (ta) { ta.value = ''; ta.style.height = 'auto'; }
+    document.querySelector('.btn-send')?.classList.remove('ready');
     disableInput();
     showTyping();
 }
@@ -575,20 +595,110 @@ async function refreshConversationList() {
     }
 }
 
-async function createNewConversation() {
-    try {
-        const response = await fetch('/api/conversations', { method: 'POST' });
-        const html = await response.text();
+// Stats refresh handle
+let _statsInterval = null;
 
-        // Extract conversation ID from script
-        const match = html.match(/conversation=([a-f0-9]+)/);
-        if (match) {
-            await selectConversation(match[1]);
-            await refreshConversationList();
-        }
-    } catch (err) {
-        console.error('Error creating conversation:', err);
+function stopStatsRefresh() {
+    if (_statsInterval) { clearInterval(_statsInterval); _statsInterval = null; }
+}
+
+async function fetchAndRenderStats() {
+    const grid = document.getElementById('stats-grid');
+    if (!grid) { stopStatsRefresh(); return; }
+    try {
+        const d = await fetch('/api/stats').then(r => r.json());
+        const cards = [
+            {
+                icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>`,
+                value: d.cpu_load ?? '—', label: 'CPU load', sub: '1 min avg',
+            },
+            {
+                icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/></svg>`,
+                value: d.memory ?? '—', label: 'Memory', sub: d.memory_pct != null ? `${d.memory_pct}% used` : '',
+            },
+            {
+                icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M8 21v-4M16 21v-4M2 13h20M2 9h20"/></svg>`,
+                value: d.disk ?? '—', label: 'Disk', sub: d.disk_pct != null ? `${d.disk_pct}% used` : '',
+            },
+            {
+                icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
+                value: d.uptime ?? '—', label: 'Uptime', sub: '',
+            },
+            {
+                icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
+                value: d.conversations ?? '—', label: 'Conversations', sub: '',
+            },
+            {
+                icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`,
+                value: d.pending_tasks ?? '—', label: 'Pending tasks', sub: '',
+            },
+        ];
+        grid.innerHTML = cards.map(c => `
+            <div class="stat-card">
+                <div class="stat-card-icon">${c.icon}</div>
+                <div class="stat-card-value">${escapeHtml(String(c.value))}</div>
+                <div class="stat-card-label">${c.label}</div>
+                ${c.sub ? `<div class="stat-card-sub">${escapeHtml(c.sub)}</div>` : ''}
+            </div>`).join('');
+    } catch (e) { /* silently ignore */ }
+}
+
+async function showNewConversationView() {
+    stopStatsRefresh();
+    hideContextMeter();
+    if (ws) { ws.close(); ws = null; }
+    currentConversationId = null;
+    currentMessageElement = null;
+    currentAssistantContent = null;
+
+    window.history.pushState({}, '', '/');
+    document.querySelectorAll('.conv-item').forEach(a => a.classList.remove('active'));
+    document.getElementById('conv-title').textContent = '';
+    document.getElementById('conv-status')?.classList.remove('visible');
+
+    const container = document.getElementById('chat-container');
+    container.innerHTML = `
+        <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px 24px;gap:20px;">
+                <div style="font-size:0.7rem;color:var(--tx-4);letter-spacing:0.1em;text-transform:uppercase;">System Status</div>
+                <div class="stats-grid" id="stats-grid">
+                    ${Array(6).fill(`<div class="stat-card"><div class="stat-card-value" style="color:var(--tx-4);font-size:1.1rem;">—</div><div class="stat-card-label" style="color:var(--tx-4);">···</div></div>`).join('')}
+                </div>
+            </div>
+            <div class="input-bar">
+                <form id="chat-form" style="display:flex;gap:8px;align-items:flex-end;">
+                    <textarea id="chat-input" name="text" rows="1" placeholder="Start a new conversation…" required autocomplete="off"></textarea>
+                    <button type="submit" class="btn-send">
+                        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 12h14M12 5l7 7-7 7"/></svg>
+                    </button>
+                </form>
+            </div>
+        </div>`;
+
+    const form = document.getElementById('chat-form');
+    if (form) form.addEventListener('submit', handleFormSubmit);
+    const ta = document.getElementById('chat-input');
+    if (ta) {
+        ta.addEventListener('input', () => {
+            ta.style.height = 'auto';
+            ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
+            document.querySelector('.btn-send')?.classList.toggle('ready', ta.value.trim().length > 0);
+        });
+        ta.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+            }
+        });
+        ta.focus();
     }
+
+    fetchAndRenderStats();
+    _statsInterval = setInterval(fetchAndRenderStats, 15000);
+}
+
+async function createNewConversation() {
+    await showNewConversationView();
 }
 
 // Load more conversations
@@ -629,11 +739,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         newChatBtn.addEventListener('click', createNewConversation);
     }
     
-    // Load conversation from URL if specified
+    // Load conversation from URL, or show new conversation view
     const conversationId = new URLSearchParams(window.location.search).get('conversation');
     if (conversationId) {
         await loadConversation(conversationId);
         markActiveSidebarItem(conversationId);
+    } else {
+        await showNewConversationView();
     }
     
     // Add handlers for resource links (Tasks, Memory, Status)
@@ -643,11 +755,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             e.preventDefault();
             const text = link.textContent.trim();
             if (text.includes('Tasks')) {
-                hideContextMeter(); showTasks();
+                stopStatsRefresh(); hideContextMeter(); showTasks();
             } else if (text.includes('Memory')) {
-                hideContextMeter(); showMemory();
+                stopStatsRefresh(); hideContextMeter(); showMemory();
             } else if (text.includes('Status')) {
-                hideContextMeter(); showStatus();
+                stopStatsRefresh(); hideContextMeter(); showStatus();
             }
         });
     });
