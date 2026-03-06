@@ -302,6 +302,28 @@
             display: flex; align-items: center; justify-content: center;
             font-size: 12px; color: #fca5a5;
         }
+
+        /* Context length meter */
+        #ctx-meter {
+            display: none; align-items: center; gap: 8px;
+            flex-shrink: 0; margin-left: auto;
+        }
+        #ctx-meter.visible { display: flex; }
+        .ctx-bar-wrap {
+            width: 72px; height: 3px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 2px; overflow: hidden;
+        }
+        #ctx-bar-fill {
+            height: 100%; border-radius: 2px;
+            background: #4ade80; width: 0%;
+            transition: width 0.5s ease, background-color 0.5s ease;
+        }
+        #ctx-label {
+            font-size: 0.67rem; color: var(--tx-3);
+            font-variant-numeric: tabular-nums; white-space: nowrap;
+            cursor: default;
+        }
     </style>
 </head>
 <body class="h-screen overflow-hidden">
@@ -331,8 +353,14 @@
         <!-- Main Chat Area -->
         <div class="main-area">
             <div class="topbar">
-                <div id="conv-title"></div>
-                <div id="conv-status"></div>
+                <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;overflow:hidden;">
+                    <div id="conv-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+                    <div id="conv-status"></div>
+                </div>
+                <div id="ctx-meter" title="">
+                    <div class="ctx-bar-wrap"><div id="ctx-bar-fill"></div></div>
+                    <span id="ctx-label"></span>
+                </div>
             </div>
 
             <div id="chat-container" class="flex-1 flex flex-col overflow-hidden">

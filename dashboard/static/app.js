@@ -306,6 +306,7 @@ function handleWebSocketMessage(event) {
             }
             enableInput();
             scrollToBottom();
+            if (currentConversationId) updateContextMeter(currentConversationId);
             break;
 
         case 'error':
@@ -321,6 +322,31 @@ function handleWebSocketMessage(event) {
             enableInput();
             break;
     }
+}
+
+// Update the context length meter in the topbar
+async function updateContextMeter(conversationId) {
+    try {
+        const r = await fetch(`/api/conversations/${conversationId}/context-length`);
+        if (!r.ok) return;
+        const d = await r.json();
+
+        const meter = document.getElementById('ctx-meter');
+        const fill  = document.getElementById('ctx-bar-fill');
+        const label = document.getElementById('ctx-label');
+        if (!meter || !fill || !label) return;
+
+        const pct = Math.min(d.percent, 100);
+        fill.style.width = pct + '%';
+        fill.style.backgroundColor = pct > 80 ? '#f87171' : pct > 50 ? '#fbbf24' : '#4ade80';
+
+        const tokK = d.token_count >= 1000
+            ? (d.token_count / 1000).toFixed(1) + 'k'
+            : String(d.token_count);
+        label.textContent = `${tokK} / 200k`;
+        meter.title = `${d.token_count.toLocaleString()} / ${d.token_limit.toLocaleString()} tokens · ${d.percent}% of context · ${d.message_count} messages${d.estimated ? ' (estimated)' : ''}`;
+        meter.classList.add('visible');
+    } catch (e) { /* silently ignore */ }
 }
 
 // Display conversation title/status in the top bar
@@ -369,6 +395,9 @@ async function loadConversation(conversationId) {
     } catch (err) {
         console.error('Error loading conversation metadata:', err);
     }
+
+    // Update context length meter
+    updateContextMeter(conversationId);
 
     // Attach form handlers
     const form = document.getElementById('chat-form');
@@ -580,15 +609,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             e.preventDefault();
             const text = link.textContent.trim();
             if (text.includes('Tasks')) {
-                showTasks();
+                hideContextMeter(); showTasks();
             } else if (text.includes('Memory')) {
-                showMemory();
+                hideContextMeter(); showMemory();
             } else if (text.includes('Status')) {
-                showStatus();
+                hideContextMeter(); showStatus();
             }
         });
     });
 });
+
+function hideContextMeter() {
+    document.getElementById('ctx-meter')?.classList.remove('visible');
+}
 
 // Show Tasks view
 async function showTasks() {

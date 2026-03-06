@@ -22,7 +22,9 @@ sys.path.insert(0, "/opt/zipper/app")
 from storage.conversations import list_conversations, get_conversation, create_conversation as create_conv, get_latest_version, get_full_history
 from storage.memory import get, set, delete, all as list_all
 from storage.tasks import list_tasks, create_task, update_task_status, patch_task
-from llm import run_conversation, client as llm_client
+from llm import run_conversation, client as llm_client, load_system_prompt
+from llm.messages import _sanitize_messages
+from tools import TOOLS
 
 app = FastAPI(title="Zipper Dashboard", version="0.1")
 
@@ -367,6 +369,47 @@ async def get_conversation_metadata(conversation_id: str):
         "message_count": message_count,
         "source": meta.get("source", ""),
         "discord_thread_id": meta.get("discord_thread_id")
+    })
+
+
+@app.get("/api/conversations/{conversation_id}/context-length")
+async def get_context_length(conversation_id: str):
+    """Count tokens in the conversation context using the Anthropic count_tokens API."""
+    TOKEN_LIMIT = 200_000
+    messages_raw = get_full_history(conversation_id)
+    message_count = len(messages_raw)
+
+    # Strip to role+content only for the API
+    clean = _sanitize_messages(messages_raw)
+    api_messages = [{"role": m["role"], "content": m["content"]} for m in clean if m.get("content")]
+
+    system = load_system_prompt()
+
+    # Filter tools to ones the API accepts for counting (exclude code_execution type tool)
+    countable_tools = [t for t in TOOLS if t.get("name")]
+
+    try:
+        result = await llm_client.messages.count_tokens(
+            model="claude-sonnet-4-6",
+            system=system,
+            tools=countable_tools,
+            messages=api_messages,
+        )
+        token_count = result.input_tokens
+        estimated = False
+    except Exception:
+        # Fallback: rough char estimate + fixed overhead for system prompt + tools
+        total_chars = sum(len(str(m.get("content", ""))) for m in messages_raw)
+        token_count = int(total_chars / 3.5) + 2500  # +2500 for system + tool schemas
+        estimated = True
+
+    percent = round(token_count / TOKEN_LIMIT * 100, 1)
+    return JSONResponse({
+        "token_count": token_count,
+        "token_limit": TOKEN_LIMIT,
+        "percent": percent,
+        "message_count": message_count,
+        "estimated": estimated,
     })
 
 
