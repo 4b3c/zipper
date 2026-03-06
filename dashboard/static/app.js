@@ -513,6 +513,40 @@ function markActiveSidebarItem(conversationId) {
     });
 }
 
+async function deleteConversation(event, conversationId) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!confirm('Delete this conversation? This cannot be undone.')) return;
+
+    try {
+        const r = await fetch(`/api/conversations/${conversationId}`, { method: 'DELETE' });
+        if (!r.ok) { alert('Failed to delete conversation.'); return; }
+
+        // Remove from sidebar
+        const wrap = event.target.closest('.conv-item-wrap');
+        wrap?.remove();
+
+        // If it was the active conversation, clear the main area
+        if (currentConversationId === conversationId) {
+            currentConversationId = null;
+            hideContextMeter();
+            document.getElementById('conv-title').textContent = '';
+            document.getElementById('conv-status').classList.remove('visible');
+            document.getElementById('chat-container').innerHTML = `
+                <div class="empty-state">
+                    <div class="text-center">
+                        <div class="empty-logo">Z</div>
+                        <div style="font-size:1rem;font-weight:600;color:var(--tx-2);margin-bottom:4px;">Zipper</div>
+                        <div style="font-size:0.875rem;">Select a conversation or start a new one</div>
+                    </div>
+                </div>`;
+            if (ws) { ws.close(); ws = null; }
+        }
+    } catch (e) {
+        alert('Error deleting conversation.');
+    }
+}
+
 async function selectConversation(conversationId, event) {
     if (event) event.preventDefault();
     window.history.pushState({}, '', `/?conversation=${conversationId}`);

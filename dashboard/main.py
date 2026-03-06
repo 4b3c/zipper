@@ -19,7 +19,7 @@ from starlette.requests import Request
 import sys
 sys.path.insert(0, "/opt/zipper/app")
 
-from storage.conversations import list_conversations, get_conversation, create_conversation as create_conv, get_latest_version, get_full_history
+from storage.conversations import list_conversations, get_conversation, create_conversation as create_conv, get_latest_version, get_full_history, delete_conversation
 from storage.memory import get, set, delete, all as list_all
 from storage.tasks import list_tasks, create_task, update_task_status, patch_task
 from llm import run_conversation, client as llm_client, load_system_prompt
@@ -71,14 +71,17 @@ async def list_convos(offset: int = 0):
         status_dot = '<span class="dot-active"></span>' if status == "active" else ""
         summary_preview = escape_html((summary[:55] + "…") if summary and len(summary) > 55 else summary)
 
-        html += f'''<a href="/?conversation={convo_id}" class="conv-item">
-    <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
-        {status_dot}
-        <div class="conv-item-title">{title}</div>
-        <span class="conv-item-meta" style="margin-left:auto;flex-shrink:0;">{timestamp}</span>
-    </div>
-    {f'<div class="conv-item-summary">{summary_preview}</div>' if summary_preview else ''}
-</a>'''
+        html += f'''<div class="conv-item-wrap">
+    <a href="/?conversation={convo_id}" class="conv-item">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+            {status_dot}
+            <div class="conv-item-title">{title}</div>
+            <span class="conv-item-meta" style="margin-left:auto;flex-shrink:0;">{timestamp}</span>
+        </div>
+        {f'<div class="conv-item-summary">{summary_preview}</div>' if summary_preview else ''}
+    </a>
+    <button class="conv-delete-btn" onclick="deleteConversation(event, \'{convo_id}\')" title="Delete conversation">×</button>
+</div>'''
 
     if offset + page_size < total:
         remaining = total - (offset + page_size)
@@ -592,6 +595,15 @@ async def send_message(conversation_id: str, request: Request, background_tasks:
         return JSONResponse({"error": "Conversation not found"}, status_code=404)
     
     return HTMLResponse(render_messages_html(get_full_history(conversation_id)))
+
+
+@app.delete("/api/conversations/{conversation_id}")
+async def delete_convo(conversation_id: str):
+    """Permanently delete a conversation."""
+    ok = delete_conversation(conversation_id)
+    if not ok:
+        return JSONResponse({"error": "Conversation not found"}, status_code=404)
+    return JSONResponse({"deleted": conversation_id})
 
 
 @app.post("/api/conversations", response_class=HTMLResponse)

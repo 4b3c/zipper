@@ -189,10 +189,25 @@
         }
 
         /* Sidebar conversation items */
+        .conv-item-wrap {
+            position: relative; display: flex; align-items: stretch;
+            border-radius: 7px; margin-bottom: 1px;
+        }
+        .conv-item-wrap:hover .conv-delete-btn { opacity: 1; }
+        .conv-delete-btn {
+            position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+            width: 18px; height: 18px; border-radius: 4px;
+            background: rgba(255,255,255,0.06); border: none;
+            color: var(--tx-3); font-size: 14px; line-height: 1;
+            cursor: pointer; opacity: 0; transition: opacity 0.12s, background 0.12s, color 0.12s;
+            display: flex; align-items: center; justify-content: center;
+            padding: 0; flex-shrink: 0;
+        }
+        .conv-delete-btn:hover { background: rgba(239,68,68,0.2); color: #f87171; }
         .conv-item {
-            display: block; padding: 7px 10px; border-radius: 7px;
+            display: block; padding: 7px 28px 7px 10px; border-radius: 7px;
             text-decoration: none; transition: background 0.1s;
-            border-left: 2px solid transparent; margin-bottom: 1px;
+            border-left: 2px solid transparent; flex: 1; min-width: 0;
         }
         .conv-item:hover { background: var(--surface-h); }
         .conv-item.active { background: rgba(139,92,246,0.12); }

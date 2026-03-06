@@ -1,4 +1,5 @@
 import json
+import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -201,3 +202,12 @@ def list_conversations() -> list:
         if meta_file.exists():
             results.append(json.loads(meta_file.read_text()))
     return results
+
+
+def delete_conversation(conversation_id: str) -> bool:
+    """Permanently delete a conversation and all its data. Returns True if deleted."""
+    path = _conversation_path(conversation_id)
+    if not path.exists():
+        return False
+    shutil.rmtree(path)
+    return True
