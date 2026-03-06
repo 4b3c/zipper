@@ -77,6 +77,9 @@ def serialize_content(content) -> list:
             result.append({"type": "text", "text": block.text})
         elif t == "tool_use":
             result.append({"type": "tool_use", "id": block.id, "name": block.name, "input": block.input})
+        elif t == "code_execution_result":
+            # Programmatic tool calling: code execution output block
+            result.append({"type": "code_execution_result", "content": getattr(block, "content", [])})
         elif hasattr(block, "model_dump"):
             result.append(block.model_dump())
         else:

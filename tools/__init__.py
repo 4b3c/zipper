@@ -114,14 +114,17 @@ Use memory to persist facts, preferences, or state across conversations. Use rec
 """.strip(),
 }
 
+_CODE_EXEC = "code_execution_20260120"
+
 TOOLS = [
-    _file_tool.SCHEMA,
-    _web_tool.SCHEMA,
-    _discord_tool.SCHEMA,
-    _restart_tool.SCHEMA,
-    _task_tool.SCHEMA,
-    _bash_tool.SCHEMA,
-    _memory_tool.SCHEMA,
+    {**_file_tool.SCHEMA,    "allowed_callers": [_CODE_EXEC]},
+    {**_web_tool.SCHEMA,     "allowed_callers": [_CODE_EXEC]},
+    {**_discord_tool.SCHEMA, "allowed_callers": ["direct", _CODE_EXEC]},
+    {**_restart_tool.SCHEMA, "allowed_callers": ["direct"]},
+    {**_task_tool.SCHEMA,    "allowed_callers": [_CODE_EXEC]},
+    {**_bash_tool.SCHEMA,    "allowed_callers": [_CODE_EXEC]},
+    {**_memory_tool.SCHEMA,  "allowed_callers": [_CODE_EXEC]},
+    {"type": _CODE_EXEC, "name": "code_execution"},
 ]
 
 

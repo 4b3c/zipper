@@ -151,6 +151,16 @@ async def llm_loop(conversation_id: str, messages: list, system: str, owner_toke
 
         if response.stop_reason == "tool_use":
             tool_results = []
+            # Build caller map from raw response before serialization strips it
+            caller_map = {}
+            for raw in response.content:
+                if getattr(raw, "type", None) == "tool_use":
+                    caller = getattr(raw, "caller", None)
+                    if isinstance(caller, dict):
+                        caller_map[raw.id] = caller.get("type", "direct")
+                    elif caller is not None:
+                        caller_map[raw.id] = getattr(caller, "type", "direct")
+
             for block in assistant_content:
                 if block.get("type") != "tool_use":
                     continue
@@ -158,6 +168,7 @@ async def llm_loop(conversation_id: str, messages: list, system: str, owner_toke
                 tool_name = block["name"]
                 tool_input = block["input"]
                 tool_id = block["id"]
+                caller_type = caller_map.get(tool_id, "direct")
 
                 if stream_callback:
                     try:
@@ -183,6 +194,7 @@ async def llm_loop(conversation_id: str, messages: list, system: str, owner_toke
                         "error": None,
                         "duration_ms": duration_ms,
                         "status": "ok",
+                        "caller": caller_type,
                     })
                     if not owns():
                         return ""
@@ -208,6 +220,7 @@ async def llm_loop(conversation_id: str, messages: list, system: str, owner_toke
                     "error": error,
                     "duration_ms": duration_ms,
                     "status": status,
+                    "caller": caller_type,
                 })
 
                 if not owns():
