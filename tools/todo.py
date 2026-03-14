@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from storage.todos import add_todo, list_todos, update_todo, get_todo
 from storage.schedule import add_notification
@@ -70,15 +71,27 @@ def run(args: dict) -> str:
             due = f" due {t['due_at'][:16].replace('T', ' ')}" if t.get("due_at") else ""
             cat = t.get("category", "user_todo")
             pri = t.get("priority", "normal")
-            subtask_count = len(t.get("subtasks", []))
-            done_count = sum(1 for s in t.get("subtasks", []) if s.get("done"))
+            
+            # normalize subtasks: can be list of strings or list of dicts
+            subtasks_raw = t.get("subtasks", [])
+            if isinstance(subtasks_raw, str):
+                subtasks_raw = json.loads(subtasks_raw) if subtasks_raw else []
+            subtasks = []
+            for s in subtasks_raw:
+                if isinstance(s, dict):
+                    subtasks.append(s)
+                elif isinstance(s, str):
+                    subtasks.append({"title": s, "done": False})
+            
+            subtask_count = len(subtasks)
+            done_count = sum(1 for s in subtasks if s.get("done"))
             sub_info = f" [{done_count}/{subtask_count} subtasks]" if subtask_count else ""
             lines.append(
                 f"[{t['status']}] {t['id']} ({cat}, {pri}){due}{sub_info} — {t['title']}"
             )
-            for s in t.get("subtasks", []):
+            for s in subtasks:
                 check = "x" if s.get("done") else " "
-                lines.append(f"    [{check}] {s['title']}")
+                lines.append(f"    [{check}] {s.get('title', s)}")
         return "\n".join(lines)
 
     if mode == "update":
@@ -94,13 +107,18 @@ def run(args: dict) -> str:
         # handle subtask completion by index
         subtask_done = args.get("subtask_done")
         if subtask_done is not None:
-            subtasks = list(todo.get("subtasks", []))
+            subtasks = todo.get("subtasks", [])
+            if isinstance(subtasks, str):
+                subtasks = json.loads(subtasks) if subtasks else []
             try:
                 idx = int(subtask_done)
-                subtasks[idx]["done"] = True
-                fields["subtasks"] = subtasks
-            except (IndexError, ValueError):
-                return f"error: subtask index {subtask_done!r} out of range"
+                if idx < len(subtasks) and isinstance(subtasks[idx], dict):
+                    subtasks[idx]["done"] = True
+                    fields["subtasks"] = subtasks
+                else:
+                    return f"error: subtask index {subtask_done!r} out of range"
+            except (ValueError, TypeError):
+                return f"error: subtask index {subtask_done!r} invalid"
 
         # if marking remind_user category and providing a due_at, auto-schedule notification
         if fields.get("category") == "remind_user" and fields.get("due_at"):

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from utils.text import title_to_slug
-from storage.schedule import add_oneshot
+from storage.schedule import add_oneshot, generate_cron_line
 
 
 WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
@@ -76,6 +76,8 @@ def _save(tasks: list):
 def create_task(title: str, description: str = None, due_at: str = None, schedule: str = None, conversation_id: str = None) -> str:
     tasks = _load()
     task_id = _generate_task_id(title, tasks)
+    due_dt = datetime.fromisoformat(due_at) if due_at else datetime.now()
+    
     task = {
         "id": task_id,
         "title": title,
@@ -83,11 +85,20 @@ def create_task(title: str, description: str = None, due_at: str = None, schedul
         "status": "pending",
         "schedule": schedule,
         "created_at": datetime.now().isoformat(),
-        "due_at": due_at or datetime.now().isoformat(),
+        "due_at": due_dt.isoformat(),
         "conversation_id": conversation_id,
         "result": None,
         "error": None,
+        "cron_line": None,  # filled in if schedule provided
+        "next_run": None,   # ISO timestamp of next scheduled run
     }
+    
+    # If scheduled, generate cron line immediately
+    if schedule:
+        cron_line = generate_cron_line(task_id, due_dt, schedule)
+        task["cron_line"] = cron_line
+        task["next_run"] = due_dt.isoformat()
+    
     tasks.append(task)
     _save(tasks)
     return task_id
@@ -123,13 +134,13 @@ def update_task_status(task_id: str, status: str, result: str = None, error: str
         prev_due = datetime.fromisoformat(completed_task["due_at"])
         next_dt = _next_due(completed_task["schedule"], prev_due)
         if next_dt:
+            # Create new occurrence with full cron line support
             create_task(
                 title=completed_task["title"],
                 description=completed_task.get("description"),
                 due_at=next_dt.isoformat(),
                 schedule=completed_task["schedule"],
             )
-            add_oneshot(completed_task["title"], next_dt)
 
 
 def patch_task(task_id: str, fields: dict):

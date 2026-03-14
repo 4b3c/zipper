@@ -22,6 +22,7 @@ sys.path.insert(0, "/opt/zipper/app")
 from storage.conversations import list_conversations, get_conversation, create_conversation as create_conv, get_latest_version, get_full_history, delete_conversation
 from storage.memory import get, set, delete, all as list_all
 from storage.tasks import list_tasks, create_task, update_task_status, patch_task
+from storage.todos import list_todos, add_todo, update_todo
 from llm import run_conversation, client as llm_client, load_system_prompt
 from llm.messages import _sanitize_messages
 from tools import TOOLS
@@ -682,6 +683,25 @@ async def memory_get(key: str):
     """Get a memory entry."""
     value = get(key)
     return {"key": key, "value": value}
+
+
+@app.get("/api/todos")
+async def todos_list(status_filter: Optional[str] = None):
+    """List todos, optionally filtered by status."""
+    todos = list_todos(status=status_filter)
+    return {"todos": todos}
+
+
+@app.put("/api/todos/{todo_id}")
+async def todos_update(todo_id: str, request: Request):
+    """Update a todo."""
+    data = await request.json()
+    update_todo(todo_id, data)
+    todos = list_todos()
+    for todo in todos:
+        if todo["id"] == todo_id:
+            return todo
+    return {"error": "todo not found"}
 
 
 @app.post("/api/memory/{key}")

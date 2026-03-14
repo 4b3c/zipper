@@ -40,7 +40,8 @@ class DiscordRequest(BaseModel):
     discord_thread_id: int
 
 class WakeRequest(BaseModel):
-    time: str  # HH:MM
+    time: str = None  # HH:MM
+    task_id: str = None  # optional: specific task to execute
 
 
 # --- Helpers ---
@@ -161,8 +162,34 @@ async def wake(req: WakeRequest):
             result = await run_conversation(prompt, conversation_id)
             return {"conversation_id": conversation_id, "result": result}
 
+    # if task_id provided, execute that specific task
+    if req.task_id:
+        from storage.tasks import list_tasks
+        tasks = list_tasks(status="pending")
+        matching_task = None
+        for t in tasks:
+            if t["id"] == req.task_id:
+                matching_task = t
+                break
+        
+        if matching_task:
+            task_section = f"\n\nExecuting scheduled task [{matching_task['id']}]: {matching_task['description']}"
+            prompt = (
+                f"You have been woken up to execute a scheduled task. "
+                f"It is now {now.strftime('%Y-%m-%d %H:%M')}."
+                f"{task_section}"
+            )
+            conversation_id = create_conversation(title=f"Task: {matching_task['id']}", source="cron")
+            result = await run_conversation(prompt, conversation_id)
+            return {"conversation_id": conversation_id, "result": result, "task_id": req.task_id}
+        else:
+            return {"error": f"task {req.task_id} not found or not pending"}
+
     # daily check-in
     slot = req.time
+    if not slot:
+        return {"error": "time or task_id required"}
+    
     if wake_log.get(slot) == date.today().isoformat():
         return {"skipped": True, "reason": f"{slot} already fired today"}
 

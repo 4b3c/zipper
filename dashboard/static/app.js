@@ -763,13 +763,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         await showNewConversationView();
     }
     
-    // Add handlers for resource links (Tasks, Memory, Status)
+    // Add handlers for resource links (Todo, Tasks, Memory, Status)
     const resourceLinks = document.querySelectorAll('.sidebar-footer .sidebar-link');
     resourceLinks.forEach((link) => {
         link.addEventListener('click', async (e) => {
             e.preventDefault();
             const text = link.textContent.trim();
-            if (text.includes('Tasks')) {
+            if (text.includes('Todo')) {
+                stopStatsRefresh(); hideContextMeter(); showTodo();
+            } else if (text.includes('Tasks')) {
                 stopStatsRefresh(); hideContextMeter(); showTasks();
             } else if (text.includes('Memory')) {
                 stopStatsRefresh(); hideContextMeter(); showMemory();
@@ -784,6 +786,99 @@ function hideContextMeter() {
     document.getElementById('ctx-meter')?.classList.remove('visible');
 }
 
+// Show Todo view
+async function showTodo() {
+    try {
+        const response = await fetch('/api/todos');
+        const data = await response.json();
+        const container = document.getElementById('chat-container');
+        
+        let html = '<div class="flex-1 flex flex-col overflow-hidden">';
+        html += '<div class="flex-1 overflow-y-auto" style="padding: 28px;">';
+        html += '<h2 style="font-size: 1.5rem; font-weight: 700; margin-bottom: 20px; color: var(--tx);">✓ Todo List</h2>';
+        
+        if (data.todos && data.todos.length > 0) {
+            const byStatus = {
+                pending: [],
+                in_progress: [],
+                done: [],
+                cancelled: []
+            };
+            data.todos.forEach(todo => {
+                const status = todo.status || 'pending';
+                if (byStatus[status]) byStatus[status].push(todo);
+            });
+            
+            Object.entries(byStatus).forEach(([status, todos]) => {
+                if (todos.length === 0) return;
+                const statusLabel = status.replace('_', ' ').toUpperCase();
+                const statusColor = status === 'done' ? 'rgba(74, 222, 128, 0.1)' : 
+                                   status === 'in_progress' ? 'rgba(139, 92, 246, 0.1)' :
+                                   status === 'cancelled' ? 'rgba(107, 114, 128, 0.1)' :
+                                   'rgba(255, 255, 255, 0.05)';
+                html += `<div style="margin-bottom: 24px;">`;
+                html += `<div style="font-size: 0.8rem; color: var(--tx-3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px;">${statusLabel}</div>`;
+                html += `<div style="display: flex; flex-direction: column; gap: 8px;">`;
+                todos.forEach(todo => {
+                    const title = escapeHtml(todo.title || 'Untitled');
+                    const hasSubtasks = todo.subtasks && todo.subtasks.length > 0;
+                    const subtaskDone = todo.subtask_done || 0;
+                    const dueAt = todo.due_at ? new Date(todo.due_at).toLocaleDateString() : null;
+                    const isDone = status === 'done';
+                    const isChecked = isDone ? 'checked' : '';
+                    
+                    html += `<div style="background: ${statusColor}; border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start;">`;
+                    html += `<input type="checkbox" ${isChecked} data-todo-id="${escapeHtml(todo.id)}" class="todo-checkbox" style="width: 18px; height: 18px; cursor: pointer; flex-shrink: 0; margin-top: 2px; accent-color: var(--accent);">`;
+                    html += `<div style="flex: 1; min-width: 0;">`;
+                    html += `<div style="font-weight: 500; color: var(--tx); margin-bottom: 6px; ${isDone ? 'text-decoration: line-through; color: var(--tx-3);' : ''}">${title}</div>`;
+                    if (hasSubtasks) {
+                        html += `<div style="display: flex; flex-direction: column; gap: 4px;">`;
+                        todo.subtasks.forEach((subtask, idx) => {
+                            const done = idx < subtaskDone;
+                            html += `<div style="display: flex; gap: 6px; align-items: center; font-size: 0.8rem; color: ${done ? '#4ade80' : 'var(--tx-3)'}; ${done ? 'text-decoration: line-through; color: var(--tx-4);' : ''}">`;
+                            html += `<span style="width: 14px; height: 14px; border: 1.5px solid ${done ? '#4ade80' : 'rgba(255,255,255,0.3)'}; border-radius: 2px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; background: ${done ? '#4ade80' : 'transparent'};">`;
+                            if (done) html += `<span style="color: #1f2937; font-size: 0.65rem; font-weight: 700; line-height: 1;">✓</span>`;
+                            html += `</span>`;
+                            html += `${escapeHtml(subtask)}`;
+                            html += `</div>`;
+                        });
+                        html += `</div>`;
+                    }
+                    if (dueAt) html += `<div style="font-size: 0.7rem; color: var(--tx-4); margin-top: 6px;">Due: ${dueAt}</div>`;
+                    html += `</div></div>`;
+                });
+                html += `</div></div>`;
+            });
+        } else {
+            html += '<div style="color: var(--tx-3); font-size: 0.9rem;">No todos yet. Add one to get started!</div>';
+        }
+        
+        html += '</div></div>';
+        container.innerHTML = html;
+        
+        // Attach checkbox handlers
+        document.querySelectorAll('.todo-checkbox').forEach(cb => {
+            cb.addEventListener('change', async (e) => {
+                const todoId = cb.dataset.todoId;
+                const newStatus = cb.checked ? 'done' : 'pending';
+                try {
+                    await fetch(`/api/todos/${todoId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status: newStatus })
+                    });
+                    // Refresh the todo list
+                    showTodo();
+                } catch (err) {
+                    console.error('Error updating todo:', err);
+                }
+            });
+        });
+    } catch (err) {
+        console.error('Error loading todos:', err);
+    }
+}
+
 // Show Tasks view
 async function showTasks() {
     try {
@@ -792,22 +887,45 @@ async function showTasks() {
         const container = document.getElementById('chat-container');
         
         let html = '<div class="flex-1 flex flex-col overflow-hidden">';
-        html += '<div class="flex-1 overflow-y-auto p-6">';
-        html += '<h2 class="text-2xl font-bold mb-4">📋 Tasks</h2>';
+        html += '<div class="flex-1 overflow-y-auto" style="padding: 28px;">';
+        html += '<h2 style="font-size: 1.5rem; font-weight: 700; margin-bottom: 20px; color: var(--tx);">📋 Tasks</h2>';
         
         if (data.tasks && data.tasks.length > 0) {
-            html += '<div class="space-y-3">';
+            const byStatus = {
+                pending: [],
+                running: [],
+                done: [],
+                failed: []
+            };
             data.tasks.forEach(task => {
-                const statusColor = task.status === 'done' ? 'bg-green-900' : task.status === 'failed' ? 'bg-red-900' : 'bg-slate-700';
-                html += `<div class="${statusColor} p-3 rounded">
-                    <div class="font-semibold">${task.title}</div>
-                    <div class="text-sm text-slate-300">${task.description}</div>
-                    <div class="text-xs text-slate-400 mt-2">Status: <span class="font-mono">${task.status}</span> | Due: ${new Date(task.due_at).toLocaleDateString()}</div>
-                </div>`;
+                const status = task.status || 'pending';
+                if (byStatus[status]) byStatus[status].push(task);
             });
-            html += '</div>';
+            
+            Object.entries(byStatus).forEach(([status, tasks]) => {
+                if (tasks.length === 0) return;
+                const statusLabel = status.replace('_', ' ').toUpperCase();
+                const statusColor = status === 'done' ? 'rgba(74, 222, 128, 0.1)' : 
+                                   status === 'running' ? 'rgba(139, 92, 246, 0.1)' :
+                                   status === 'failed' ? 'rgba(239, 68, 68, 0.1)' :
+                                   'rgba(255, 255, 255, 0.05)';
+                html += `<div style="margin-bottom: 24px;">`;
+                html += `<div style="font-size: 0.8rem; color: var(--tx-3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px;">${statusLabel}</div>`;
+                html += `<div style="display: flex; flex-direction: column; gap: 8px;">`;
+                tasks.forEach(task => {
+                    const title = escapeHtml(task.title || 'Untitled');
+                    const dueAt = task.due_at ? new Date(task.due_at).toLocaleDateString() : null;
+                    html += `<div style="background: ${statusColor}; border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; padding: 12px 14px;">`;
+                    html += `<div style="font-weight: 500; color: var(--tx); margin-bottom: 4px;">${title}</div>`;
+                    if (task.result) html += `<div style="font-size: 0.75rem; color: var(--tx-4); margin-bottom: 4px;">Result: ${escapeHtml(task.result)}</div>`;
+                    if (task.error) html += `<div style="font-size: 0.75rem; color: #f87171;">Error: ${escapeHtml(task.error)}</div>`;
+                    if (dueAt) html += `<div style="font-size: 0.7rem; color: var(--tx-4);">Due: ${dueAt}</div>`;
+                    html += `</div>`;
+                });
+                html += `</div></div>`;
+            });
         } else {
-            html += '<div class="text-slate-400">No tasks</div>';
+            html += '<div style="color: var(--tx-3); font-size: 0.9rem;">No tasks yet.</div>';
         }
         
         html += '</div></div>';
@@ -825,21 +943,22 @@ async function showMemory() {
         const container = document.getElementById('chat-container');
         
         let html = '<div class="flex-1 flex flex-col overflow-hidden">';
-        html += '<div class="flex-1 overflow-y-auto p-6">';
-        html += '<h2 class="text-2xl font-bold mb-4">💾 Memory</h2>';
+        html += '<div class="flex-1 overflow-y-auto" style="padding: 28px;">';
+        html += '<h2 style="font-size: 1.5rem; font-weight: 700; margin-bottom: 20px; color: var(--tx);">💾 Memory</h2>';
         
         if (data.memory && Object.keys(data.memory).length > 0) {
-            html += '<div class="space-y-3">';
+            html += '<div style="display: flex; flex-direction: column; gap: 12px;">';
             Object.entries(data.memory).forEach(([key, entry]) => {
                 const value = entry.value || entry;
-                html += `<div class="bg-slate-700 p-3 rounded">
-                    <div class="font-semibold text-blue-400">${key}</div>
-                    <div class="text-sm text-slate-300 mt-1 max-h-20 overflow-y-auto"><code>${JSON.stringify(value, null, 2)}</code></div>
-                </div>`;
+                const valueStr = JSON.stringify(value, null, 2);
+                html += `<div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; padding: 12px 14px;">`;
+                html += `<div style="font-weight: 500; color: #a78bfa; margin-bottom: 8px; font-family: 'SFMono-Regular', monospace; font-size: 0.8rem;">${escapeHtml(key)}</div>`;
+                html += `<pre style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.07); border-radius: 4px; padding: 8px 10px; overflow-x: auto; font-size: 0.75rem; color: #86efac; line-height: 1.4; margin: 0;">${escapeHtml(valueStr)}</pre>`;
+                html += `</div>`;
             });
             html += '</div>';
         } else {
-            html += '<div class="text-slate-400">No memory entries</div>';
+            html += '<div style="color: var(--tx-3); font-size: 0.9rem;">No memory entries yet.</div>';
         }
         
         html += '</div></div>';
@@ -857,10 +976,11 @@ async function showStatus() {
         const container = document.getElementById('chat-container');
         
         let html = '<div class="flex-1 flex flex-col overflow-hidden">';
-        html += '<div class="flex-1 overflow-y-auto p-6">';
-        html += '<h2 class="text-2xl font-bold mb-4">📊 System Status</h2>';
+        html += '<div class="flex-1 overflow-y-auto" style="padding: 28px;">';
+        html += '<h2 style="font-size: 1.5rem; font-weight: 700; margin-bottom: 20px; color: var(--tx);">📊 System Status</h2>';
         
-        html += '<div class="bg-slate-700 p-4 rounded"><pre>' + JSON.stringify(data, null, 2) + '</pre></div>';
+        const statusStr = JSON.stringify(data, null, 2);
+        html += `<pre style="background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.07); border-left: 2px solid rgba(139,92,246,0.5); border-radius: 6px; padding: 12px 14px; overflow-x: auto; font-size: 0.8rem; color: #86efac; line-height: 1.5; margin: 0;">${escapeHtml(statusStr)}</pre>`;
         
         html += '</div></div>';
         container.innerHTML = html;

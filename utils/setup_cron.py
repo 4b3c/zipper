@@ -1,5 +1,5 @@
 """
-Generates crontab entries from data/schedule.json and installs them.
+Generates crontab entries from data/schedule.json and task queue.
 Each entry hits the zipper /wake endpoint at the scheduled time.
 
 Usage: python setup_cron.py
@@ -16,6 +16,7 @@ if str(_here) not in sys.path:
 
 from utils.constants import ZIPPER_URL
 from storage.schedule import load_schedule
+from storage.tasks import list_tasks
 
 ROOT = Path(__file__).parent.parent
 LOG = ROOT / "logs" / "cron.log"
@@ -37,6 +38,15 @@ def generate_oneshot_entries(oneshots: list) -> list[str]:
         slot = at.strftime("%H:%M")
         cmd = f'curl -s -X POST {ZIPPER_URL}/wake -H "Content-Type: application/json" -d \'{{"time":"{slot}"}}\' >> {LOG} 2>&1'
         entries.append(f"{at.minute} {at.hour} {at.day} {at.month} * {cmd}")
+    return entries
+
+
+def generate_task_entries(tasks: list) -> list[str]:
+    """Generate cron entries for scheduled tasks from the task queue."""
+    entries = []
+    for task in tasks:
+        if task.get("schedule") and task.get("cron_line"):
+            entries.append(task["cron_line"])
     return entries
 
 
@@ -71,10 +81,15 @@ def main():
     schedule = load_schedule()
     daily = schedule.get("daily", [])
     oneshots = schedule.get("oneshot", [])
+    
+    # Load scheduled tasks from queue
+    tasks = list_tasks(status="pending")
+    scheduled_tasks = [t for t in tasks if t.get("schedule")]
 
     daily_entries = generate_daily_entries(daily)
     oneshot_entries = generate_oneshot_entries(oneshots)
-    entries = daily_entries + oneshot_entries
+    task_entries = generate_task_entries(scheduled_tasks)
+    entries = daily_entries + oneshot_entries + task_entries
 
     if not entries:
         print("[setup] no entries in schedule — nothing to install")
@@ -82,9 +97,11 @@ def main():
 
     LOG.parent.mkdir(parents=True, exist_ok=True)
 
-    print(f"[setup] installing {len(entries)} cron entries ({len(daily_entries)} daily, {len(oneshot_entries)} oneshot):")
-    for e in entries:
+    print(f"[setup] installing {len(entries)} cron entries ({len(daily_entries)} daily, {len(oneshot_entries)} oneshot, {len(task_entries)} task-scheduled):")
+    for e in entries[:20]:  # show first 20 to avoid spam
         print(f"  {e}")
+    if len(entries) > 20:
+        print(f"  ... and {len(entries) - 20} more")
 
     install_crontab(entries)
     print("[setup] done — zipper server must be running for cron to work")

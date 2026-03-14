@@ -1,14 +1,19 @@
 """Schedule and wake-log persistence. Supports recurring daily entries, one-shot LLM wakeups, and direct Discord notifications (no LLM)."""
 
 import json
-from datetime import datetime
+import re
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from utils.text import title_to_slug
+from utils.constants import ZIPPER_URL
 
 ROOT = Path(__file__).parent.parent
 SCHEDULE_PATH = ROOT / "data" / "schedule.json"
 WAKE_LOG_PATH = ROOT / "data" / "wake_log.json"
+CRON_LOG = ROOT / "logs" / "cron.log"
+
+WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
 
 def load_schedule() -> dict:
@@ -72,3 +77,48 @@ def add_notification(message: str, at: datetime, thread_id: int = None, notifica
     schedule.setdefault("notifications", []).append(entry)
     save_schedule(schedule)
     return notif_id
+
+
+def generate_cron_line(task_id: str, due_dt: datetime, schedule: str) -> str:
+    """
+    Generate a cron entry for a task with the given schedule pattern.
+    Returns the cron line: "minute hour day month weekday command"
+    """
+    s = schedule.strip().lower()
+    
+    # For recurring schedules (daily, every N days, etc.), use the time from due_dt
+    # For named weekdays, trigger on that specific day
+    
+    cmd = f'curl -s -X POST {ZIPPER_URL}/wake -H "Content-Type: application/json" -d \'{{"task_id":"{task_id}"}}\' >> {CRON_LOG} 2>&1'
+    
+    minute = due_dt.minute
+    hour = due_dt.hour
+    
+    if s == "daily":
+        # Every day at the specified time
+        return f"{minute} {hour} * * * {cmd}"
+    
+    if s == "weekly":
+        # Every week on the same weekday at the specified time
+        day_of_week = due_dt.weekday()
+        return f"{minute} {hour} * * {day_of_week} {cmd}"
+    
+    m = re.match(r"every (\d+) days?", s)
+    if m:
+        # Can't do "every N days" precisely in cron, so use the day-of-month and month
+        # This is approximate and works best if the task recurs monthly
+        day = due_dt.day
+        return f"{minute} {hour} {day} * * {cmd}"
+    
+    m = re.match(r"every (\d+) hours?", s)
+    if m:
+        # For hourly, we use a simpler approach: trigger at the minute mark of each hour
+        return f"{minute} * * * * {cmd}"
+    
+    for i, day in enumerate(WEEKDAYS):
+        if s == f"every {day}":
+            # Specific day of week
+            return f"{minute} {hour} * * {i} {cmd}"
+    
+    # Fallback: treat as one-shot at the given time
+    return f"{minute} {hour} {due_dt.day} {due_dt.month} * {cmd}"
