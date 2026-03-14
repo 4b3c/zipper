@@ -160,6 +160,8 @@ async def wake(req: WakeRequest):
             )
             conversation_id = create_conversation(title=f"Oneshot: {entry['prompt'][:50]}", source="cron")
             result = await run_conversation(prompt, conversation_id)
+            # fire-and-forget notification to Discord
+            asyncio.create_task(notify_discord_async(result))
             return {"conversation_id": conversation_id, "result": result}
 
     # if task_id provided, execute that specific task
@@ -181,6 +183,8 @@ async def wake(req: WakeRequest):
             )
             conversation_id = create_conversation(title=f"Task: {matching_task['id']}", source="cron")
             result = await run_conversation(prompt, conversation_id)
+            # fire-and-forget notification to Discord
+            asyncio.create_task(notify_discord_async(result))
             return {"conversation_id": conversation_id, "result": result, "task_id": req.task_id}
         else:
             return {"error": f"task {req.task_id} not found or not pending"}
@@ -207,6 +211,8 @@ async def wake(req: WakeRequest):
     )
     conversation_id = create_conversation(title=f"Check-in {slot}", source="cron")
     result = await run_conversation(prompt, conversation_id)
+    # fire-and-forget notification to Discord
+    asyncio.create_task(notify_discord_async(result))
     return {"conversation_id": conversation_id, "result": result}
 
 
