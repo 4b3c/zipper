@@ -3,7 +3,7 @@
 import asyncio
 
 from utils.constants import BOT_URL
-from utils.http import post_json
+from utils.http_utils import post_json
 
 
 def notify_discord(message: str, thread_id: int = None):

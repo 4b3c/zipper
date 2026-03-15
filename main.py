@@ -11,10 +11,10 @@ import uvicorn
 
 from llm import run_conversation
 from storage.conversations import create_conversation, conversation_exists, find_conversation_by_thread
-from storage.tasks import get_due_tasks
-from storage.schedule import load_schedule, save_schedule, load_wake_log, save_wake_log
+from storage.tasks import get_due_tasks, list_tasks
+from storage.schedule import load_schedule, save_schedule, load_wake_log, save_wake_log, log_wake_event
 from utils.notify import notify_discord_async
-from utils.http import post_json
+from utils.http_utils import post_json
 from utils.constants import BOT_URL
 
 ROOT = Path(__file__).parent
@@ -46,9 +46,20 @@ class WakeRequest(BaseModel):
 
 # --- Helpers ---
 
-def _build_task_section(fallback: str = "\n\nNo tasks are currently due.", include_title: bool = False) -> str:
-    """Build the task section string for wake prompts."""
+def _build_task_section(fallback: str = "\n\nNo tasks are currently due.", include_title: bool = False, exclude_scheduled: bool = False) -> str:
+    """Build the task section string for wake prompts.
+    
+    Args:
+        fallback: text to return if no tasks are due
+        include_title: if True, include task title along with description
+        exclude_scheduled: if True, filter out tasks that have a cron_line (scheduled tasks)
+    """
     due_tasks = get_due_tasks()
+    
+    if exclude_scheduled:
+        # Filter out tasks that have a cron_line (they have their own /wake trigger)
+        due_tasks = [t for t in due_tasks if not t.get("cron_line")]
+    
     if due_tasks:
         if include_title:
             task_lines = "\n".join(
@@ -152,6 +163,7 @@ async def wake(req: WakeRequest):
             task_section = _build_task_section(
                 fallback=f"\n\n{entry['prompt']}",
                 include_title=True,
+                exclude_scheduled=True,
             )
             prompt = (
                 f"You have been woken up by a scheduled reminder for {entry['at']}. "
@@ -160,13 +172,13 @@ async def wake(req: WakeRequest):
             )
             conversation_id = create_conversation(title=f"Oneshot: {entry['prompt'][:50]}", source="cron")
             result = await run_conversation(prompt, conversation_id)
+            log_wake_event("oneshot", prompt, result, conversation_id, entry_id=entry["id"])
             # fire-and-forget notification to Discord
             asyncio.create_task(notify_discord_async(result))
             return {"conversation_id": conversation_id, "result": result}
 
     # if task_id provided, execute that specific task
     if req.task_id:
-        from storage.tasks import list_tasks
         tasks = list_tasks(status="pending")
         matching_task = None
         for t in tasks:
@@ -183,6 +195,7 @@ async def wake(req: WakeRequest):
             )
             conversation_id = create_conversation(title=f"Task: {matching_task['id']}", source="cron")
             result = await run_conversation(prompt, conversation_id)
+            log_wake_event("task", prompt, result, conversation_id, task_id=req.task_id)
             # fire-and-forget notification to Discord
             asyncio.create_task(notify_discord_async(result))
             return {"conversation_id": conversation_id, "result": result, "task_id": req.task_id}
@@ -200,7 +213,7 @@ async def wake(req: WakeRequest):
     wake_log[slot] = date.today().isoformat()
     save_wake_log(wake_log)
 
-    task_section = _build_task_section()
+    task_section = _build_task_section(exclude_scheduled=True)
     prompt = (
         f"You have woken up for your scheduled check-in at {slot}. "
         f"Today is {now.strftime('%A, %B %d %Y')}. "
@@ -211,6 +224,7 @@ async def wake(req: WakeRequest):
     )
     conversation_id = create_conversation(title=f"Check-in {slot}", source="cron")
     result = await run_conversation(prompt, conversation_id)
+    log_wake_event("checkin", prompt, result, conversation_id, slot=slot)
     # fire-and-forget notification to Discord
     asyncio.create_task(notify_discord_async(result))
     return {"conversation_id": conversation_id, "result": result}

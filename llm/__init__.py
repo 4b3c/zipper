@@ -16,7 +16,7 @@ from storage.conversations import (
     get_conversation_thread_id,
 )
 from utils.constants import BOT_URL
-from utils.http import post_json
+from utils.http_utils import post_json
 
 client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 

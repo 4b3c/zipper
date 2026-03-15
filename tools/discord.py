@@ -2,7 +2,7 @@ from pathlib import Path
 import requests
 
 from utils.constants import BOT_URL
-from utils.http import post_json
+from utils.http_utils import post_json
 
 
 def _post_multipart(endpoint: str, files: dict, data: dict = None) -> dict:

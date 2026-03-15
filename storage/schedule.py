@@ -12,6 +12,7 @@ ROOT = Path(__file__).parent.parent
 SCHEDULE_PATH = ROOT / "data" / "schedule.json"
 WAKE_LOG_PATH = ROOT / "data" / "wake_log.json"
 CRON_LOG = ROOT / "logs" / "cron.log"
+WAKE_HISTORY_PATH = ROOT / "data" / "wake_history.jsonl"
 
 WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
@@ -77,6 +78,26 @@ def add_notification(message: str, at: datetime, thread_id: int = None, notifica
     schedule.setdefault("notifications", []).append(entry)
     save_schedule(schedule)
     return notif_id
+
+
+def log_wake_event(event_type: str, prompt: str, response: str, conversation_id: str, **extra) -> None:
+    """
+    Log a wake event to wake_history.jsonl (newline-delimited JSON).
+    event_type: 'oneshot', 'task', or 'checkin'
+    extra: optional fields like task_id, entry_id, etc.
+    """
+    WAKE_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "timestamp": datetime.now().isoformat(),
+        "type": event_type,
+        "conversation_id": conversation_id,
+        "prompt_length": len(prompt),
+        "response_length": len(response),
+        **extra
+    }
+    # Append as newline-delimited JSON
+    with open(WAKE_HISTORY_PATH, "a") as f:
+        f.write(json.dumps(entry) + "\n")
 
 
 def generate_cron_line(task_id: str, due_dt: datetime, schedule: str) -> str:
