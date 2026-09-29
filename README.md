@@ -127,7 +127,7 @@ python3 -m zipper <command>          # --help lists everything
 | `decide "<title>"` / `event "<summary>"` / `events` | Scaffold a decision / an event note / list event notes |
 | `status` / `agenda` / `views` | Regenerate the snapshot / the agenda / the saved queries |
 | `hours …` | A timesheet ledger, pushed to Google Sheets |
-| `digest` / `reddit` | Evening what's-due message / Reddit threads worth a reply |
+| `digest` | Evening what's-due message |
 | `discord send\|read\|status` | Talk through the relay |
 | `conversations` | List live Claude conversations |
 | `ghapp` / `ext` | The bot's GitHub identity / build and sign the extension |

@@ -7,7 +7,7 @@ want to know what zipper can do.
 import argparse
 
 from . import (canvas, chat, conversations, decisions, digest, events, ext, gh, ghapp,
-               google, hours, ics, lint, metrics, reddit, runqueue, status, sync, views)
+               google, hours, ics, lint, metrics, runqueue, status, sync, views)
 
 
 def main():
@@ -101,12 +101,6 @@ def main():
     s.add_argument('--thread', help='thread id; default is the main channel')
     s.set_defaults(fn=digest.cmd_digest)
 
-    s = sub.add_parser('reddit', help='find threads worth replying to, and ask Claude which')
-    s.add_argument('--hours', type=int, help='how far back to look; default is the watch note')
-    s.add_argument('--model', default='sonnet', help='the model that does the judging')
-    s.add_argument('--dry-run', action='store_true', help='print the picks instead of sending')
-    s.add_argument('--thread', help='channel or thread id; default is ZIPPER_NOTIFY_CHANNEL')
-    s.set_defaults(fn=reddit.cmd_reddit)
     # No --days and no fetch: the browser extension takes the reading, this
     # reports it. --file still ingests a saved planner dump.
     s = sub.add_parser('canvas'); s.add_argument('--file')

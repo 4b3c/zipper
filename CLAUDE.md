@@ -35,7 +35,6 @@ The engine and server are **stdlib-only**: no pip, no venv. The target is a box 
 | `zipper/web/home.py` | `/`, the front page |
 | `zipper/web/render.py` | `/old`. Still the only home of the Claude terminal — **live, not an archive** |
 | `zipper/box.py` | The box's vital signs, sampled each minute into `Inbox/box-history.json` |
-| `zipper/reddit.py` | Thread watcher. What it watches is a vault note, never code |
 | `zipper/usage.py` | Plan usage meters. The OAuth token is read at call time, never stored |
 | `hooks/forward_reply.py` | The `Stop` hook that posts a reply to its Discord thread |
 | `bot/` | Gateway client and HTTP surface. Saves attachments to `/tmp/zipper-discord-files/<message id>/` |

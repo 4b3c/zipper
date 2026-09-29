@@ -9,6 +9,20 @@ tense.
 
 ---
 
+## 2026-09-28 — the Reddit watcher, removed
+
+`zipper reddit` searched Reddit hourly for threads matching a watch list, asked `claude -p`
+(no tools, run from `/tmp`) which were worth a reply, and posted the survivors to the
+notifications channel. The watch list and the judging standard lived in a vault note, so
+no product or market ever appeared in this repo.
+
+Removed because it could not work with the operator's Reddit account. It had been paused
+since 09-21. What it taught still applies elsewhere: Reddit 403s anonymous JSON from
+datacenter IPs, so any reader needs an OAuth "script" app; a batch the judge failed on was
+deliberately not marked seen, so it would be retried rather than silently dropped; and its
+timer was not `Persistent`, so a box that had been down wouldn't wake and post hours of
+stale links at once. Last code: `zipper/reddit.py` before this commit.
+
 ## 2026-09-08 → 09-17 — the Discord delivery bugs
 
 Each of these dropped or misrouted a reply. The rules they left behind are in the

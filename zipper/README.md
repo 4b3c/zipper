@@ -265,24 +265,3 @@ week ahead. `zipper-digest.timer` runs it at 19:00; `--dry-run` prints it.
 - **Once per date**, recorded in `Inbox/digest-sent.json` only after a successful send — which
   is what makes `Persistent=true` safe.
 
-### The Reddit watcher
-
-`zipper reddit` finds recent threads worth replying to and sends them to Discord.
-`zipper-reddit.timer` runs it hourly when enabled (installed, currently disabled);
-`--dry-run` prints.
-
-    search  → threads matching the watch terms, minus ones already judged
-    judge   → one `claude -p` per 12: worth a comment?
-    deliver → survivors, one message each, with why
-
-- **The watch list is a vault note** (`Meta/Reddit Watch.md`): frontmatter holds queries,
-  subreddits and window; the body goes to the judge verbatim as the standard. This keeps any
-  product or market out of this repo. `parse_fm` needs inline lists, and **a query can't
-  contain a comma**.
-- **The judge runs from `/tmp` with no tools**, so this repo's `CLAUDE.md` doesn't leak in.
-- **Needs `REDDIT_CLIENT_ID`/`SECRET`** (a "script" app, read-only, app-only token). Reddit
-  403s anonymous JSON from datacenter IPs.
-- **A thread is offered once** (`Inbox/reddit-seen.json`, 4000 ids). A batch the judge
-  failed on isn't remembered, so it's retried. The timer isn't `Persistent`: a box down for
-  six hours shouldn't post six hours of links.
-- Sends to the notifications channel; `--thread` overrides.

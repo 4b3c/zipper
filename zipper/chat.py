@@ -71,7 +71,7 @@ def notify_channel():
 
     Distinct from `default_thread`, and the split is the point: that one answers
     "where does a reply go", this one answers "where does something nobody asked
-    for go". The digest and the Reddit watcher both arrive on a timer, and in the
+    for go". The digest arrives on a timer, and in the
     main channel they bury the messages he actually wrote.
 
     A message here starts nothing -- the bot opens conversations only for the
