@@ -214,7 +214,7 @@ document.addEventListener('click',e=>{
 // something: the tick box crosses it off, a link opens the assignment.
 document.addEventListener('click',e=>{
   const r=e.target.closest('li.row.has');
-  if(!r||e.target.closest('a')||e.target.closest('.tick')) return;
+  if(!r||e.target.closest('a')||e.target.closest('.tick')||e.target.closest('.del')) return;
   r.classList.toggle('open');
 });
 document.querySelectorAll('[data-tabs]').forEach(w=>{
@@ -240,6 +240,13 @@ ul{list-style:none;margin:0;padding:0}
   padding:0;display:flex;align-items:center;justify-content:center}
 .tick:hover{opacity:1}
 .tick[disabled]{opacity:.25;cursor:default}
+/* Faint until the row is hovered: a destructive control should be findable,
+   not the loudest thing on forty rows. Still visible on a phone, which has no
+   hover. */
+.del{flex:none;align-self:flex-start;width:20px;height:20px;margin:1px 0 0 auto;border:0;
+  background:none;color:inherit;cursor:pointer;font:16px/1 var(--mono);padding:0;opacity:.18}
+li:hover .del{opacity:.45}
+.del:hover{opacity:1;color:#d0453a}
 li.crossed{opacity:.42}
 li.crossed .rowtitle{text-decoration:line-through}
 .rowbody{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
@@ -254,7 +261,7 @@ li.crossed .rowtitle{text-decoration:line-through}
 /* The caret is the only thing that says a row has more in it, so it is on the
    title line where the eye already is -- and it only exists on rows that do. */
 .row.has{cursor:pointer}
-.row.has .rowtitle:after{content:'\203a';display:inline-block;margin-left:6px;
+.row.has .rowtitle:after{content:'\\203a';display:inline-block;margin-left:6px;
   font:400 14px/1 var(--mono);opacity:.35;transform:translateY(-1px)}
 .row.has:hover .rowtitle:after{opacity:.7}
 .row.has.open .rowtitle:after{transform:translateY(-1px) rotate(90deg)}
@@ -805,12 +812,21 @@ def _row(it, showat=True, showdue=False, pill=False):
     desc = '<span class="rowdesc">%s</span>' % esc(plain(d)) if d else ''
     return ('<li class="row%s%s"><button class="tick" data-key="%s"%s>%s</button>'
             '<span class="rowbody"><span class="rowtitle">%s</span>%s'
-            '<span class="rowmeta">%s</span></span>%s</li>'
+            '<span class="rowmeta">%s</span></span>%s%s</li>'
             % (' crossed' if it.get('done') else '', ' has' if desc else '',
                esc(it['key']),
                ' disabled title="submitted in Canvas"' if it.get('submitted') else '',
                '&#10003;' if it.get('done') else '', title, desc,
-               ' &middot; '.join(meta), tag))
+               ' &middot; '.join(meta), tag, del_button(it)))
+
+
+def del_button(it):
+    """Delete, for a task only: Canvas rows belong to Canvas and cannot be."""
+    if not str(it.get('key', '')).startswith('task:'):
+        return ''
+    return ('<button class="del" data-key="%s" aria-label="delete task" '
+            'title="delete: not doing it, or done but not by me">&times;</button>'
+            % esc(it['key']))
 
 
 def page(day=None):

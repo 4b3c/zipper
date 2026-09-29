@@ -161,6 +161,11 @@ code{background:var(--line);padding:1px 5px;border-radius:4px;font-size:12px}
   background:none;color:var(--accent);cursor:pointer;font-size:11px;line-height:1;padding:0;
   display:flex;align-items:center;justify-content:center}
 .tick:not(.ghost):hover{border-color:var(--accent)}
+.del{flex:none;align-self:flex-start;width:20px;height:20px;margin-left:auto;border:0;
+  background:none;color:var(--dim);cursor:pointer;font:16px/1 ui-monospace,Menlo,monospace;
+  padding:0;opacity:.35}
+li:hover .del{opacity:.7}
+.del:hover{opacity:1;color:#d0453a}
 /* :not(.ghost) because this rule sits after .tick.ghost at equal specificity and
    would otherwise win: the read-only queue boxes lit up on hover and read as
    clickable things that then did nothing. */

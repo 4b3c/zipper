@@ -314,29 +314,57 @@ def toggle_done(key):
     live in overrides.json and are purely a display override.
     """
     if key.startswith('task:'):
-        title = key.split('|', 1)[1]
-        for p in sorted(glob.glob(os.path.join(core.VAULT, 'Tasks', '*.md'))):
-            lines = list(core.defenced(open(p, encoding='utf-8').read().split('\n')))
-            hit = False
-            for i, line in enumerate(lines):
-                m = core.TASK_RE.match(line)
-                if not m:
-                    continue
-                if task_text(m.group(2)) != title:
-                    continue
-                done = m.group(1).lower() == 'x'
-                lines[i] = line.replace('[x]' if done else '[ ]',
-                                        '[ ]' if done else '[x]', 1)
-                hit = True
-                break
-            if hit:
-                open(p, 'w', encoding='utf-8').write('\n'.join(lines))
-                return {'ok': True, 'where': os.path.basename(p), 'done': not done}
-        return {'ok': False, 'error': 'task not found'}
+        p, lines, i = _find_task(key)
+        if p is None:
+            return {'ok': False, 'error': 'task not found'}
+        done = core.TASK_RE.match(lines[i]).group(1).lower() == 'x'
+        lines[i] = lines[i].replace('[x]' if done else '[ ]',
+                                    '[ ]' if done else '[x]', 1)
+        open(p, 'w', encoding='utf-8').write('\n'.join(lines))
+        return {'ok': True, 'where': os.path.basename(p), 'done': not done}
     state = inputs.toggle(key)
     if state is None:
         return {'ok': False, 'error': 'no input owns %r' % key.split(':', 1)[0]}
     return {'ok': True, 'where': key.split(':', 1)[0], 'done': state}
+
+
+def _find_task(key):
+    """(path, raw lines, index) of the task a `task:` key names, or Nones.
+
+    Matched on the *defenced* copy, so a checkbox in a code block is never a
+    hit, but the lines returned are the raw ones: writing the defenced copy back
+    would blank every fenced block in the file.
+    """
+    title = key.split('|', 1)[1]
+    for p in sorted(glob.glob(os.path.join(core.VAULT, 'Tasks', '*.md'))):
+        raw = open(p, encoding='utf-8').read().split('\n')
+        for i, line in enumerate(core.defenced(raw)):
+            m = core.TASK_RE.match(line)
+            if m and task_text(m.group(2)) == title:
+                return p, raw, i
+    return None, None, None
+
+
+def delete_task(key):
+    """Remove a task and its indented description from its markdown file.
+
+    For a task he will not do, or one that is finished but not by him -- the
+    two cases a tick would misstate. The ledger sees the line vanish while the
+    task count falls and records it as `dropped_on`, never as a completion, so
+    deleting cannot pass for getting things done.
+    """
+    if not key.startswith('task:'):
+        return {'ok': False, 'error': 'only tasks can be deleted'}
+    p, lines, i = _find_task(key)
+    if p is None:
+        return {'ok': False, 'error': 'task not found'}
+    j = i + 1
+    while j < len(lines) and lines[j].strip() and lines[j][:1] in (' ', '\t') \
+            and not core.TASK_RE.match(lines[j]):
+        j += 1
+    del lines[i:j]
+    open(p, 'w', encoding='utf-8').write('\n'.join(lines))
+    return {'ok': True, 'where': os.path.basename(p)}
 
 def flags():
     try:

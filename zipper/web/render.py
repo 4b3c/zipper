@@ -205,11 +205,15 @@ def _item_li(it, show_score=True, detail=False):
     return ('<li class="row %s%s" title="priority %d">'
             '<button class="tick" data-key="%s" aria-label="cross off">%s</button>'
             '<span class="rowbody"><span class="rowtitle">%s</span>'
-            '<span class="rowmeta">%s</span>%s</span></li>'
+            '<span class="rowmeta">%s</span>%s</span>%s</li>'
             % ('crossed' if it.get('done') else '', ' has-det' if det else '',
                it['score'], esc(it['key']),
                '&#10003;' if it.get('done') else '', title,
-               ' &middot; '.join(meta), det))
+               ' &middot; '.join(meta), det,
+               # delete is for tasks only; a Canvas row belongs to Canvas
+               '<button class="del" data-key="%s" aria-label="delete task" '
+               'title="delete: not doing it, or done but not by me">&times;</button>'
+               % esc(it['key']) if str(it['key']).startswith('task:') else ''))
 
 
 def _side(items, empty, detail=False):

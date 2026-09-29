@@ -469,8 +469,22 @@ document.addEventListener('click', async e=>{
 // neither should also toggle the panel underneath. Unlike the Today grid this
 // does *not* close its siblings -- the reason to open two assignments at once is
 // to compare them, which is most of why the descriptions are here at all.
+// Delete a task outright: not doing it, or done but not by him -- the cases a
+// tick would misstate. It removes the markdown line, so it asks first, and the
+// row only goes once the server says the line is gone.
+document.addEventListener('click', async e=>{
+  const b = e.target.closest('.del'); if(!b) return;
+  e.stopPropagation();
+  const li = b.closest('li'); if(!li) return;
+  const t = (li.querySelector('.rowtitle') || li).textContent.trim();
+  if(!confirm('Delete this task?\\n\\n' + t)) return;
+  const r = await fetch('/api/deltask', {method:'POST', headers:{'Content-Type':'application/json'},
+                                         body: JSON.stringify({key: b.dataset.key})})
+                   .then(x=>x.json()).catch(()=>({ok:false, error:'no answer'}));
+  if(r.ok) li.remove(); else alert('Not deleted: ' + (r.error || 'unknown error'));
+});
 document.addEventListener('click', e=>{
-  if(e.target.closest('.tick') || e.target.closest('a')) return;
+  if(e.target.closest('.tick') || e.target.closest('.del') || e.target.closest('a')) return;
   const li = e.target.closest('li.has-det'); if(!li) return;
   li.classList.toggle('open');
 });
