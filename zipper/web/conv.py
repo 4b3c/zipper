@@ -51,16 +51,25 @@ TTYD = {'enabled': True, 'host': '127.0.0.1', 'cred': ''}
 # are not here -- each conversation is allocated its own (see `ttyd.py`).
 
 
+def _is_pane(thread_id):
+    """A dashboard conversation, as opposed to a headless Discord one.
+
+    Only `local-` ids ever get a pane (see `open_conversation`), so a Discord
+    thread in the chat list is a row that can only refuse when clicked.
+    """
+    return str(thread_id).startswith('local-')
+
+
 def current_conversation():
     """The conversation the terminal card shows by default.
 
-    The most recently active live one. `listing()` is ordered by last message
+    The most recently active live pane. `listing()` is ordered by last message
     (from the transcript, so a message typed straight into a pane counts), which
     means this follows the conversation actually being used rather than whichever
     was started first.
     """
     for r in conversations.listing():
-        if r.get('alive'):
+        if r.get('alive') and _is_pane(r['thread_id']):
             return r['thread_id']
     return ''
 
@@ -290,10 +299,16 @@ def newest_buffer(seen=''):
 
 
 def conversation_rows():
-    """The chat list: every conversation, with the state the page has to show."""
+    """The chat list: every pane, with the state the page has to show.
+
+    Discord conversations are left out. They run headless and can't be opened
+    here, and `python3 -m zipper conversations` still lists them.
+    """
     conversations.sweep()
     rows = []
     for r in conversations.listing():
+        if not _is_pane(r['thread_id']):
+            continue
         rows.append({
             'thread_id': r['thread_id'],
             'title': _row_title(r['thread_id'], r),
