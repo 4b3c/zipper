@@ -34,8 +34,9 @@ Dependencies are allowed where they earn their place; `requirements.txt` lists t
 | `zipper/chat.py` | The Discord CLI |
 | `zipper/conversations.py` | Front door over `convcore.py` (identity, registry), `convhead.py` (headless Discord conversations), `ttyd.py` (a ttyd per pane), `convstate.py` (liveness, reaper) |
 | `zipper/serve.py` + `zipper/web/` | The dashboard. `serve.py` is the entry point |
-| `zipper/web/home.py` | `/`, the front page |
-| `zipper/web/render.py` | `/old`. Still the only home of the Claude terminal — **live, not an archive** |
+| `zipper/web/home.py` | `/`, the dashboard, including the Claude card |
+| `zipper/web/render.py` | The `/views`, `/tasks` and `/canvas` pages, and helpers `home.py` shares |
+| `zipper/web/js.py` `css.py` | `TERM_JS`/`TERM_CSS` drive the Claude card; the rest styles the list pages |
 | `zipper/box.py` | The box's vital signs, sampled each minute into `Inbox/box-history.json` |
 | `zipper/usage.py` | Plan usage meters. The OAuth token is read at call time, never stored |
 | `hooks/forward_reply.py` | The `Stop` hook that posts a reply to its Discord thread |

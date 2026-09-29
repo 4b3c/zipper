@@ -1,99 +1,10 @@
 """The dashboard's browser code, as literals.
 
-`JS` is the page script; `TICKJS` is the click handling that used to sit
-beside the tick boxes. Both are inserted into the page template as arguments,
-never %-formatted themselves, so a stray %% in here is harmless.
-
-Split out of serve.py 2026-09-07 -- 620 lines of JavaScript inside a Python
-module made the whole file impossible to read a section of.
+TERM_JS is the Claude card: the conversation list, the terminal iframe, copy and
+paste. TICKJS crosses off rows in the work lists.
 """
 
-JS = """
-function fmt(t){
-  if(t==null) return 'never';
-  let s=Math.max(0,Math.floor(Date.now()/1000-t));
-  if(s<60) return s+'s ago';
-  if(s<3600) return Math.round(s/60)+'m ago';
-  if(s<172800) return Math.round(s/3600)+'h ago';
-  return Math.round(s/86400)+'d ago';
-}
-function drawFresh(){
-  // With no fetch at launch, how old the data is stopped being obvious -- the
-  // page used to be current by definition. The footer chips still break it down
-  // per source; this is the one number worth reading without looking for it.
-  const hd=document.getElementById('qfresh');
-  if(hd){
-    // Every input's age, not the vault's: the vault is edited, not fetched.
-    const ks=Object.keys(window.__epochs).filter(k=>k!=='vault').map(k=>window.__epochs[k]).filter(x=>x!=null);
-    hd.textContent = ks.length ? 'fetched '+fmt(Math.min.apply(null,ks)) : 'never fetched';
-  }
-  const el=document.getElementById('fresh'); if(!el) return;
-  el.innerHTML=['vault'].concat(Object.keys(window.__epochs).filter(k=>k!=='vault')).map(k=>{
-    const x = k==='canvas' ? ' <a href="'+window.__canvashost+'" target="_blank" rel="noopener">open Canvas</a>' : '';
-    return '<span class="chip"><b>'+k+'</b> '+fmt(window.__epochs[k])+x+'</span>';
-  }).join('');
-}
-setInterval(drawFresh,1000);
-// Read-only, like _qrow_html server-side: no queue row is crossed off by hand.
-// A row clears when a pass commits, or when the session that did the reasoning
-// runs --mark. See _qrow_html for why the box went away.
-function qrowHTML(r){
-  const t=(r.text||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
-  return '<div class="qrow'+(r.done?' crossed':'')+'"><span class="tick ghost"></span>'
-        +'<span class="qt">'+r.at+'</span><span class="qx">'+t+'</span></div>';
-}
-// Dealt-with rows leave the list. The card answers "what is left", and a run
-// of 65 items where 60 are struck through answers it badly. They are folded
-// rather than deleted so a closed pass can still be read back — what it
-// accounted for, not just that it ended. Undo is no longer why the fold exists
-// (there is nothing to mis-click now); `--mark` toggles, so the session that
-// crossed a row too early is still the thing that puts it back.
-function drawQueue(rows){
-  if(rows) window.__feed=rows;
-  const q=document.getElementById('queue'); if(!q) return;
-  const feed=window.__feed||[], notes=window.__notes||[];
-  const open=feed.filter(r=>!r.done), done=feed.filter(r=>r.done);
-  document.getElementById('qcount').textContent=open.length+notes.length;
-  if(!feed.length&&!notes.length){
-    q.dataset.empty='1';
-    q.innerHTML='<p class="sub">Waiting for this run\u2019s fetch\u2026</p>';
-    return;
-  }
-  delete q.dataset.empty;
-  let h = open.map(qrowHTML).join('') + notesHTML(notes);
-  if(!open.length&&!notes.length) h = '<p class="sub">All clear \u2014 everything this run turned up is dealt with.</p>';
-  if(done.length){
-    h += '<button class="qfold" id="qfold">'+(window.__showdone?'\u25be':'\u25b8')+' '
-       + done.length+' crossed off</button>';
-    if(window.__showdone) h += done.map(qrowHTML).join('');
-  }
-  q.innerHTML=h;
-}
-// Note paths are filenames, so they really can carry & and quotes -- unlike
-// the queue text, which qrowHTML escapes inline.
-function esc(x){return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;')
-  .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-// Note edits are queue rows like any other -- one list, not a section. The only
-// thing that makes them different is how they clear, and the missing tick box
-// says that on the row itself. See _qnotes_html for the same rendering server-side.
-function notesHTML(rows){
-  if(!rows.length) return '';
-  return rows.map(r=>'<div class="qrow nrow"><span class="tick ghost"></span>'
-      +'<span class="qt">'+esc((r.when||'').slice(11))+'</span>'
-      +'<span class="qx">'+esc(r.text||(r.action+' '+r.path))+'</span></div>').join('')
-    +'<p class="sub">Nothing here is crossed off by hand. The pass clears it \u2014 '
-    +'<code>python3 -m zipper commit "msg"</code></p>';
-}
-function drawNotes(rows){
-  window.__notes=rows||[];
-  drawQueue();
-}
-function row(e){
-  const f=window.__feed||[];
-  if(e.key && f.some(r=>r.key===e.key)) return;
-  f.push({key:e.key||'',at:e.at,text:e.text,done:e.done||null});
-  drawQueue(f);
-}
+TERM_JS = """
 // Three states, and the card shows exactly one set of choices for each:
 //   mounted  the conversation is on screen — no start buttons at all, just the
 //            header's `new conversation`, which is the only thing left to want
@@ -129,99 +40,6 @@ function drawTerm(){
     : live ? 'running — not attached here' : 'not started';
   if(st && on && !st.dataset.said) st.textContent='';
 }
-function shiftDay(iso,n){const d=new Date(iso+'T12:00:00');d.setDate(d.getDate()+n);
-  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
-function drawDay(){
-  const t=window.__today, d=window.__day;
-  const lbl=document.getElementById('daylabel'); if(!lbl) return;
-  const off=Math.round((new Date(d+'T12:00:00')-new Date(t+'T12:00:00'))/86400000);
-  lbl.textContent = off===0 ? 'Today' : off===1 ? 'Tomorrow' : off===-1 ? 'Yesterday'
-    : new Date(d+'T12:00:00').toLocaleDateString(undefined,{weekday:'short',day:'2-digit',month:'short'});
-  // The masthead names the day being read, not the day it is: walking the arrows
-  // and leaving today's date at the top of the page reads as a stuck page.
-  const pd=document.getElementById('pagedate'), D=new Date(d+'T12:00:00');
-  if(pd) pd.textContent = D.toLocaleDateString('en-US',{weekday:'long'})+' '
-    +String(D.getDate()).padStart(2,'0')+' '+D.toLocaleDateString('en-US',{month:'long'})
-    +' '+D.getFullYear();   // matches the server's '%A %d %B %Y' so the first paint doesn't shift
-  const b=document.getElementById('daytoday'); if(b) b.hidden = off===0;
-}
-async function goDay(n){
-  window.__day = n===0 ? window.__today : shiftDay(window.__day,n);
-  drawDay(); await panels();
-}
-// The week card walks in weeks, independently of the day arrows: reading
-// Thursday's schedule and reading next week's assignment load are different
-// questions, and tying them would move one every time he answered the other.
-function drawWeek(){
-  const lbl=document.getElementById('weeklabel'); if(!lbl) return;
-  const off=Math.round((new Date(window.__week+'T12:00:00')
-                       -new Date(window.__thisweek+'T12:00:00'))/604800000);
-  const m=new Date(window.__week+'T12:00:00'), s=new Date(m); s.setDate(s.getDate()+6);
-  const o={day:'numeric',month:'short'};
-  lbl.textContent = (off===0?'This week':off===1?'Next week':off===-1?'Last week':'Week of')
-    +' · '+m.toLocaleDateString(undefined,o)+' – '+s.toLocaleDateString(undefined,o);
-  const b=document.getElementById('weekthis'); if(b) b.hidden = off===0;
-}
-async function goWeek(n){
-  window.__week = n===0 ? window.__thisweek : shiftDay(window.__week,7*n);
-  drawWeek(); await panels();
-}
-async function panels(){
-  const p=await fetch('/api/panels?week='+encodeURIComponent(window.__week||'')
-                     +'&day='+encodeURIComponent(window.__day||''))
-    .then(r=>r.json()).catch(()=>null); if(!p) return;
-  for(const k in p.html){const el=document.getElementById(k); if(el) el.innerHTML=p.html[k];}
-  window.__epochs=p.epochs; drawFresh();
-  window.__session=p.session||window.__mounted; window.__queueready=p.queue_ready;
-  drawTerm();
-}
-const es=new EventSource('/events');
-es.addEventListener('diff',e=>row(JSON.parse(e.data)));
-es.addEventListener('feed',e=>drawQueue(JSON.parse(e.data).rows));
-es.addEventListener('notes',e=>drawNotes(JSON.parse(e.data).rows));
-document.addEventListener('click',async ev=>{
-  const mk=ev.target.closest('.mknote');
-  if(mk){
-    ev.stopPropagation(); mk.disabled=true; mk.textContent='creating\u2026';
-    const r=await fetch('/api/eventnote',{method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({summary:mk.dataset.summary,date:mk.dataset.date})})
-      .then(r=>r.json()).catch(()=>({error:'failed'}));
-    if(r.error){mk.disabled=false;mk.textContent=r.error;return;}
-    await panels();
-    return;
-  }
-  if(ev.target.closest('.blk a')) return;            // let the actions navigate
-  const blk=ev.target.closest('.blk');
-  document.querySelectorAll('.blk.open').forEach(b=>{if(b!==blk)b.classList.remove('open');});
-  if(blk){ev.stopPropagation(); blk.classList.toggle('open');}
-});
-document.addEventListener('keydown',ev=>{
-  if(ev.key==='Escape') document.querySelectorAll('.blk.open').forEach(b=>b.classList.remove('open'));
-});
-document.addEventListener('DOMContentLoaded',()=>{
-  const pv=document.getElementById('dayprev'), nx=document.getElementById('daynext'),
-        td=document.getElementById('daytoday');
-  if(pv) pv.onclick=()=>goDay(-1);
-  if(nx) nx.onclick=()=>goDay(1);
-  if(td) td.onclick=()=>goDay(0);
-  const wp=document.getElementById('weekprev'), wn=document.getElementById('weeknext'),
-        wt=document.getElementById('weekthis');
-  if(wp) wp.onclick=()=>goWeek(-1);
-  if(wn) wn.onclick=()=>goWeek(1);
-  if(wt) wt.onclick=()=>goWeek(0);
-  drawWeek();
-  document.addEventListener('keydown',ev=>{
-    if(ev.metaKey||ev.ctrlKey||ev.altKey) return;
-    const tag=(ev.target.tagName||'').toLowerCase();
-    if(tag==='input'||tag==='textarea'||ev.target.isContentEditable) return;
-    if(ev.key==='ArrowLeft') goDay(-1); else if(ev.key==='ArrowRight') goDay(1);
-  });
-  drawDay();
-});
-es.addEventListener('source',()=>panels());
-es.addEventListener('status',e=>{document.getElementById('status').textContent=JSON.parse(e.data).text;});
-es.addEventListener('done',()=>{panels();document.getElementById('status').textContent='';});
 // Same origin as the dashboard, proxied by nginx to the ttyd on that port.
 // Pointing the iframe at host:port directly made every conversation its own
 // origin, so the terminal asked to sign in again each time one was opened.
@@ -574,29 +392,19 @@ function legacyCopy(win,text){
   }catch(e){ return false; }
 }
 
+// The page is not live-updating, so the card keeps its own idea of whether a
+// conversation is running by watching the list it already polls.
+function syncSession(rows){
+  const live=(rows||[]).some(r=>r.state&&r.state!=='closed');
+  if(!window.__mounted && live!==window.__session){window.__session=live; drawTerm();}
+  return rows;
+}
 document.addEventListener('DOMContentLoaded',()=>{
-  drawFresh(); drawTerm(); drawQueue(window.__feed);
-  // 6s, not 20: the dot is the only thing saying whether Claude is working,
-  // and a light that lags twenty seconds behind is worse than none. Each poll
-  // is a capture-pane per conversation, which is cheap.
-  loadChats().then(focusRecent); setInterval(loadChats, 6000);
-  loadUsage(); setInterval(loadUsage, 300000);
-  // Attaching to whatever is already serving is focusRecent()'s job, called
-  // above with the chat list -- the one place that does it.
-  const rb=document.getElementById('dorefresh');
-  if(rb) rb.onclick=async()=>{
-    document.getElementById('status').textContent='refreshing…';
-    await fetch('/api/refresh',{method:'POST'});
-  };
-  // Same action, beside the thing it affects. The queue is the card whose
-  // contents go stale between hourly fetches, so the button belongs here too.
-  const qb=document.getElementById('qrefetch');
-  if(qb) qb.onclick=async()=>{
-    qb.disabled=true; qb.textContent='fetching…';
-    document.getElementById('status').textContent='refreshing…';
-    await fetch('/api/refresh',{method:'POST'});
-    setTimeout(()=>{qb.disabled=false; qb.textContent='refetch';},1500);
-  };
+  drawTerm();
+  // 6s: the dot is the only thing saying whether Claude is working, and a light
+  // that lags is worse than none. Each poll is a capture-pane per conversation.
+  loadChats().then(syncSession).then(focusRecent);
+  setInterval(()=>loadChats().then(syncSession), 6000);
   const box=document.getElementById('termstart');
   if(box) box.addEventListener('click',async ev=>{
     const btn=ev.target.closest('.startbtn'); if(!btn||btn.disabled) return;
@@ -655,11 +463,6 @@ document.addEventListener('click', async e=>{
   b.innerHTML = li.classList.contains('crossed') ? '\u2713' : '\u25a1';
   await fetch('/api/done', {method:'POST', headers:{'Content-Type':'application/json'},
                             body: JSON.stringify({key: b.dataset.key})});
-});
-document.addEventListener('click', e=>{
-  if(!e.target.closest('#qfold')) return;
-  window.__showdone = !window.__showdone;
-  drawQueue(window.__feed);
 });
 // Expanding a row. Same gesture as a Today block, and the same two exclusions: a
 // click on the tick box is a cross-off, a click on a link is navigation, and

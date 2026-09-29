@@ -34,7 +34,7 @@ An input provides some of these; only `name` and `fetched` are required:
 | `snapshot()`, `events(before, after)` | the queue: rows are the diff between two snapshots |
 | `target(row, notes)` | which note a queue row lands on |
 | `timeline(first, last)` | **event rows**: the Today grid, the agenda, the digest's schedule |
-| `work()`, `toggle(key)` | **work items**: the Week card, What to work on, the Canvas panel, the digest |
+| `work()`, `toggle(key)` | **work items**: the Canvas and Projects panels, the panel inside Canvas, the digest |
 | `facts()` | `zipper/writer.py`, the only thing that writes input facts into frontmatter |
 
 The row shapes are listed in `zipper/inputs/__init__.py`. **Callers go through the
@@ -137,7 +137,7 @@ their text, so a repeated fact is one row.
 - **Terminal lifecycle isn't an event.** Session start/stop publishes `status` or nothing.
 - **No "no changes" row.** An empty queue shows nothing.
 
-**What to work on** does tick: a task writes back to its markdown line; a Canvas item goes
+The **Canvas** and **Projects** panels do tick: a task writes back to its markdown line; a Canvas item goes
 to `overrides.json`.
 
 ## Terminals

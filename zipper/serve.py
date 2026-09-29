@@ -20,7 +20,7 @@ and no part of it could be read without loading all of it:
     web/conv.py     conversations as the page sees them; the terminal card
     web/css.py      the stylesheet, as a literal
     web/js.py       the browser code, as literals
-    web/render.py   data to markup
+    web/render.py   the /views, /tasks and /canvas pages
     web/http.py     routing, the JSON API, and main()
 
 They import in that order and the dependencies run one way, so any one of them
@@ -48,7 +48,7 @@ from .web.feed import (FEED, FEED_JSON, FEED_MAX, FEED_LOCK, SUBS, SUBS_LOCK,
                        feed_save, feed_prune, note_rows, publish,
                        snapshot_data, emit_diff, do_refresh)
 from .web.css import CSS
-from .web.js import JS, TICKJS
+from .web.js import TERM_JS, TICKJS
 from .web.http import Handler, SRV, main
 
 if __name__ == '__main__':

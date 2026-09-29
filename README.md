@@ -186,9 +186,11 @@ could inflate them:
 python3 -m zipper.serve --port 8800 [--host ADDR] [--daemon] [--open]
 ```
 
-Cards: **Today** (a real time grid), **Week** (coursework by
-day), **What to work on** (coursework and tasks, ranked), **Claude** (every conversation,
-each in its own terminal), **Signals** (flags and metrics), **Queue** (read-only).
+One page. Top row: **Week**, **Today** (a real time grid), **Canvas** (this week's
+coursework) and **Projects** (tasks by project). Under it, **Claude**: every conversation,
+each in its own terminal. Then the **Queue** (read-only, flags on top) beside **Zipper**
+(execution metrics, plan usage, the box), then **Next actions** and **Ventures**, then how
+old each input is.
 
 **It owns no data** — every panel reads what the engine wrote. **It never fetches on
 launch** — a timer does, hourly — and sources publish over SSE as they land. **Looking is

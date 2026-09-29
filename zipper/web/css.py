@@ -157,6 +157,30 @@ code{background:var(--line);padding:1px 5px;border-radius:4px;font-size:12px}
 .qfold{display:block;width:100%;text-align:left;background:none;border:0;cursor:pointer;
   font:12px/1.9 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--dim);padding:4px 0 0}
 .qfold:hover{color:var(--accent)}
+.tick{flex:none;width:17px;height:17px;margin-top:1px;border:1.5px solid var(--line);border-radius:4px;
+  background:none;color:var(--accent);cursor:pointer;font-size:11px;line-height:1;padding:0;
+  display:flex;align-items:center;justify-content:center}
+.tick:not(.ghost):hover{border-color:var(--accent)}
+/* :not(.ghost) because this rule sits after .tick.ghost at equal specificity and
+   would otherwise win: the read-only queue boxes lit up on hover and read as
+   clickable things that then did nothing. */
+li.crossed .tick{border-color:var(--accent)}
+/* `el.hidden` sets an attribute, and the UA rule behind it is only [hidden]{display:none}
+   -- which ANY author rule that sets display outranks. #termstart{display:flex} is an id
+   selector, so hiding the start box set the attribute and changed nothing on screen: the
+   buttons stayed up next to the running conversation through two rounds of "fixes" to the
+   logic, which was correct the whole time. Make the attribute win everywhere. */
+[hidden]{display:none!important}
+.more{float:right;font-size:11px;color:var(--accent);text-decoration:none;text-transform:none;letter-spacing:0}
+.more:hover{text-decoration:underline}
+footer .fresh{margin:0 0 10px}
+a.plain{color:inherit;text-decoration:none;border-bottom:1px solid var(--line)}
+a.plain:hover{border-bottom-color:var(--accent)}
+"""
+
+
+# The Claude card: conversation list, terminal, start buttons, copy toast.
+TERM_CSS = """
 .btn{float:right;margin-left:10px;font:inherit;font-size:11px;text-transform:uppercase;letter-spacing:.05em;
   background:none;border:1px solid var(--line);color:var(--dim);border-radius:5px;padding:1px 8px;cursor:pointer;text-decoration:none}
 .btn:hover{border-color:var(--accent);color:var(--accent)}
@@ -208,20 +232,6 @@ code{background:var(--line);padding:1px 5px;border-radius:4px;font-size:12px}
 #termcard.full{position:fixed;inset:0;z-index:99;margin:0;border-radius:0;display:flex;flex-direction:column}
 #termcard.full #termwrap{flex:1}
 #termcard.full #termwrap iframe{height:100%}
-.tick{flex:none;width:17px;height:17px;margin-top:1px;border:1.5px solid var(--line);border-radius:4px;
-  background:none;color:var(--accent);cursor:pointer;font-size:11px;line-height:1;padding:0;
-  display:flex;align-items:center;justify-content:center}
-.tick:not(.ghost):hover{border-color:var(--accent)}
-/* :not(.ghost) because this rule sits after .tick.ghost at equal specificity and
-   would otherwise win: the read-only queue boxes lit up on hover and read as
-   clickable things that then did nothing. */
-li.crossed .tick{border-color:var(--accent)}
-/* `el.hidden` sets an attribute, and the UA rule behind it is only [hidden]{display:none}
-   -- which ANY author rule that sets display outranks. #termstart{display:flex} is an id
-   selector, so hiding the start box set the attribute and changed nothing on screen: the
-   buttons stayed up next to the running conversation through two rounds of "fixes" to the
-   logic, which was correct the whole time. Make the attribute win everywhere. */
-[hidden]{display:none!important}
 /* The start buttons live *inside* #termbody, in the slot the terminal will take,
    rather than in a band above it: stacked above, they added their own height to a
    card that is already 600px of chat list, so the cold card was taller than the
@@ -234,13 +244,9 @@ li.crossed .tick{border-color:var(--accent)}
    and the buttons sat in the left half. While the start box is showing there is no
    terminal to lay out, so take it out of the flow entirely. */
 #termstart:not([hidden]) + #termwrap{display:none}
-.startbtn{font:inherit;font-size:15px;background:none;border:1px solid var(--line);color:var(--fg);
+/* Light text whatever the theme: the slot is always the terminal's near-black. */
+.startbtn{font:inherit;font-size:15px;background:none;border:1px solid #4a4843;color:#eceae4;
   border-radius:9px;padding:13px 26px;cursor:pointer;transition:border-color .15s,color .15s}
 .startbtn:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
 .startbtn:disabled{opacity:.35;cursor:not-allowed}
-.more{float:right;font-size:11px;color:var(--accent);text-decoration:none;text-transform:none;letter-spacing:0}
-.more:hover{text-decoration:underline}
-footer .fresh{margin:0 0 10px}
-a.plain{color:inherit;text-decoration:none;border-bottom:1px solid var(--line)}
-a.plain:hover{border-bottom-color:var(--accent)}
 """

@@ -1,13 +1,13 @@
 """The dashboard's front page.
 
-One row, four panels, one height: which day, that day's hours, what is due,
-what he has taken on himself. Read left to right.
+Top row, four panels, one height: which day, that day's hours, what is due,
+what he has taken on himself. Read left to right. Under it, the Claude card (the
+conversations and their terminal); then the queue and the Zipper panel; then next
+actions and ventures; then how old each input is.
 
 Chosen out of a run of contenders that lived at `/look/N` through September
-2026; the ones that lost are gone from the tree, and the reasoning that
-survived is in the comments here. The page it replaced is still served, at
-`/old` -- it is the only place the **Claude terminal** and the **queue** are,
-and neither has an equivalent here yet.
+2026; the reasoning that survived is in the comments here. The page before it was
+retired on 2026-09-28, and `/old` redirects here.
 
 Two rules this page exists to keep:
 
@@ -26,10 +26,12 @@ arithmetic behind it perfectly correct.
 from .base import *
 from .base import box, core, canvas, events, metrics, usage
 from .feed import feed_load, feed_rows, note_rows
-from .js import TICKJS
+from .js import TERM_JS, TICKJS
+from .css import TERM_CSS
+from .conv import _queue_prompt, current_conversation
 from .data import (work_items, flags, monday_of, open_tasks,
                    priority, ranked, today_split, week_canvas)
-from .render import _gcal_link, _join_link, _lanes, esc
+from .render import _gcal_link, _join_link, _lanes, _view_html, esc, views_blob
 
 
 DOW = ('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')
@@ -267,10 +269,7 @@ li.crossed .rowtitle{text-decoration:line-through}
 """
 
 
-# The terminal and the queue live only on the old page. Until they have a home
-# here that link is not a nicety, it is the route to half of what Zipper does.
-NAV = ('<nav class="nav"><a href="/old">terminal &middot; queue</a>'
-       '<a href="/tasks">tasks</a><a href="/canvas">canvas</a>'
+NAV = ('<nav class="nav"><a href="/tasks">tasks</a><a href="/canvas">canvas</a>'
        '<a class="gap" href="/views/now">views</a></nav>')
 
 
@@ -462,6 +461,42 @@ li.hid{display:none}
 .svc.up{color:var(--accent);border-color:currentColor}
 .svc.down,.svc.stale{color:var(--warn);border-color:currentColor}
 .svc em{font-style:normal;opacity:.75}
+
+/* --- the Claude row ----------------------------------------------------- */
+.termp{margin-top:12px;height:auto}
+.termp .pb{overflow:visible;padding:4px 14px 14px}
+/* Fullscreen: the body has to take the height, or the iframe runs off the bottom. */
+.termp.full .pb{flex:1;min-height:0;display:flex;flex-direction:column}
+.termp.full #chatside{max-height:none;overflow-y:auto}
+#termstate{font:10.5px/1 var(--mono);color:var(--dim);letter-spacing:.04em}
+
+/* --- execution metrics, top of the zipper panel ------------------------- */
+.ems{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:0 0 4px}
+.em{display:flex;flex-direction:column;gap:2px}
+.em b{font:600 18px/1.1 var(--sans)}
+.em span{font:9px/1.2 var(--mono);color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
+.ems + .sub{margin:4px 0 12px}
+
+/* --- next actions and ventures ------------------------------------------ */
+.cols3{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start;margin-top:12px}
+@media(max-width:820px){.cols3{grid-template-columns:1fr}}
+.cols3 .panel{height:auto}
+.vtable{width:100%;border-collapse:collapse;font-size:13px}
+.vtable th{text-align:left;font:10px/1.4 var(--mono);color:var(--dim);letter-spacing:.06em;
+  text-transform:uppercase;padding:0 10px 6px 0;border-bottom:1px solid var(--line)}
+.vtable td{padding:7px 10px 7px 0;border-bottom:1px solid var(--line);vertical-align:top}
+.vtable tr:last-child td{border-bottom:0}
+.vlink{color:var(--accent);text-decoration:none}
+.vlink:hover{text-decoration:underline}
+.vnone{color:var(--dim)}
+
+/* --- footer ---------------------------------------------------------------- */
+.foot{margin:16px 0 28px;display:flex;flex-direction:column;gap:8px;
+  font:10.5px/1.4 var(--mono);color:var(--dim)}
+.foot .chip{display:inline-block;margin:0 6px 4px 0;padding:3px 8px;border:1px solid var(--line);
+  border-radius:99px}
+.foot .chip b{color:var(--fg);font-weight:600;margin-right:3px}
+.foot .vn a{color:var(--dim)}
 """
 
 PAGE_JS = """
@@ -763,7 +798,7 @@ def _row(it, showat=True, showdue=False, pill=False):
     # shown when it is short enough to be a summary -- those bodies run to
     # thousands of characters of course boilerplate, and two clamped lines of
     # "Submit your work using the template below" on twenty rows is the wall
-    # this whole change is getting rid of. `/old` still expands the full text.
+    # this whole change is getting rid of. `/canvas` shows the full text.
     d = it.get('desc') or ''
     if it.get('source') == 'canvas' and len(d) > 140:
         d = ''
@@ -944,12 +979,16 @@ def page(day=None):
 
             '</div>'
 
+            '%s'
+
             '<div class="cols2">'
             '<div class="panel"><div class="ph">queue%s<span class="n">%d</span></div>'
             '<div class="pb">%s</div></div>'
             '<div class="panel"><div class="ph">zipper</div>'
             '<div class="pb">%s</div></div>'
             '</div>'
+
+            '%s%s'
 
             '</div>'
             % (NAV, esc(d.strftime('%A %d %B')), esc(label),
@@ -963,11 +1002,71 @@ def page(day=None):
                len(tasks), len(donetasks),
                project_groups(tasks, True) or '<p class="empty">No open tasks.</p>',
                project_groups(donetasks, False) or '<p class="empty">Nothing ticked off yet.</p>',
+               claude_panel(),
                (' <span class="warn">&middot; %d flag%s</span>'
                 % (nflags, '' if nflags == 1 else 's')) if nflags else '',
                nqueue, queue_html,
-               system_panel()))
-    return _page('Zipper', CSS, body, PAGE_JS)
+               metrics_block() + system_panel(),
+               views_row(), footer()))
+    state = ('<script>window.__session=%s;window.__queueready=%s;window.__mounted=false;'
+             '</script>' % (json.dumps(bool(current_conversation())),
+                            json.dumps(bool(_queue_prompt()))))
+    return _page('Zipper', CSS + TERM_CSS, body + state, PAGE_JS + TERM_JS)
+
+
+def claude_panel():
+    """The Claude card: every conversation down the left, the terminal beside it.
+
+    The element ids are what `TERM_JS` drives; the buttons start hidden and
+    `drawTerm` decides which to show.
+    """
+    return ('<div class="panel termp" id="termcard"><div class="ph">claude'
+            '<span id="termstate" class="n"></span><span class="tabs">'
+            '<button id="termnew" class="tabb" hidden>new conversation</button>'
+            '<button id="termfull" class="tabb" hidden>fullscreen</button>'
+            '<a id="termpop" class="tabb" href="#" target="_blank" rel="noopener" hidden>pop out</a>'
+            '</span></div><div class="pb"><div id="termbody">'
+            '<aside id="chatside" hidden><div id="chatlist"></div></aside>'
+            '<div id="termstart"></div><div id="termwrap"></div></div></div></div>')
+
+
+def metrics_block():
+    """The execution metrics: numbers built to be hard to game (Metrics/Metrics.md)."""
+    try:
+        sc, det = metrics.compute_score()
+    except Exception as e:
+        return '<p class="sub">metrics: %s</p>' % esc(str(e))
+    cells = ''.join('<div class="em"><b>%s</b><span>%s</span></div>'
+                    % (esc(str(sc[k])), esc(k.replace('_', ' ')))
+                    for k in ('stall_days_max', 'projects_drifting', 'tasks_open', 'tasks_overdue'))
+    oldest = ', '.join('%s (%dd)' % (t, n) for t, n in det.get('oldest', [])[:2])
+    return ('<div class="ems">%s</div>%s'
+            % (cells, '<p class="sub">oldest: %s</p>' % esc(oldest) if oldest else ''))
+
+
+def views_row():
+    """Next actions and ventures, from the saved queries. Full lists live under /views."""
+    vb = views_blob()
+    v = vb.get('views', {})
+    return ('<div class="cols3">'
+            '<div class="panel"><div class="ph">next actions<span class="tabs">'
+            '<a class="tabb" href="/views/now">all</a></span></div>'
+            '<div class="pb">%s</div></div>'
+            '<div class="panel"><div class="ph">ventures<span class="tabs">'
+            '<a class="tabb" href="/views/ventures">all</a></span></div>'
+            '<div class="pb">%s</div></div></div>'
+            % (_view_html(v.get('next_actions'), compact=True),
+               _view_html(v.get('scoreboard'), compact=True)))
+
+
+def footer():
+    """How old each input's data is, and the saved-query pages."""
+    vb = views_blob()
+    chips = ''.join('<span class="chip"><b>%s</b> %s</span>' % (esc(k), esc(ago(v)))
+                    for k, v in sorted(freshness().items(), key=lambda kv: kv[0] != 'vault'))
+    links = ' &middot; '.join('<a href="/views/%s">%s</a>' % (pg['key'], esc(pg['title']))
+                              for pg in vb.get('pages', []))
+    return '<footer class="foot"><div>%s</div><div class="vn">%s</div></footer>' % (chips, links)
 
 
 

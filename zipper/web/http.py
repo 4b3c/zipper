@@ -15,7 +15,7 @@ from .data import content_sig, toggle_done, week_worklist
 from .feed import (SUBS, SUBS_LOCK, do_refresh, emit_diff, feed_load, feed_mark,
                    feed_mark_all, feed_rows, feed_watch, notes_watch, publish,
                    snapshot_data)
-from .render import _list_page, _views_page, panels_html, render, views_blob
+from .render import _list_page, _views_page, views_blob
 from . import home
 
 
@@ -103,10 +103,11 @@ class Handler(BaseHTTPRequestHandler):
                 day = None
             self._send(200, home.page(day))
         elif self.path == '/old':
-            # The page this replaced. Still the only home of the Claude
-            # terminal and the queue, so it is a live route, not an archive --
-            # and every one of its /api/* endpoints below is still wired.
-            self._send(200, render())
+            # The previous dashboard. Its cards now live on the front page.
+            self.send_response(301)
+            self.send_header('Location', '/')
+            self.send_header('Content-Length', '0')
+            self.end_headers()
         elif self.path == '/events':
             self._events()
         elif self.path.split('?')[0] == '/api/tmuxbuffer':
@@ -125,25 +126,6 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == '/api/conversations':
             self._send(200, json.dumps({'conversations': conversation_rows()}),
                        'application/json')
-        elif self.path.split('?')[0] == '/api/panels':
-            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-            day = (q.get('day') or [''])[0]
-            if not re.match(r'^\d{4}-\d{2}-\d{2}$', day or ''):
-                day = None
-            week = (q.get('week') or [''])[0]
-            if not re.match(r'^\d{4}-\d{2}-\d{2}$', week or ''):
-                week = None
-            ep = {}
-            for k, v in freshness().items():
-                try:
-                    ep[k] = datetime.datetime.fromisoformat(v).timestamp() if v else None
-                except Exception:
-                    ep[k] = None
-            self._send(200, json.dumps({'epochs': ep, 'html': panels_html(day, week),
-                                        'queue_ready': bool(_queue_prompt()),
-                                        'session': bool(current_conversation()),
-                                        'termup': False,
-                                        'termport': 0}), 'application/json')
         elif self.path == '/api/state':
             with LOCK:
                 st = dict(STATE)
