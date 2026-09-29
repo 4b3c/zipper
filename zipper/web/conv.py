@@ -302,12 +302,16 @@ def conversation_rows():
     """The chat list: every pane, with the state the page has to show.
 
     Discord conversations are left out. They run headless and can't be opened
-    here, and `python3 -m zipper conversations` still lists them.
+    here, and `python3 -m zipper conversations` still lists them. So is a closed
+    pane idle for more than a week; a running one always shows.
     """
     conversations.sweep()
     rows = []
+    cutoff = time.time() - 7 * 86400
     for r in conversations.listing():
         if not _is_pane(r['thread_id']):
+            continue
+        if not r['alive'] and (r.get('last_active_ts') or 0) < cutoff:
             continue
         rows.append({
             'thread_id': r['thread_id'],
