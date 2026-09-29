@@ -8,6 +8,7 @@ re-implemented, slightly differently, by each:
 
 - **Facts only.** Just the fields in WRITABLE. A judgment such as `status` is the
   operator's, and an input that returns one is refused and logged, never obeyed.
+- **Never onto a generated view.** It is overwritten on the next run.
 - **Evidence only moves `last_touched` forward.** A fetch that sees less than last
   time -- a lost token, a repo made private -- must not make a project look staler.
 """
@@ -28,6 +29,8 @@ def plan(facts, current):
         d = current.get(title)
         if d is None:
             continue                         # no such note: nothing to write onto
+        if d.get('view_kind') == 'generated':
+            continue                         # overwritten every run; holds no facts
         for field, value in fields.items():
             if field not in WRITABLE:
                 refused.append((title, field))

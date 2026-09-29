@@ -9,8 +9,14 @@ from . import core
 
 
 
-def cmd_sync(a):
-    """Derive last_touched from Log/ backlinks: newest log note that mentions a note wins."""
+def log_facts():
+    """{note title: {'last_touched': YYYY-MM}} from the newest log entry linking each note.
+
+    Only a fact, like any input's: `zipper.writer` decides what is written, and it
+    moves `last_touched` forward only. Log evidence can prove a note was touched,
+    never that it wasn't -- an unconditional write once dragged dates that `github`
+    had set back to whatever the newest log mention happened to say.
+    """
     latest = {}
     for lp in sorted(glob.glob(os.path.join(LOGDIR, '*.md'))):
         stem = title_of(lp)
@@ -22,26 +28,15 @@ def cmd_sync(a):
             link = link.strip()
             if link > '' and (link not in latest or stem > latest[link]):
                 latest[link] = stem
-    changed = 0
-    for p in iter_notes():
-        t = title_of(p)
-        if t not in latest:
-            continue
-        pairs, body = read_note(p)
-        d = fm_dict(pairs)
-        month = latest[t][:7]
-        cur = d.get('last_touched') or ''
-        # Forward only. Log evidence can prove a note was touched, never that it
-        # wasn't: `github` dates last_touched from commits, and an unconditional
-        # write dragged those back to whatever the newest log mention happened to
-        # say. Editing a link out of a log used to silently regress the note.
-        if month > cur:
-            set_field(pairs, 'last_touched', month)
-            write_note(p, pairs, body)
-            changed += 1
-            print('touched %-40s -> %s' % (t, month))
+    return {t: {'last_touched': d[:7]} for t, d in latest.items()}
+
+
+def cmd_sync(a):
+    """Derive last_touched from Log/ backlinks, through the writer."""
+    from . import writer
+    n = writer.apply(log_facts(), source='log')
     print('sync: %d note(s) updated from %d log entr(ies)' %
-          (changed, len(glob.glob(os.path.join(LOGDIR, '*.md')))))
+          (n, len(glob.glob(os.path.join(LOGDIR, '*.md')))))
     return 0
 
 def cmd_touch(a):
