@@ -8,8 +8,8 @@ on the sheet, and hours arrive over Discord at times when nothing is open at
 all. With a refresh token in `.env`, `zipper hours add` can put a row in the
 spreadsheet the moment he says it.
 
-Stdlib only, like the rest of the server -- this is three HTTP calls, and a
-dependency would be a worse trade than the forty lines below.
+No Google client library: this is three HTTP calls, and a dependency would be a
+worse trade than the forty lines below.
 
 The client is Internal to his Workspace org, which is what makes this quiet:
 no verification, no consent interstitial, and a refresh token that does not

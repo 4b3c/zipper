@@ -43,5 +43,5 @@ BOT_URL=http://127.0.0.1:4200      # where zipper reaches this bot
 ZIPPER_URL=http://127.0.0.1:8800   # where this bot forwards messages
 ```
 
-The only part of the system with pip dependencies (`discord.py`, `aiohttp`). The engine stays
-stdlib-only, so a cron job can post without owning a socket.
+Dependencies: `discord.py`, `aiohttp`. Nothing outside `bot/` imports `discord`, so a cron
+job can post through the bot without holding the gateway connection itself.

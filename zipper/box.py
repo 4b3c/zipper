@@ -3,7 +3,7 @@
 What the machine itself is doing: CPU, memory, disk, uptime, and whether the
 services are running the code that is checked in.
 
-Stdlib and `/proc` only -- no psutil, same rule as the rest of the server. Every
+Reads `/proc` directly; psutil would add a dependency for five numbers. Every
 number here is read at call time and cached for a few seconds; nothing is
 written to the vault, because none of it is a conclusion about anything. It is
 the box's vital signs, and a vital sign is only worth reading live.

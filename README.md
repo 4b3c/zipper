@@ -185,7 +185,7 @@ could inflate them:
 python3 -m zipper.serve --port 8800 [--host ADDR] [--daemon] [--open]
 ```
 
-Stdlib only, no build step. Cards: **Today** (a real time grid), **Week** (coursework by
+Cards: **Today** (a real time grid), **Week** (coursework by
 day), **What to work on** (coursework and tasks, ranked), **Claude** (every conversation,
 each in its own terminal), **Signals** (flags and metrics), **Queue** (read-only).
 
@@ -218,7 +218,7 @@ renders; it never concludes.** See `extension/README.md`.
 
 ```bash
 cp .env.example .env                    # ZIPPER_VAULT, plus whatever you use
-pip install -r requirements.txt         # bot/ only
+pip install -r requirements.txt
 
 python3 -m zipper fetch
 python3 -m zipper.serve --daemon

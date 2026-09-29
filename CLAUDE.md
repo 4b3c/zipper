@@ -11,13 +11,12 @@ the operator from this repo.
 
 - **`python3 -m zipper`** — the engine. Reads a vault of markdown notes with YAML
   frontmatter, fetches from outside sources, writes back facts only.
-- **`python3 -m zipper.serve`** — the dashboard. Stdlib HTTP server, no framework.
+- **`python3 -m zipper.serve`** — the dashboard.
 - **`bot/`** — the Discord relay. Posts each message to the server's `/discord`, which hands
   it to that thread's Claude conversation. Replies return via the `Stop` hook in `hooks/`.
 - **The vault** — plain markdown, one directory per note type. Not in this repository.
 
-The engine and server are **stdlib-only**: no pip, no venv. The target is a box where
-`apt install python3` is the whole setup. Only `bot/` has dependencies.
+Dependencies are allowed where they earn their place; `requirements.txt` lists them.
 
 ## 2. Layout
 

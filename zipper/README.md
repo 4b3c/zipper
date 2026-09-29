@@ -1,7 +1,5 @@
 # The engine — operational reference
 
-Stdlib-only: no pip, no venv. The box needs nothing but `python3`.
-
     cd /opt/zipper
     python3 -m zipper --help
 

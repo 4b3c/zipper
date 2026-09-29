@@ -8,7 +8,6 @@ Design notes, 2026-09-01:
     rather than silent. Every bug this vault has produced was stale data
     presented as current.
 
-No framework: stdlib only, so the VPS needs nothing but python3.
     python3 -m zipper.serve --port 8800
 
 **This file is the entry point, not the server.** The server lives in

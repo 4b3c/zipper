@@ -2,9 +2,9 @@
 """
 zipper - the command line for the space/ vault.
 
-Stdlib only. Run it from anywhere:
+Run it from anywhere:
 
-    ZIPPER_VAULT=~/path/to/vault python3 python3 -m zipper <command>
+    ZIPPER_VAULT=~/path/to/vault python3 -m zipper <command>
 
 Commands:
     today                       create (or find) today's log note

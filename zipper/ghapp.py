@@ -25,7 +25,7 @@ possible blast radius for reach, knowingly. What it does NOT trade away is the
 org: the App is installed on his personal account, so no ASU-LL repo is reachable
 with this token under any circumstance.
 
-Stdlib only, like the rest of the engine: RS256 is signed by shelling out to
+RS256 is signed by shelling out to
 `openssl`, which is already on the box, rather than taking a `cryptography`
 dependency for one signature every hour.
 """

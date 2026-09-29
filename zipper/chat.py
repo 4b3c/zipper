@@ -12,9 +12,8 @@ from . import core
 #
 # The bot is a separate always-on process holding the Discord gateway
 # connection. This is the only way anything else talks to it: a few HTTP calls
-# to BOT_URL, stdlib-only, so zipper keeps its no-dependency promise and an
-# agent session can reach Discord by running a command rather than importing a
-# library.
+# to BOT_URL, so an agent session can reach Discord by running a command rather
+# than holding a gateway connection.
 
 BOT_URL = os.environ.get('BOT_URL', 'http://127.0.0.1:4200')
 
