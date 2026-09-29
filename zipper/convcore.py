@@ -11,6 +11,7 @@ Import it as `zipper.conversations`, which re-exports all three.
 """
 import os, re, json, time, uuid, fcntl, shutil, signal, hashlib, subprocess, datetime
 import contextlib
+import threading
 
 from .core import *          # noqa: F401,F403 -- the shared vocabulary
 from . import core
@@ -127,6 +128,41 @@ def _tmux():
     return t
 
 
+# Set by `snapshot()` for one thread's read-only pass over every row.
+_TL = threading.local()
+
+
+def live_sessions():
+    """Every tmux session name, in one call. Empty if no server is running."""
+    try:
+        r = subprocess.run([_tmux(), 'list-sessions', '-F', '#{session_name}'],
+                           capture_output=True, text=True)
+    except RuntimeError:
+        return set()
+    return set(r.stdout.split('\n')) - {''} if r.returncode == 0 else set()
+
+
+@contextlib.contextmanager
+def snapshot(registry=True):
+    """One registry read and one tmux listing, for a pass that asks per row.
+
+    Asking per row cost two `tmux` processes and nine parses of the registry
+    for each of ~100 rows -- 4s of every dashboard render, most of it spent on
+    Discord rows that never have a session. Inside this block `alive()` answers
+    from the listing and `load()` returns the one read.
+
+    **Read-only.** `mutate()` always reads fresh, but a caller that writes
+    should pass `registry=False` so nothing it decides from is stale. Thread-
+    local, so the web server's other threads never see it.
+    """
+    _TL.live = live_sessions()
+    _TL.snap = _read() if registry else None
+    try:
+        yield
+    finally:
+        _TL.live = _TL.snap = None
+
+
 def alive(thread_id):
     """Is this thread's tmux session actually running?
 
@@ -135,6 +171,9 @@ def alive(thread_id):
     live forever; pinned against the reaper, it then blocked `zipper commit` on
     every pass, which is what a hand-bound `zipper` row did on 2026-09-06.
     """
+    live = getattr(_TL, 'live', None)
+    if live is not None:
+        return tmux_name(thread_id) in live      # exact, as `=` is
     try:
         return subprocess.run([_tmux(), 'has-session', '-t', target(thread_id)],
                               stdout=subprocess.DEVNULL,
@@ -144,6 +183,11 @@ def alive(thread_id):
 
 
 def load():
+    snap = getattr(_TL, 'snap', None)
+    return snap if snap is not None else _read()
+
+
+def _read():
     try:
         return json.load(open(CONV_JSON, encoding='utf-8'))
     except Exception:
@@ -187,7 +231,7 @@ def mutate():
     with open(CONV_LOCK, 'a+') as fh:
         fcntl.flock(fh, fcntl.LOCK_EX)
         try:
-            d = load()
+            d = _read()         # never a snapshot: this one is written back
             yield d
             save(d)
         finally:

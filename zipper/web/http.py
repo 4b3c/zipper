@@ -11,7 +11,8 @@ from .base import box, core, canvas, chat, inputs, conversations, events, gh, go
 from .conv import (PASTE_DIR, TTYD, _prune_pastes, _queue_prompt, conversation_rows,
                    current_conversation, new_conversation, newest_buffer,
                    open_conversation, start_session)
-from .data import content_sig, delete_task, toggle_done, week_worklist
+from .data import delete_task, toggle_done, week_worklist
+from .live import live_sig
 from .feed import (SUBS, SUBS_LOCK, do_refresh, emit_diff, feed_load, feed_mark,
                    feed_mark_all, feed_rows, feed_watch, notes_watch, publish,
                    snapshot_data)
@@ -124,7 +125,7 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 st = dict(STATE)
             st['ages'] = {k: ago(v) for k, v in freshness().items()}
-            st['sig'] = content_sig()
+            st['sig'] = live_sig()
             st['clients'] = SRV['clients']
             self._send(200, json.dumps(st), 'application/json')
         elif self.path.split('?')[0] == '/oauth/google/callback':

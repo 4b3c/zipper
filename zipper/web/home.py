@@ -29,6 +29,7 @@ from .feed import feed_load, feed_rows, note_rows
 from .js import TERM_JS, TICKJS
 from .css import TERM_CSS
 from .conv import _queue_prompt, current_conversation
+from .live import LIVE_JS, live_sig
 from .data import (work_items, flags, monday_of, open_tasks,
                    priority, ranked, today_split, week_canvas)
 from .render import _gcal_link, _join_link, _lanes, _view_html, esc, views_blob
@@ -217,12 +218,11 @@ document.addEventListener('click',e=>{
   if(!r||e.target.closest('a')||e.target.closest('.tick')||e.target.closest('.del')) return;
   r.classList.toggle('open');
 });
-document.querySelectorAll('[data-tabs]').forEach(w=>{
-  w.addEventListener('click',e=>{
-    const t=e.target.closest('[data-tab]'); if(!t) return;
-    w.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('on',x===t));
-    w.querySelectorAll('[data-pane]').forEach(p=>p.hidden=p.dataset.pane!==t.dataset.tab);
-  });
+// Delegated, not bound per panel: a live update swaps panels for new nodes.
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-tab]'), w=t&&t.closest('[data-tabs]'); if(!w) return;
+  w.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('on',x===t));
+  w.querySelectorAll('[data-pane]').forEach(p=>p.hidden=p.dataset.pane!==t.dataset.tab);
 });
 """
 
@@ -515,7 +515,7 @@ document.addEventListener('click',e=>{
 // A line chart that cannot be interrogated is a picture. The crosshair snaps to
 // the nearest real sample rather than interpolating along the line, so the
 // readout is always a number that was actually measured.
-document.querySelectorAll('.spark[data-spark]').forEach(el=>{
+function bindSparks(root){ root.querySelectorAll('.spark[data-spark]').forEach(el=>{
   const pts=JSON.parse(el.dataset.spark), svg=el.querySelector('svg');
   if(!svg||!pts.length) return;
   const cross=svg.querySelector('.cross'), out=el.querySelector('.skt');
@@ -538,7 +538,8 @@ document.querySelectorAll('.spark[data-spark]').forEach(el=>{
   svg.addEventListener('pointerleave',()=>{
     cross.hidden=true; out.textContent=trend; el.classList.remove('live');
   });
-});
+}); }
+bindSparks(document);
 """
 
 
@@ -881,9 +882,10 @@ def page(day=None):
         # under the title and would only push the title out, so short blocks
         # carry the title alone and say the rest when opened.
         meta = ('<div class="bm">%s</div>' % b['span']) if b['mins'] >= 45 else ''
-        grid.append('<div class="blk%s%s" %s><div class="bt">%s</div>%s%s'
+        grid.append('<div class="blk%s%s" data-s="%d" data-e="%d" %s><div class="bt">%s</div>%s%s'
                     '<div class="acts">%s</div></div>'
                     % (' past' if b['past'] else '', ' live' if b['live'] else '',
+                       b['s'], b['e'],
                        _style('--hue:%d' % b['hue'], 'top:%.3f%%' % b['top'],
                               '--h:%.3f%%' % b['h'], 'height:%.3f%%' % b['h'],
                               # Lanes tile the area *after* the hour gutter. Taking
@@ -967,16 +969,16 @@ def page(day=None):
              d.strftime('%A'))
 
     body = ('<div class="wrap">%s'
-            '<div class="head"><h1>%s</h1><span class="meta">%s</span>%s</div>'
+            '<div class="head" data-live="head"><h1>%s</h1><span class="meta">%s</span>%s</div>'
             '<div class="cols">'
 
-            '<div class="panel"><div class="ph">week</div>'
+            '<div class="panel" data-live="week"><div class="ph">week</div>'
             '<div class="wk">%s</div></div>'
 
-            '<div class="panel day"><div class="ph">%s<span class="n">%d</span></div>'
-            '<div class="pb fit"><div class="day">%s</div></div></div>'
+            '<div class="panel day" data-live="day"><div class="ph">%s<span class="n">%d</span></div>'
+            '<div class="pb fit"><div class="day" data-lo="%d" data-span="%d"%s>%s</div></div></div>'
 
-            '<div class="panel" data-tabs><div class="ph">canvas'
+            '<div class="panel" data-tabs data-live="canvas"><div class="ph">canvas'
             '<span class="tabs"><button class="tabb on" data-tab="open">open'
             '<span class="c">%d</span></button>'
             '<button class="tabb" data-tab="done">done<span class="c">%d</span></button>'
@@ -984,7 +986,7 @@ def page(day=None):
             '<div class="pb" data-pane="open">%s%s</div>'
             '<div class="pb" data-pane="done" hidden>%s</div></div>'
 
-            '<div class="panel tasks" data-tabs><div class="ph">projects'
+            '<div class="panel tasks" data-tabs data-live="projects"><div class="ph">projects'
             '<span class="tabs"><button class="tabb on" data-tab="open">open'
             '<span class="c">%d</span></button>'
             '<button class="tabb" data-tab="done">done<span class="c">%d</span></button>'
@@ -998,18 +1000,19 @@ def page(day=None):
             '%s'
 
             '<div class="cols2">'
-            '<div class="panel"><div class="ph">queue%s<span class="n">%d</span></div>'
+            '<div class="panel" data-live="queue"><div class="ph">queue%s<span class="n">%d</span></div>'
             '<div class="pb">%s</div></div>'
-            '<div class="panel"><div class="ph">zipper</div>'
+            '<div class="panel" data-live="zipper"><div class="ph">zipper</div>'
             '<div class="pb">%s</div></div>'
             '</div>'
 
-            '%s%s'
+            '<div data-live="tail">%s%s</div>'
 
             '</div>'
             % (NAV, esc(d.strftime('%A %d %B')), esc(label),
                '' if is_today else '<a class="back" href="/">back to today &rarr;</a>',
-               ''.join(wdays), esc(label), len(blocks), ''.join(grid),
+               ''.join(wdays), esc(label), len(blocks), DAY_LO, SPAN,
+               ' data-today' if is_today else '', ''.join(grid),
                nopen, ndone,
                carry, day_sections(lambda it: not it['done'])
                or '<p class="empty">Nothing due this week.</p>',
@@ -1025,9 +1028,10 @@ def page(day=None):
                metrics_block() + system_panel(),
                views_row(), footer()))
     state = ('<script>window.__session=%s;window.__queueready=%s;window.__mounted=false;'
-             '</script>' % (json.dumps(bool(current_conversation())),
-                            json.dumps(bool(_queue_prompt()))))
-    return _page('Zipper', CSS + TERM_CSS, body + state, PAGE_JS + TERM_JS)
+             'window.__sig=%s;</script>' % (json.dumps(bool(current_conversation())),
+                                            json.dumps(bool(_queue_prompt())),
+                                            json.dumps(live_sig())))
+    return _page('Zipper', CSS + TERM_CSS, body + state, PAGE_JS + TERM_JS + LIVE_JS)
 
 
 def claude_panel():

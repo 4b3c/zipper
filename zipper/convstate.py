@@ -13,7 +13,7 @@ from .core import *          # noqa: F401,F403
 from . import core
 from .convcore import (CLAUDE_PROJECTS, CONV_JSON, IDLE_EXPIRY, IDLE_NOTICE,
                        _pane, _project_dir,
-                       _tmux, alive, load, mutate, save, session_id, target,
+                       _tmux, alive, load, mutate, save, session_id, snapshot, target,
                        tmux_name, touch, transcript)
 from .ttyd import _port_open, stop_ttyd
 
@@ -294,8 +294,12 @@ def sweep():
     for tid, row in list(load().items()):
         if row.get('bound'):
             detect_session(tid)
+    with snapshot(registry=False):
+        dead_now = {tid for tid in load() if not alive(tid)}
     for tid, row in list(load().items()):
-        dead = not alive(tid)
+        # The listing only rules sessions out cheaply. This sweep kills things,
+        # so a row it would act on is asked again, one `tmux` call, right now.
+        dead = tid in dead_now and not alive(tid) if row.get('port') else tid in dead_now
         if not dead and row.get('port') and not running_claude(tid):
             # Claude was quit inside the pane. End the session too, or ttyd
             # serves the empty shell tmux leaves behind as if it were the
@@ -411,13 +415,14 @@ def listing():
     sitting at the bottom of the list.
     """
     out = []
-    for tid, row in load().items():
-        out.append(dict(row, thread_id=tid, alive=alive(tid), state=state(tid),
-                        serving=(_port_open(row.get('host') or '127.0.0.1', int(row['port']))
-                                 if row.get('port') else False),
-                        last_active_ts=last_active(tid),
-                        context_tokens=context_tokens(tid),
-                        idle_for=int(time.time() - last_active(tid)) if last_active(tid) else None))
+    with snapshot():
+        for tid, row in load().items():
+            out.append(dict(row, thread_id=tid, alive=alive(tid), state=state(tid),
+                            serving=(_port_open(row.get('host') or '127.0.0.1', int(row['port']))
+                                     if row.get('port') else False),
+                            last_active_ts=last_active(tid),
+                            context_tokens=context_tokens(tid),
+                            idle_for=int(time.time() - last_active(tid)) if last_active(tid) else None))
     # last_active_ts is the newest of the registry stamp and the transcript's
     # mtime. The registry only sees messages this process delivered, so sorting
     # on it alone left out everything typed straight into a terminal -- which is
