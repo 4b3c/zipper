@@ -1,323 +1,152 @@
 # Zipper Collector
 
-A browser extension that reads what only a logged-in browser can see and hands
-it to Zipper.
+A browser extension that reads what only a logged-in browser can see and hands it to Zipper.
 
-It exists because of one asymmetry. `canvas_session` is a cookie ASU rotates on
-its own schedule — twice inside a day, more than once — so a copy pasted into
-`.env` starts dying the moment it is taken. The *same* session sitting in a
-browser never dies, because the browser renews it through SSO without being
-asked. Nothing is wrong with `zipper/canvas.py`; it calls the right endpoint and
-it works. Only the credential's lifetime fails. Moving the request into the
-browser deletes lifetime as a concept.
+**Why it exists:** Canvas' `canvas_session` cookie is rotated by the school's SSO several
+times a day, so a copy in `.env` starts dying the moment it's taken. The same session in a
+browser never dies, because the browser renews it. `zipper/canvas.py` was fine; only the
+credential's lifetime failed. Moving the request into the browser removes lifetime from the
+problem.
 
-## What it is not
-
-It does not decide anything. A collector fetches JSON and posts it; every
-judgement — what a submission means, which note it lands on, whether a status is
-lying — happens in the backend, where the vault is. The browser is a **place to
-read from**, not a second brain. Keep it that way: the moment a collector starts
-interpreting, there are two systems that both think and they will disagree.
+**It never concludes.** A collector fetches JSON and posts it. Every judgment — what a
+submission means, which note it lands on — happens in the backend, next to the vault. The
+moment a collector interprets, there are two systems thinking, and they'll disagree.
 
 ## Layout
 
 ```
 manifest.json          both browsers, one file
-background.js          the reporter. The only part that knows Zipper exists
-collectors/canvas.js   one site. Fetches, posts, concludes nothing
-ui/canvas-todo.js      draws Zipper's work list over Canvas' own
+background.js          the reporter; the only part that knows Zipper exists
+collectors/canvas.js   one site: fetches, posts, concludes nothing
+ui/canvas-todo.js      draws Zipper's work list into Canvas
 options.html/.js       where Zipper lives, granted as a runtime permission
 ```
 
-Adding a site is one file in `collectors/` plus a `content_scripts` entry. The
-reporter does not change.
-
-`ui/` is the other direction: a collector reads the page for Zipper, a `ui/`
-script draws Zipper into the page. Same rule applies — it renders a list it did
-not rank and writes through an endpoint it does not own.
+Adding a site is one file in `collectors/` plus a `content_scripts` entry. `ui/` is the other
+direction — it draws Zipper into the page, under the same rule: it renders a list it didn't
+rank and writes through an endpoint it doesn't own.
 
 ## When a reading is sent
 
-A collector runs on every page load, and a page load is not news. What actually
-goes out is decided in `background.js`, by hash:
+A collector runs on every page load; `background.js` decides what goes out, by hash:
 
-| trigger | sent? |
+| Trigger | Sent? |
 |---|---|
-| page load, reading differs from the last one Zipper acknowledged | **yes** |
-| page load, reading identical | no |
-| the 30-minute interval in an open tab | **yes, always** |
+| Page load, reading differs from the last one Zipper acknowledged | **yes** |
+| Page load, identical | no |
+| 30-minute heartbeat in an open tab | **always** |
 
-The hash is SHA-256 over a canonical serialization — keys sorted, so an upstream
-reshuffle is not mistaken for a change, with a small `VOLATILE` denylist dropped
-because `new_activity` flips when he merely *looks* at an item.
-
-**The heartbeat ignores the hash on purpose.** Unchanged-and-read-just-now and
-unchanged-and-read-this-morning are different facts, and `canvas.json`'s
-`fetched` stamp can only tell them apart if something reports on a cadence. The
-hash removes pointless traffic; it must not also freeze the clock.
-
-The stored hash means *Zipper has this*, not *we tried* — written only after the
-POST is acknowledged, so a failed send is offered again on the next load instead
-of being skipped until the data happens to change. A 60-second floor sits under
-the change-driven path as a backstop for two tabs loading together; the
-heartbeat is never suppressed.
+- The hash is SHA-256 over sorted keys, minus a small `VOLATILE` list (`new_activity` flips
+  when an item is merely viewed).
+- **The heartbeat ignores the hash** so `canvas.json`'s `fetched` stamp can tell
+  "unchanged, read just now" from "unchanged, read this morning".
+- **The hash is stored only after Zipper acknowledges the POST**, so a failed send is
+  retried. A 60-second floor stops two tabs double-sending; it never suppresses the heartbeat.
 
 ## The Canvas to-do panel
 
-`ui/canvas-todo.js` replaces the dashboard sidebar's *To Do* and *Coming Up*
-with **this Monday–Sunday week's Canvas work**, served at `GET /api/worklist`.
-Ticking a row POSTs to `/api/done`, the same endpoint the dashboard's checkbox
-uses, so a cross-off lands in the vault and not in a second store.
+`ui/canvas-todo.js` replaces Canvas' sidebar *To Do* and *Coming Up* with this Monday–Sunday
+week's coursework from `GET /api/worklist` (`data.week_worklist()`). Ticking a row POSTs
+`/api/done` — the dashboard's endpoint, so a cross-off lands in the vault.
 
-It is `data.week_worklist()`, built on the `week_canvas()` behind the
-dashboard's week card — **not** `ranked()`, which is the dashboard's question:
-everything pressing, coursework and `Tasks/` lines together, cut at ten. Inside
-Canvas the surroundings have already answered half the question. He is looking
-at a course tool, about this week, and a task about emailing three coffee shops
-does not belong in a sidebar he opened to see assignments. Work due *before*
-Monday and still unfinished leads the list, marked `still open`: it is this
-week's problem whatever its own due date says.
+- **Coursework only.** Not the dashboard's `ranked()`, which mixes in tasks. In Canvas the
+  question is "what's due this week".
+- **Unfinished work from before Monday leads**, marked `still open`.
+- **Finished rows sit behind a Done tab.** They stay (a vanished row looks like a failed
+  cross-off) but don't bury open work.
+- **A week-progress bar** above the tabs, and **grade badges** on course cards from
+  `/api/v1/courses?include[]=total_scores`. `--%` means nothing graded, not zero. Badges never
+  reach Zipper — a course score isn't a conclusion.
+- **No ranking in the browser.** Two surfaces disagreeing about what's pressing is worse than
+  Canvas' own bad list. The browser draws; Zipper decides.
 
-Submitted and crossed-off rows stay — the vault's rule, since a row that
-vanished would be indistinguishable from the cross-off having failed — but they
-live behind a **Done** tab rather than in the list. Sinking them was not enough:
-`week_worklist` sinks finished work *within* a day, so a Monday assignment
-handed in on Monday still outranked an open one due Sunday, and a real week put
-ten struck-through Sprint 0 rows above the two things he actually had to do.
-The default view is what is left; what is finished is one click away.
+How it stays safe inside Canvas:
+- **A shadow root**, because Canvas ships broad `!important` CSS. `all: initial` walls it out
+  but also resets `display` to `inline` — set it back.
+- **Native widgets are hidden, never removed, and only after a successful fetch.** If Zipper
+  is unreachable the panel says so and Canvas' list stays.
+- **Remounted from a coalesced `MutationObserver`**: the sidebar renders late and React
+  restores hidden widgets.
+- **Each content script is a closure.** Every frame gets one isolated world, so two files
+  declaring `const api` throws on line 1. `node --check` won't catch it.
+- The page can reach exactly the two paths in `ALLOWED` in `background.js`.
 
-Above the tabs, a bar for **how much of the week is behind him** — the one thing
-a list of remaining work cannot show. Grade badges go on the course cards from
-`/api/v1/courses?include[]=total_scores`; `--%` where Canvas has graded nothing
-yet, because `0%` would be a different and wrong claim. That one never touches
-Zipper: it is a number Canvas already computed, printed back onto Canvas' own
-card. Sending it to the vault would be a different feature — a course score is
-not a conclusion, and the vault holds conclusions.
+## Why Canvas is a content script
 
-That is the whole constraint. Canvas' native list is bad in a specific way — it
-is the gradebook's ungraded columns, so it carries closed assignments and work
-submitted on PrairieLearn — but **a second ranking computed in the browser
-would be worse**, because two surfaces would then disagree about what is most
-pressing on exactly the days it mattered. The browser draws; Zipper decides.
-
-- Rendered in a **shadow root**. Canvas ships broad `!important` CSS and this
-  panel sits inside its sidebar; an open DOM would be restyled remotely and
-  silently.
-- The native widgets are **hidden, not removed**, and only *after* a successful
-  fetch. If Zipper is unreachable the panel says so and Canvas' own list is left
-  exactly where it was — an empty box where his work used to be is the one
-  failure worth engineering against.
-- Re-mounted from a coalesced `MutationObserver`: the sidebar renders
-  client-side, arrives after `document_idle`, and React reinstates hidden
-  widgets on re-render.
-- The page can reach exactly two paths, listed in `ALLOWED` in `background.js`.
+`canvas_session` is SameSite, so a request from the background context goes without it and
+Canvas answers with the SSO login page **at status 200** — parsed as an empty planner, it
+says nothing is due. From a content script the request is same-origin. The POST *out* is the
+reverse: from the page CORS refuses it, so it goes from the background.
 
 ## Install
 
-**Chrome / Arc** — `chrome://extensions`, Developer mode on, *Load unpacked*,
-choose this directory. Permanent, free, done.
+**Chrome / Arc** — `chrome://extensions`, Developer mode, *Load unpacked*, pick this directory.
 
-**Firefox / Zen** — **every machine installs this by hand, once.** Firefox Sync
-will not carry it: sync replicates a list of add-on ids and each machine
-reinstalls them from AMO's public catalog, and an unlisted add-on is by
-definition not in that catalog. Future versions *do* arrive on their own, per
-machine, through `update_url`.
-
-Release Firefox **cannot permanently install an unsigned extension**, and unlike older advice there is no `xpinstall.signatures.required`
-override in release builds. Two real options:
-
-- `about:debugging#/runtime/this-firefox` → *Load Temporary Add-on* → pick
-  `manifest.json`. Fine for testing; **gone on restart.**
-- `update_url` in the tracked manifest is the placeholder `__ZIPPER_EXT_BASE__`.
-  It is inside the signature, so it cannot be patched in after signing —
-  `zipper ext --build` resolves it from `ZIPPER_EXT_BASE` just before upload and
-  puts the placeholder back afterwards. A failed sign leaves the real address in
-  place for the retry; `zipper ext --clean` restores it by hand.
-- Sign it through AMO as **unlisted / self-distributed** — free, interactive,
-  not held up by review, never publicly listed. `web-ext sign --channel=unlisted`
-  with an API key gives a `.xpi` that installs like any add-on.
-
-Then open the extension's options and enter the dashboard's address — the
-MagicDNS name rather than the tailnet IP, so it survives the address changing:
-
-```
-http://<machine>.<tailnet>.ts.net:8800
-```
-
-(The real one is `ZIPPER_URL` in `/opt/zipper/.env`, not written out here: this
-file is published, and the hostname names his box.)
-
-(Port 8800, not 4199. `zipper-web.service` binds `127.0.0.1:8800` and the enabled
-nginx site proxies the tailnet address to it. The `4199`/`4200` blocks in
-`sites-available/zipper` are a superseded config, not enabled, with nothing
-listening behind them.)
-
-Saving asks permission for that one origin; a
-personal tailnet address does not belong in a manifest in a public repo, which
-is why it is requested at runtime instead.
-
-### Updating it after the first install
-
-An installed `.xpi` is a **copy inside the browser profile**. Pulling this repo on
-the desktop changes nothing the browser will ever read again — which is the same
-property that frees the clone from having to sit anywhere in particular.
-
-So updates run through `update_url`, which is baked into the manifest and
-therefore covered by the signature: **it has to be right before the first
-signing, not added afterwards.** Firefox polls that URL on its own schedule,
-compares versions, checks `update_hash`, and installs what it finds.
+**Firefox / Zen** — release Firefox won't permanently install an unsigned add-on. For
+development, `about:debugging` → *Load Temporary Add-on* (gone on restart). To ship, sign it
+as an **unlisted** AMO add-on:
 
 ```bash
-python3 -m zipper ext                 # what is built, what is being served
+python3 -m zipper ext                 # what's built, what's served
 python3 -m zipper ext --build         # bump, sign at AMO, publish to data/ext/
 python3 -m zipper ext --build --bump minor
 ```
 
-The build writes the `.xpi` and an `updates.json` into `data/ext/`, which the
-dashboard serves at `/ext/` over the tailnet — so shipping a change is one
-command on the box and nothing at all on the desktop. Needs `AMO_JWT_ISSUER` and
-`AMO_JWT_SECRET` in `.env`, and `ZIPPER_EXT_BASE` matching the manifest's
-`update_url`.
+The build writes the `.xpi` and `updates.json` to `data/ext/`, served by the dashboard at
+`/ext/`. Browsers poll `update_url` and update themselves. Needs `AMO_JWT_ISSUER`,
+`AMO_JWT_SECRET`, and `ZIPPER_EXT_BASE`.
 
-Two things that will bite:
+- **Every machine installs once by hand.** Firefox Sync reinstalls add-ons from AMO's public
+  catalog, and an unlisted one isn't in it.
+- **`update_url` is inside the signature.** The tracked manifest holds a placeholder;
+  `--build` fills it from `ZIPPER_EXT_BASE` before upload and restores it after
+  (`--clean` restores it by hand).
+- **Serve the `.xpi` as `application/x-xpinstall`**, or Firefox downloads it as a file.
+- **AMO never accepts a version twice**, even from a failed upload, so `--build` keeps the
+  bump on failure.
 
-- The `.xpi` must be served as `application/x-xpinstall`. As `octet-stream`
-  Firefox downloads it as a file, which looks exactly like the update doing
-  nothing at all.
-- AMO refuses a version number it has already seen, so a failed upload may still
-  have consumed the number. `--build` leaves the bump in place on failure for
-  that reason: retrying with the same version is the one thing guaranteed not to
-  work.
+Then set the dashboard address in the extension's options — the HTTPS MagicDNS name,
+`https://<machine>.<tailnet>.ts.net:9443`. It's requested as a runtime permission because a
+tailnet address doesn't belong in a public manifest.
 
-Develop with a temporary add-on regardless — `about:debugging` → Reload is
-instant, and signing is a minute-long round trip. Sign to *ship*, not to test.
+## Traps, all invisible outside a real browser
 
-### Zen reports its own version, so `strict_min_version` is unsatisfiable
+- **No `strict_min_version`.** Zen reports its own version (`1.22.2b`) as the application
+  version while running Gecko 156, so a Firefox-numbered floor is unsatisfiable and the
+  install is refused silently. Check `Services.appinfo.version` in the Browser Console
+  (needs `devtools.chrome.enabled`).
+- **HTTPS-Only mode** (on by default in Zen) rewrites `http://` to `https://`; against a
+  plain-HTTP server `fetch` reports a generic CORS error. Read the scheme in the error. Hence
+  the Tailscale certificate on 9443 — nginx owns 443 on the box.
+- **A Flatpak browser can't read the unpacked directory.** The file picker grants
+  `manifest.json` and nothing beside it: blank options page, empty sources. Use a signed
+  `.xpi`, or `flatpak override --user --filesystem=...`.
+- **`curl -I` gets 501.** The server doesn't implement `HEAD`; use `-i`.
+- **`/ext/` logs the requesting tailnet IP and User-Agent**, because `tailscale serve` makes
+  everything arrive from `127.0.0.1`. That's how you tell which machine fetched.
 
-**Do not put `strict_min_version` in the gecko block.** Zen substitutes its own
-version string for the application version — `Services.appinfo.version` is
-`"1.22.2b"` while `Services.appinfo.platformVersion` is `"156.0"` — and the
-add-on manager compares `strict_min_version` against the *application* version.
-So `"121.0"` can never be satisfied: 1.22.2b is not 121, and the extension is
-refused as incompatible.
+## Status
 
-It fails **with no dialog and no console message anyone would recognise** — just
-`uncaught exception: Object { message }` in the Browser Console. Opening the
-`.xpi` URL does not even produce a request on the server, because the refusal
-happens before the download. Install-from-file dies the same way. Three
-different routes, all silent, all the same cause.
-
-This bit on macOS Zen 1.22.2b on 2026-09-17 and *not* on the Fedora Zen of the
-same day, which installed 0.2.0 happily — so a build that works on one Zen says
-nothing about another. Version 0.2.1 dropped the floor entirely, which costs
-nothing: every Zen in play runs Gecko 156, far past anything this code needs.
-
-Two things that make this diagnosable next time:
-- `Services.appinfo.version` in the **Browser Console** (Cmd+Shift+J) is the
-  number that matters, not the one in `about:support`. The console needs
-  `devtools.chrome.enabled` set to `true` before it will show an input box —
-  "chrome" here means the browser's own UI, not Google Chrome.
-- The server's `/ext/` route logs the requesting tailnet IP and User-Agent,
-  because `tailscale serve` makes every request arrive from `127.0.0.1` and the
-  request line alone cannot tell one machine from another. That log is what
-  proved the Mac's browser had never fetched the file at all, after an hour of
-  assuming it had.
-
-### Four traps that are not this extension's code
-
-Getting it running in Zen on Fedora on 2026-09-17 cost four failures, none of
-them in anything here. Each looked like a bug in the extension and none was.
-
-- **A Flatpak browser cannot read the unpacked directory.** Picking
-  `manifest.json` goes through the XDG portal, which grants access to *that file
-  and nothing else*, so the manifest parses and every sibling comes back
-  **empty**. The symptoms are a blank options page, `view-source` showing
-  nothing, Quirks Mode (an empty document has no doctype) and the background
-  module failing to load — one cause wearing four hats. Load from a directory
-  the sandbox can see, `flatpak override --user --filesystem=...`, or install a
-  signed `.xpi`, which is a single file and sidesteps the sandbox entirely.
-- **HTTPS-Only Mode silently upgrades the endpoint.** Zen enables it by default.
-  A `http://…:8800` address is rewritten to `https://`, the plain-HTTP server
-  never completes the handshake, and `fetch` reports a generic CORS failure with
-  `Status code: (null)`. A normal tab offers a "continue to HTTP site" prompt;
-  an extension's `fetch` gets no prompt and just fails. **Read the scheme in the
-  error message, not the one you typed** — that is the whole tell.
-- The fix is a real certificate, not an exception: Tailscale issues one for the
-  MagicDNS name, so the dashboard is served over TLS and the upgrade succeeds
-  instead of failing. It runs on **port 9443** because **nginx already owns
-  `0.0.0.0:443`** on that box for the public sites; `tailscaled` cannot bind it,
-  the request falls through to nginx, and it answers with a public certificate
-  that does not match the tailnet name.
-- **`curl -I` proves nothing against this server.** It sends `HEAD`, which the
-  handler does not implement, so a healthy box answers `501`. Use `-i`.
-
-The general lesson is the one the *Two bugs worth not repeating* note already
-makes about browsers: every one of these was invisible to every check that was
-not the real browser on the real machine.
-
-## Why Canvas is a content script
-
-It must run *in the page*. `canvas_session` is a SameSite cookie, so a request
-from the extension's background context is cross-site and the cookie is left
-behind — Canvas then serves the SSO login page **at status 200**, and a caller
-that trusts the status code parses a login form as an empty planner and reports
-that nothing is due. From a content script the request is same-origin and the
-session rides along, exactly as it does for the `/bookmarklet` this replaces.
-
-The POST *out* is the mirror image and has to happen in the background: from the
-page it would be a cross-origin request and CORS would refuse it; from the
-background, host permissions apply and the browser does not interpose.
-
-## What has actually been tried
-
-Being explicit, because everything below the first line is untested and it
-should not take a debugging session to find that out.
-
-| | state |
+| | |
 |---|---|
-| **Chrome / Arc, Canvas** | **working end to end**, verified 2026-09-08: 110 planner items with live submitted flags, `source: "extension"` in `canvas.json` |
-| **Firefox / Zen, Canvas** | **working end to end**, verified 2026-09-17 on Fedora: same 110 items, `source: "extension"`. Loaded as a temporary add-on |
-| **Hash-gated sending** | written 2026-09-15, **not yet watched in a browser.** The server half is fine and the logic is small, but nobody has confirmed that a second load is actually skipped or that the 30-minute heartbeat still arrives. Watch the background console for `skipped: 'unchanged'` before believing it |
-| **The to-do panel** | **rendering**, Chrome 2026-09-15 and Zen 2026-09-17. Mounts into `#right-side`, hides the 2 native widgets, draws the week |
-| **Tabs, the week bar, grade badges** | **rendering, verified 2026-09-17** — first sighting in any browser. `.ic-DashboardCard` and the `a[href*="/courses/"]` inside it were guesses from how Canvas builds its cards, and they were right |
-| **Ticking through to `/api/done`** | **working both ways, verified 2026-09-17.** A tick and an untick each wrote `Inbox/overrides.json` and the store returned to its prior four entries, so the round trip closes and leaves nothing behind |
-| **The unreachable-Zipper path** | still unexercised. Stop `zipper-web` and load Canvas to see it |
-| **Hash-gated sending, watched** | still unwatched. A second load *appears* to skip — one `fetched` stamp survived several reloads — but a silent failure looks identical from the server. Only `skipped: 'unchanged'` in the background console tells them apart |
+| Chrome / Arc, Canvas | Working end to end (2026-09-08): 110 items, `source: "extension"` |
+| Firefox / Zen, Canvas | Working, signed and self-updating (2026-09-17), Fedora and macOS |
+| To-do panel, tabs, week bar, badges | Rendering in Chrome and Zen (2026-09-17) |
+| Ticking through to `/api/done` | Working both ways (2026-09-17) |
+| Unreachable-Zipper path | **Unexercised.** Stop `zipper-web` and load Canvas |
+| Hash-gated sending | **Unwatched.** A second load appears to skip, but only `skipped: 'unchanged'` in the background console proves it |
+| Any site but Canvas | Nothing exists. The one-collector-per-site shape is untested |
 
-Two bugs worth not repeating, both invisible to every check that is not a
-browser. `node --check` passes each content script in isolation, but an
-extension gets **one isolated world per frame**, so a second file declaring
-`const api` throws `already been declared` at line 1 and never runs at all —
-hence the closure around each. And `all: initial` in a shadow root, which is
-what walls Canvas' CSS out, also resets `display` to `inline` and collapses the
-panel.
-| **Signing / permanent install** | **not done.** Everything above was a temporary add-on, gone on restart. `web-ext sign --channel=unlisted` is still ahead |
-| **Any site other than Canvas** | **nothing exists.** `collectors/` has one file. Onshape is an intention, not code. The "one collector per site" shape is a claim the second collector will test, and the reporter may well need changing when it arrives |
-
-## The honest limitation
-
-It only runs while a Canvas tab is open. Nothing here can make the data fresher
-than his browsing. That is why the payload is stamped with when it was read —
-`canvas.json` records `source: "extension"` and a `fetched` time, so a stale
-reading can *say* it is stale instead of quietly implying currency. Compare the
-failure it replaces: an expired `CANVAS_SESSION` left the submitted flags simply
-wrong, with nothing on the page admitting it.
+**The limitation:** it only runs while a Canvas tab is open. `canvas.json` records `source`
+and `fetched` so stale data says it's stale — better than the expired cookie it replaced,
+which left the flags wrong with nothing admitting it.
 
 ## Cross-browser notes
 
-- One manifest declares **both** background forms — `service_worker` (Chrome)
-  and `scripts` (Firefox event page). Each browser reads the key it understands;
-  Chrome 121+ / Firefox 121+.
-- `const api = globalThis.browser ?? globalThis.chrome;` covers the namespace.
-- `browser_specific_settings.gecko` is required by Firefox and ignored by Chrome.
-- **Chrome warns `'background.scripts' requires manifest version of 2 or lower`
-  on load. That is expected and harmless** — it is Chrome telling you it does not
-  understand Firefox's key, having already found and used `service_worker`. The
-  warning is the price of one manifest for two browsers. If the noise ever
-  matters, the fix is a build step emitting a per-browser manifest, not deleting
-  the key: without `scripts` the extension has no background at all in Firefox.
-- **Written for Chrome's service worker**, which is killed aggressively and keeps
-  no globals. Hence no module-level state in `background.js` — everything that
-  must outlive a wake-up is in `storage`. Firefox's event page does not need
-  this, but code written Firefox-first breaks on Chrome, so the stricter target
-  sets the rules.
+- One manifest declares **both** background forms: `service_worker` (Chrome) and `scripts`
+  (Firefox). Chrome warns `'background.scripts' requires manifest version of 2 or lower` —
+  harmless. Don't delete the key; Firefox would have no background.
+- `const api = globalThis.browser ?? globalThis.chrome;`
+- `browser_specific_settings.gecko` is required by Firefox, ignored by Chrome.
+- **Written for Chrome's service worker**, which is killed aggressively: no module-level
+  state in `background.js`; everything durable is in `storage`.

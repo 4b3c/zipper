@@ -1,68 +1,47 @@
 # Zipper Discord Bot
 
-A thin relay between Discord and the Zipper server. It holds the only gateway connection in
-the system; it holds no conversation state at all.
-
-## Architecture
+A thin relay between Discord and the Zipper server. It holds the system's only gateway
+connection and no conversation state.
 
 ```
 bot/
-├── discord_bot.py   # entry point — asyncio.run(main())
-├── __init__.py      # main() — aiohttp server + Discord client startup
-├── client.py        # the gateway: on_ready, on_message, post_to_zipper, resolve_thread
-└── server.py        # HTTP surface: /send, /history, /edit, /react, /inject, /typing
+├── discord_bot.py   # entry point
+├── __init__.py      # main(): aiohttp server + Discord client
+├── client.py        # the gateway: on_message, post_to_zipper, resolve_thread
+└── server.py        # HTTP: /send /history /edit /react /inject /typing /thread /threadinfo /threadrename
 ```
 
-**Inbound** — a message in the channel:
+## Inbound
 
-1. `client.py` POSTs it to the server's `/discord` endpoint
-2. the server delivers it into the live Claude session — pasting into a running
-   conversation, waking a detached one, or starting a new one primed with the message
-3. Claude replies by running `python3 -m zipper discord send "..."`, which POSTs to this
-   bot's `/send`
-4. the bot posts it **in the channel**
+1. A message in the channel opens a thread; a message in a thread stays there.
+2. `client.py` POSTs it, with the thread id, to the server's `/discord`.
+3. The server hands it to that thread's headless Claude conversation, resuming or starting
+   one as needed.
+4. When the turn ends, the `Stop` hook (`hooks/forward_reply.py`) posts the reply to the
+   thread through this bot's `/send`.
 
-Attachments are downloaded at step 1, to `/tmp/zipper-discord-files/<message id>/`, and one
-`attached file saved here: <path>` line per file is appended to the message text. That is
-also what lets an attachment-only message through — `/discord` refuses an empty prompt, and
-a photo with no caption is a message. A download that fails still produces a line saying so,
-because a session that does not know a file was sent cannot ask for it again.
-
-The directory is scratch: the last 20 messages' files survive and `/tmp` does not outlive a
-reboot. Anything worth keeping is copied out by the session that was shown it. Both this
-service and `zipper-web` must keep `PrivateTmp` off — systemd would otherwise give each its
-own `/tmp` and the forwarded path would resolve to nothing in the Claude pane.
-
-Replies land in the channel, not in a thread. Until 2026-09-03 every message opened a thread
-named after its first 50 characters, which made one conversation per sentence. Messages that
-arrive in an existing thread are still relayed, so anything opened before that keeps working.
+**Attachments** are downloaded to `/tmp/zipper-discord-files/<message id>/`, and each adds
+an `attached file saved here: <path>` line to the message (so a caption-less photo is still
+a message). A failed download adds a line saying so, so the session can ask for it again.
+Only the last 20 messages' files are kept. **`PrivateTmp` must stay off** on this service
+and `zipper-web`, or the path points at nothing.
 
 ## Service
 
 ```bash
 systemctl status zipper-discord
-systemctl restart zipper-discord
 journalctl -u zipper-discord -f
 ```
 
-The unit is `deploy/zipper-discord.service`; install it with:
-
-```bash
-cp deploy/zipper-discord.service /etc/systemd/system/
-systemctl daemon-reload
-```
-
-Environment file: `/opt/zipper/.env`. Listens on `127.0.0.1:4200`.
-
-## Environment
+Unit: `deploy/zipper-discord.service` (runs `python3 -u`, or nothing reaches the journal).
+Environment from `/opt/zipper/.env`. Listens on `127.0.0.1:4200`.
 
 ```
-DISCORD_TOKEN=          # the bot token
-DISCORD_CHANNEL_ID=     # the one channel it listens in
-BOT_URL=http://127.0.0.1:4200      # where zipper sends replies
+DISCORD_TOKEN=                     # the bot token
+DISCORD_CHANNEL_ID=                # the channel it listens in
+BOT_URL=http://127.0.0.1:4200      # where zipper reaches this bot
 ZIPPER_URL=http://127.0.0.1:8800   # where this bot forwards messages
 ```
 
-This is the only part of the system with a pip dependency (`discord.py`, `aiohttp`). The
-engine stays stdlib-only, which is what lets a cron job or a finished background task speak
-without owning a socket.
+The only part of the system with pip dependencies (`discord.py`, `aiohttp`). The engine stays
+stdlib-only, so a cron job can post without owning a socket.
