@@ -27,7 +27,10 @@ The engine and server are **stdlib-only**: no pip, no venv. The target is a box 
 | `zipper/cli.py` | The whole command surface |
 | `zipper/lint.py` `sync.py` `status.py` | Validation, evidence, the snapshot |
 | `zipper/ics.py` `events.py` | Calendars, recurrence, event notes |
-| `zipper/gh.py` `canvas.py` `metrics.py` | Fetchers and numbers |
+| `zipper/inputs/` | One module per input, behind a registry. See `zipper/README.md` § Inputs |
+| `zipper/writer.py` | The only place input facts enter frontmatter. Facts only; `last_touched` forward only |
+| `zipper/gh.py` `canvas.py` `hours.py` | What the inputs wrap: fetching and storage |
+| `zipper/metrics.py` | The numbers |
 | `zipper/runqueue.py` `views.py` | The queue, the saved queries |
 | `zipper/chat.py` | The Discord CLI |
 | `zipper/conversations.py` | Front door over `convcore.py` (identity, registry), `convhead.py` (headless Discord conversations), `ttyd.py` (a ttyd per pane), `convstate.py` (liveness, reaper) |

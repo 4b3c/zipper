@@ -20,8 +20,9 @@ can be added. You can ask it things over Discord or a web dashboard.
   several conversations going at once.
 - Stays on your server. This repository is only the code; your notes stay on your machine.
 
-Each input (GitHub, calendars, Canvas, the timesheet, a bank CSV) is its own module. Claude
-Code does the thinking; the Python engine just fetches data and writes it into the notes.
+Each input — GitHub, calendars, Canvas, the timesheet — is one module in `zipper/inputs/`,
+and `ZIPPER_INPUTS` picks which run. Adding a source means writing one file. Claude Code
+does the thinking; the Python engine just fetches data and writes it into the notes.
 
 ---
 

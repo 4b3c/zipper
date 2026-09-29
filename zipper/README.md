@@ -14,6 +14,45 @@ What was removed, and why, is in `../HISTORY.md`.
 `EnvironmentFile`; a shell doesn't. So a terminal opened before a key was added reports it
 unset while it sits in the file. **Anything reading config at call time goes through `cfg`.**
 
+## Inputs
+
+Everything Zipper reads about the world comes through an **input**: one module in
+`zipper/inputs/` per subject. `ZIPPER_INPUTS` in `.env` picks which run (unset: all).
+
+| Input | Pulled | Pushed to it | Provides |
+|---|---|---|---|
+| `github` | GitHub API | — | queue rows (pushes), facts (`last_push`, commit counts, `last_touched`) |
+| `calendar` | every ICS feed not owned by another input | — | queue rows, timeline |
+| `canvas` | its ICS feed (label `canvas`) | the extension's reading, `/api/canvas` | queue rows, timeline, work items, cross-offs |
+| `hours` | the Google Sheet | the sheet panel, `/api/hours` | freshness only; the ledger has its own commands |
+
+An input provides some of these; only `name` and `fetched` are required:
+
+| Function | Used by |
+|---|---|
+| `pull()` | `fetch`, the refresh button |
+| `receive(body)` | `POST /api/inputs/<name>` (`/api/canvas`, `/api/hours` are aliases) |
+| `fetched()` | the freshness chips |
+| `snapshot()`, `events(before, after)` | the queue: rows are the diff between two snapshots |
+| `target(row, notes)` | which note a queue row lands on |
+| `timeline(first, last)` | **event rows**: the Today grid, the agenda, the digest's schedule |
+| `work()`, `toggle(key)` | **work items**: the Week card, What to work on, the Canvas panel, the digest |
+| `facts()` | `zipper/writer.py`, the only thing that writes input facts into frontmatter |
+
+The row shapes are listed in `zipper/inputs/__init__.py`. **Callers go through the
+registry** (`inputs.timeline`, `inputs.work`, `inputs.toggle`), never an input's files:
+each dashboard card once read `canvas.json` itself, and a cross-off made in one place
+came back in the others.
+
+**The writer** applies only `last_push`, `commits_recent`, `commits_mine` and
+`last_touched`, moves `last_touched` only forward, and refuses (and logs) anything else —
+an input can never set `status`.
+
+**Adding an input:** a module in `zipper/inputs/` with `name` and `fetched()`, plus
+whichever functions it has data for; add its name to `KNOWN`; enable it in `ZIPPER_INPUTS`.
+An input that owns some ICS feeds lists them in `CALENDARS`, and the calendar input
+skips them. A newly enabled input's first snapshot is a baseline and emits no rows.
+
 ## Feeds
 
 **Canvas due dates** — Canvas → Calendar → *Calendar Feed* → copy the `webcal://` URL:
@@ -43,12 +82,12 @@ bookmarklet payload. `zipper canvas --file planner.json` ingests a saved dump.
 **Cross-offs.** Canvas can't be written to, so a hand cross-off goes in
 `Inbox/overrides.json` and is reattached at read time by `canvas.stamp_overrides`, matching
 on course + normalized title *or* `plannable_id`, so it survives renames and the extension's
-wholesale rewrites.
+wholesale rewrites. `zipper canvas` lists the cross-offs, since they rest on the operator's
+word rather than Canvas.
 
-**Always read Canvas through `canvas.items()`**, which applies overrides. Loading
-`canvas.json` directly is the bug: cards, the agenda and the CLI once each loaded it
-themselves, and a cross-off in one place reappeared in the others. `zipper canvas` lists the
-cross-offs, since they rest on the operator's word rather than Canvas.
+**The join lives in the Canvas input.** An ICS row learns whether its assignment is done
+there (matching on date and normalized title, accepting the next day too, since Canvas
+files a 23:59 deadline on its own day and the feed often on the next).
 
 ## Dashboard
 
