@@ -13,6 +13,19 @@ An input is a module in this package that provides some of these. Only `name` an
     snapshot() -> obj     cheap, comparable state; two of them make a diff
     events(before, after) queue rows for what changed between two snapshots
     target(row, notes)    the note a queue row lands on, or None
+    timeline(first, last) event rows between two dates (below)
+    work()                work items: things that are due (below)
+    toggle(key)           cross a work item off by hand, or back; returns the state.
+                          Keys are `<name>:...`, so the registry knows whose it is
+    CALENDARS             ICS labels this input owns; the calendar input skips them
+
+Two row shapes, because the dashboard asks two different questions.
+
+    event row   "what is on these days?" -- the Today grid, the agenda, the digest.
+                date, time, label, summary, loc, done, start, end, uid, url, all_day
+    work item   "what is due?" -- the Week card, What to work on, the Canvas panel.
+                source, title, due, at, tag, url, points, next, elsewhere, desc,
+                kind, links, course, submitted, done, done_by_hand, key
 
 **Which inputs run is the operator's choice**, not the code's: `ZIPPER_INPUTS` in
 `.env`, comma-separated. Unset means every input this package knows. An input is never
@@ -121,7 +134,60 @@ def target_resolver():
     return resolve
 
 
+def claimed_calendars():
+    """ICS labels owned by an input other than the calendar itself."""
+    out = set()
+    for i in enabled():
+        out.update(getattr(i, 'CALENDARS', ()))
+    return out
+
+
+def timeline(first, last):
+    """Every input's event rows from `first` to `last` (ISO dates, inclusive)."""
+    rows = []
+    for i in enabled():
+        if hasattr(i, 'timeline'):
+            rows += i.timeline(first, last)
+    # Deterministic before any caller sorts by time: rows that tie on time keep
+    # label order, whichever input they came from.
+    rows.sort(key=lambda r: r['label'])
+    return rows
+
+
+def work():
+    """Every input's work items, unfiltered and unranked."""
+    out = []
+    for i in enabled():
+        if hasattr(i, 'work'):
+            out += i.work()
+    return out
+
+
+def toggle(key):
+    """Route a cross-off to the input whose key it is. None if no input owns it."""
+    i = get(key.split(':', 1)[0])
+    return i.toggle(key) if i and hasattr(i, 'toggle') else None
+
+
 # ---------------------------------------------------------------- shared helpers
+
+def event_row(label, e, done=None):
+    """One ingested ICS event as an event row."""
+    return {'date': e['start'][:10], 'time': e['start'][11:], 'label': label,
+            'summary': e['summary'], 'loc': e.get('location', ''), 'done': done,
+            'start': e['start'], 'end': e.get('end', ''), 'uid': e.get('uid', ''),
+            'url': e.get('url', ''),
+            'all_day': bool(e.get('all_day')) or len(e['start']) <= 10}
+
+
+def read_calendar(path):
+    """(label, events) from one Inbox/calendar-*.json, or (None, [])."""
+    try:
+        blob = json.load(open(path, encoding='utf-8'))
+        return blob['label'], blob['events']
+    except Exception:
+        return None, []
+
 
 def mtime_iso(path):
     try:

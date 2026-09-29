@@ -27,7 +27,7 @@ from .base import *
 from .base import box, core, canvas, events, metrics, usage
 from .feed import feed_load, feed_rows, note_rows
 from .js import TICKJS
-from .data import (canvas_items, class_notes, flags, monday_of, open_tasks,
+from .data import (work_items, flags, monday_of, open_tasks,
                    priority, ranked, today_split, week_canvas)
 from .render import _gcal_link, _join_link, _lanes, esc
 
@@ -145,20 +145,15 @@ def canvas_on(day):
     whole point of the day chips is that this list and the schedule move
     together.
     """
-    cls, _ = class_notes()
     out = []
-    for r in canvas_items():
-        if r['due'][:10] != day:
+    for w in work_items():
+        if w['due'] != day:
             continue
-        it = {'source': 'canvas', 'title': r['title'], 'due': r['due'][:10],
-              'at': r['due'][11:16], 'tag': r['course'], 'url': r['url'],
-              'points': r.get('points'), 'next': False,
-              'elsewhere': r.get('elsewhere', ''), 'kind': r.get('type', ''),
-              'links': [cls[r['course']]] if r['course'] in cls else [],
-              'submitted': bool(r['submitted']), 'done': bool(canvas.is_done(r))}
+        it = {k: w[k] for k in ('source', 'title', 'due', 'at', 'tag', 'url', 'points',
+                                'next', 'elsewhere', 'kind', 'links', 'submitted', 'done')}
         it['score'] = priority(it)
         it['overdue'] = bool(it['due'] < core.TODAY.isoformat() and not it['done'])
-        it['key'] = canvas._ov_key(it['tag'], it['title'])
+        it['key'] = w['key']
         out.append(it)
     out.sort(key=lambda i: (i['done'], i['at'] or '99:99', i['title']))
     return out

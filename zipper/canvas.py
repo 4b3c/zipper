@@ -405,22 +405,3 @@ def cmd_canvas(a):
     # plainly and do not prescribe: the reading is as old as the last time he
     # had Canvas open, and no amount of nagging from a server changes that.
     return 0
-
-
-def canvas_status_map():
-    """{(YYYY-MM-DD, normalized title): done} for the agenda to annotate with.
-
-    *Done*, not *submitted* -- a crossed-off item strikes through here too, or
-    the dashboard would contradict itself between its own two cards.
-    """
-    out = {}
-    for r in items():
-        if not r['due']:
-            continue
-        out[(r['due'][:10], _norm_title(r['title']))] = is_done(r)
-        # Canvas dates a 23:59 deadline on the day it falls; the ICS feed often
-        # files the same item on the following date. Accept either.
-        nxt = (datetime.date(*map(int, r['due'][:10].split('-')))
-               + datetime.timedelta(days=1)).isoformat()
-        out.setdefault((nxt, _norm_title(r['title'])), r['submitted'])
-    return out

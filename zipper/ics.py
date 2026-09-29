@@ -7,7 +7,6 @@ import urllib.request
 
 from .core import *          # noqa: F401,F403 -- the shared vocabulary
 from . import core
-from .canvas import canvas_status_map
 from .events import event_note_map, resolve_events
 
 
@@ -254,6 +253,10 @@ def cmd_calendars(a):
         print('no remembered calendars — run: zipper ingest-ics <url> --label X')
         return 0
     cfg = json.load(open(CAL_CFG, encoding='utf-8'))
+    # An input that owns some feeds (Canvas owns `canvas`) refetches only those,
+    # and the calendar input skips them. Both unset: every remembered feed.
+    only, skip = getattr(a, 'only', None), getattr(a, 'skip', None) or ()
+    cfg = {k: v for k, v in cfg.items() if (only is None or k in only) and k not in skip}
     # The fetches are pure network wait and dominate the refresh, so overlap them.
     # Parsing and writing stay serial: cmd_ingest_ics rewrites calendars.json, and
     # concurrent writers there would race over the file holding the secret URLs.
@@ -377,18 +380,15 @@ def _day_grid(rows, enotes, slot=30, now_min=None):
 
 def cmd_agenda(a):
     os.makedirs(METADIR, exist_ok=True)
+    from . import inputs
     horizon = (core.TODAY + datetime.timedelta(days=a.days)).isoformat()
-    rows = []
-    for f in sorted(glob.glob(os.path.join(INBOX, 'calendar-*.json'))):
-        blob = json.load(open(f, encoding='utf-8'))
-        for e in blob['events']:
-            if core.TODAY.isoformat() <= e['start'][:10] <= horizon:
-                rows.append({'start': e['start'], 'end': e.get('end', ''),
-                             'label': blob['label'], 'summary': e['summary'],
-                             'loc': e.get('location', ''), 'uid': e.get('uid', ''),
-                             'all_day': bool(e.get('all_day')) or len(e['start']) <= 10})
+    rows = [{'start': e['start'], 'end': e['end'], 'label': e['label'],
+             'summary': e['summary'], 'loc': e['loc'], 'uid': e['uid'],
+             'all_day': e['all_day'], 'done': e['done']}
+            for e in inputs.timeline(core.TODAY.isoformat(), horizon)]
     rows.sort(key=lambda r: (r['start'], r['summary']))
-    cstat = canvas_status_map()
+    cv = inputs.get('canvas')
+    struck = bool(cv and cv.fetched())
     enotes = event_note_map()
     lines = ['---', 'tags: [meta, view]', 'type: view', 'view_kind: generated',
              'status: living', 'source: zipper agenda',
@@ -398,7 +398,7 @@ def cmd_agenda(a):
              '📝 marks an event with a note in `Events/` — read it before you go.', '',
              'Next %d days, from %d ingested calendar(s).%s' %
              (a.days, len(glob.glob(os.path.join(INBOX, 'calendar-*.json'))),
-              '  Canvas items struck through are submitted.' if cstat else
+              '  Canvas items struck through are submitted.' if struck else
               '  Canvas submission status not loaded - run `zipper canvas`.'), '']
     if not rows:
         lines.append('Nothing ingested yet. Run `zipper ingest-ics <url> --label canvas`.')
@@ -424,9 +424,8 @@ def cmd_agenda(a):
             lines.append('### %s (%s)' % (d, dt.strftime('%a')))
         t = start[11:] or 'all day'
         mark = ''
-        if label == 'canvas':
-            done = cstat.get((d, _norm_title(summary)))
-            mark = {True: '~~', False: ''}.get(done, '')
+        if r['done']:
+            mark = '~~'
         body = '%s**%s**%s' % (mark, summary, mark)
         # An event with a note is one he scheduled *for* a reason. Show the
         # link here so the reason is in front of him before he walks in, not

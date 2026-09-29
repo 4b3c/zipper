@@ -7,7 +7,7 @@ Split out of `zipper/serve.py` on 2026-09-07. That file had grown to 2,788
 lines, which meant no part of it could be read without loading all of it.
 """
 from .base import *
-from .base import core, canvas, conversations, events, gh, ics, metrics, usage
+from .base import core, inputs, conversations, events, gh, ics, metrics, usage
 
 
 # ---------------------------------------------------------------- data
@@ -18,40 +18,22 @@ def _d(iso):
     except Exception:
         return None
 
+EVENT_KEYS = ('date', 'time', 'label', 'summary', 'loc', 'done', 'start', 'end', 'uid')
+
+
 def upcoming(days=10):
+    """Event rows from today through `days` ahead, from every input."""
     horizon = (core.TODAY + datetime.timedelta(days=days)).isoformat()
-    cstat = canvas.canvas_status_map()
-    rows = []
-    for f in sorted(glob.glob(os.path.join(core.INBOX, 'calendar-*.json'))):
-        blob = json.load(open(f, encoding='utf-8'))
-        for e in blob['events']:
-            d = e['start'][:10]
-            if core.TODAY.isoformat() <= d <= horizon:
-                done = cstat.get((d, core._norm_title(e['summary']))) if blob['label'] == 'canvas' else None
-                rows.append({'date': d, 'time': e['start'][11:], 'label': blob['label'],
-                             'summary': e['summary'], 'loc': e.get('location', ''),
-                             'done': done, 'start': e['start'], 'end': e.get('end', ''),
-                             'uid': e.get('uid', '')})
+    rows = [{k: e[k] for k in EVENT_KEYS}
+            for e in inputs.timeline(core.TODAY.isoformat(), horizon)]
     rows.sort(key=lambda r: (r['date'], r['time'] or '00:00'))
     return rows
 
 
 def day_events(day):
-    """Every ingested event on one date. `upcoming()` starts at today, so it
-    cannot look backwards; the day arrows need to."""
-    cstat = canvas.canvas_status_map()
-    rows = []
-    for f in sorted(glob.glob(os.path.join(core.INBOX, 'calendar-*.json'))):
-        blob = json.load(open(f, encoding='utf-8'))
-        for e in blob['events']:
-            if e['start'][:10] != day:
-                continue
-            done = (cstat.get((day, core._norm_title(e['summary'])))
-                    if blob['label'] == 'canvas' else None)
-            rows.append({'date': day, 'time': e['start'][11:], 'label': blob['label'],
-                         'summary': e['summary'], 'loc': e.get('location', ''),
-                         'done': done, 'start': e['start'], 'end': e.get('end', ''),
-                         'uid': e.get('uid', ''), 'url': e.get('url', '')})
+    """Every event row on one date. `upcoming()` starts at today, so it cannot
+    look backwards; the day arrows need to."""
+    rows = [{k: e[k] for k in EVENT_KEYS + ('url',)} for e in inputs.timeline(day, day)]
     rows.sort(key=lambda r: (r['time'] or '00:00', r['summary']))
     return rows
 
@@ -74,15 +56,11 @@ def today_split(day=None):
     return allday, timed
 
 
-def canvas_items():
-    """Read through `canvas.items()`, never from the file directly.
-
-    That is what applies the hand cross-offs -- see `canvas.OVERRIDES`. Loading
-    `canvas.json` here for itself is what let a crossed-off assignment come back
-    as outstanding the next time he opened Canvas: the extension rewrites that
-    file wholesale, and this saw the rewrite without the overrides.
-    """
-    return canvas.items()
+def work_items():
+    """Every input's work items. Cross-offs are already applied by the input that
+    owns them -- reading an input's store directly is how a crossed-off
+    assignment once came back as outstanding."""
+    return inputs.work()
 
 
 def class_notes():
@@ -104,9 +82,9 @@ def class_notes():
     return by_code, course_of
 
 
-def canvas_outstanding():
-    return [r for r in canvas_items()
-            if not canvas.is_done(r) and r['due'][:10] >= core.TODAY.isoformat()]
+def outstanding():
+    return [w for w in work_items()
+            if not w['done'] and w['due'] >= core.TODAY.isoformat()]
 
 
 def monday_of(day=None):
@@ -128,30 +106,24 @@ def week_canvas(monday=None):
     """
     mon = monday if isinstance(monday, datetime.date) else monday_of(monday)
     sun = mon + datetime.timedelta(days=6)
-    cls, _ = class_notes()
 
-    def row(r):
-        it = {'source': 'canvas', 'title': r['title'], 'due': r['due'][:10],
-              'at': r['due'][11:16], 'tag': r['course'], 'url': r['url'],
-              'points': r.get('points'), 'next': False,
-              'elsewhere': r.get('elsewhere', ''),
-              'desc': r.get('description', ''), 'kind': r.get('type', ''),
-              'links': [cls[r['course']]] if r['course'] in cls else [],
-              'course': '', 'submitted': bool(r['submitted']),
-              'done': bool(canvas.is_done(r))}
+    def row(w):
+        it = {k: w[k] for k in ('source', 'title', 'due', 'at', 'tag', 'url', 'points',
+                                'next', 'elsewhere', 'desc', 'kind', 'links', 'course',
+                                'submitted', 'done')}
         it['score'] = priority(it)
         it['overdue'] = bool(it['due'] < core.TODAY.isoformat() and not it['done'])
-        it['key'] = override_key(it)
+        it['key'] = w['key']
         return it
 
     days = {(mon + datetime.timedelta(days=i)).isoformat(): [] for i in range(7)}
     carried = []
-    for r in canvas_items():
-        d = r['due'][:10]
+    for w in work_items():
+        d = w['due']
         if d in days:
-            days[d].append(row(r))
-        elif d < mon.isoformat() and not canvas.is_done(r):
-            carried.append(row(r))
+            days[d].append(row(w))
+        elif d < mon.isoformat() and not w['done']:
+            carried.append(row(w))
     for v in days.values():
         v.sort(key=lambda i: (i['done'], i['at'] or '99:99', i['title']))
     carried.sort(key=lambda i: (i['due'], i['title']))
@@ -281,25 +253,22 @@ def priority(it):
 def ranked(limit=10):
     """Canvas work and self-reported tasks in one list, most pressing first."""
     items = []
-    cls, course_of = class_notes()
-    # Not `canvas_outstanding()`: crossed-off work stays on this list and sinks,
+    _, course_of = class_notes()
+    # Not `outstanding()`: crossed-off work stays on this list and sinks,
     # rather than disappearing from it. A struck-through row is him seeing his
     # own decision reflected back; a row that vanishes is indistinguishable from
     # the cross-off having failed, which is the complaint this whole mechanism
     # exists to answer.
-    for r in canvas_items():
-        if r['submitted'] or r['due'][:10] < core.TODAY.isoformat():
+    for w in work_items():
+        if w['submitted'] or w['due'] < core.TODAY.isoformat():
             continue
-        # `desc` is the assignment body the extension reads. It is the answer to
-        # "what even is this" -- a title says when a thing is due and nothing
-        # about what the work is or who is supposed to produce it, which is how
-        # six team documents with templates read as nine personal essays.
-        items.append({'source': 'canvas', 'title': r['title'], 'due': r['due'][:10],
-                      'tag': r['course'], 'url': r['url'], 'points': r.get('points'),
-                      'next': False, 'elsewhere': r.get('elsewhere', ''),
-                      'desc': r.get('description', ''), 'kind': r.get('type', ''),
-                      'links': [cls[r['course']]] if r['course'] in cls else [],
-                      'course': '', 'done': bool(r.get('done_by_hand'))})
+        # `desc` is the assignment body. It is the answer to "what even is this"
+        # -- a title says when a thing is due and nothing about what the work is,
+        # which is how six team documents read as nine personal essays.
+        it = {k: w[k] for k in ('source', 'title', 'due', 'tag', 'url', 'points', 'next',
+                                'elsewhere', 'desc', 'kind', 'links', 'course', 'key')}
+        it['done'] = w['done_by_hand']
+        items.append(it)
     for t in open_tasks():
         items.append({'source': 'task', 'title': t['text'], 'due': t['due'],
                       'tag': t['project'], 'url': '', 'points': 0,
@@ -324,13 +293,11 @@ def ranked(limit=10):
 def override_key(it):
     """The name the browser sends back to cross something off.
 
-    Canvas keys come from `canvas._ov_key` -- the same normalization the store
-    and the agenda use, so a key minted here matches the one looked up there.
-    The store itself belongs to `canvas.py`, which is the module every surface
-    now reads Canvas through.
+    An input's work item carries its own key, minted by the input that owns the
+    cross-off store (`<input>:...`), so a key made here is the one looked up there.
     """
-    if it['source'] == 'canvas':
-        return canvas._ov_key(it['tag'], it['title'])
+    if it['source'] != 'task':
+        return it['key']
     # `|` is the delimiter, and a project link may legitimately carry an alias --
     # `[project:: [[Others#Mercy|Mercy]]]` captures as `Others#Mercy|Mercy` and
     # puts a second delimiter in the key. `toggle_done` then splits on the first
@@ -366,8 +333,10 @@ def toggle_done(key):
                 open(p, 'w', encoding='utf-8').write('\n'.join(lines))
                 return {'ok': True, 'where': os.path.basename(p), 'done': not done}
         return {'ok': False, 'error': 'task not found'}
-    return {'ok': True, 'where': 'overrides.json',
-            'done': canvas.toggle_override(key)}
+    state = inputs.toggle(key)
+    if state is None:
+        return {'ok': False, 'error': 'no input owns %r' % key.split(':', 1)[0]}
+    return {'ok': True, 'where': key.split(':', 1)[0], 'done': state}
 
 def flags():
     try:
@@ -382,8 +351,8 @@ def content_sig():
     h = hashlib.sha1()
     for e in upcoming():
         h.update(('%s|%s|%s|%s' % (e['date'], e['time'], e['summary'], e['done'])).encode())
-    for r in canvas_outstanding():
-        h.update(('%s|%s' % (r['due'], r['title'])).encode())
+    for r in outstanding():
+        h.update(('%s %s|%s' % (r['due'], r['at'], r['title'])).encode())
     for t in open_tasks():
         h.update(('%s|%s' % (t['text'], t['due'])).encode())
     for x in flags():

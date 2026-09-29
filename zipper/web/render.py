@@ -422,7 +422,7 @@ def _week_html(monday=None):
     A week is the unit an assignment load is actually felt in -- "what is due
     Thursday" and "is this week heavy" are both questions the ranked list
     cannot answer, because ranking throws the shape away. Nothing here is a new
-    source: it is `canvas_items()` bucketed by due date.
+    source: it is `work_items()` bucketed by due date.
     """
     w = week_canvas(monday)
     mon = datetime.date(*map(int, w['monday'].split('-')))

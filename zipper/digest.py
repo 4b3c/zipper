@@ -15,7 +15,7 @@ It concludes nothing and writes nothing to the vault. It is a reminder.
 import datetime, json, os
 
 from .core import *          # noqa: F401,F403 -- the shared vocabulary
-from . import core, canvas, chat
+from . import core, chat
 
 
 # One digest per date. The timer is `Persistent=true` so a box that was asleep
@@ -62,9 +62,12 @@ def _canvas_age():
     digest says so, because a list that quietly includes work he finished this
     afternoon is how he got handed back homework he had already done.
     """
+    from . import inputs
+    cv = inputs.get('canvas')
+    if not cv:
+        return ''
     try:
-        blob = json.load(open(canvas.CANVAS_JSON, encoding='utf-8'))
-        stamp = blob['fetched']
+        stamp = cv.fetched()
         secs = (datetime.datetime.now() - datetime.datetime.fromisoformat(stamp)).total_seconds()
     except Exception:
         return 'Canvas: never read.'

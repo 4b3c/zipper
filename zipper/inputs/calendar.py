@@ -5,7 +5,7 @@ Parsing and recurrence live in `zipper.ics`; this is its face as an input.
 import argparse, datetime, glob, json, os
 
 from .. import core, ics
-from . import blob_fetched
+from . import blob_fetched, claimed_calendars, event_row, read_calendar
 
 name = 'calendar'
 
@@ -13,11 +13,25 @@ CADENCE = {1: 'daily', 7: 'weekly', 14: 'fortnightly', 28: '4-weekly'}
 
 
 def pull():
-    ics.cmd_calendars(argparse.Namespace())
+    ics.cmd_calendars(argparse.Namespace(skip=claimed_calendars()))
 
 
 def _files():
-    return sorted(glob.glob(os.path.join(core.INBOX, 'calendar-*.json')))
+    """Every ingested feed except those another input owns (Canvas owns `canvas`)."""
+    mine = []
+    for f in sorted(glob.glob(os.path.join(core.INBOX, 'calendar-*.json'))):
+        label = os.path.basename(f)[len('calendar-'):-len('.json')]
+        if label not in claimed_calendars():
+            mine.append(f)
+    return mine
+
+
+def timeline(first, last):
+    rows = []
+    for f in _files():
+        label, evs = read_calendar(f)
+        rows += [event_row(label, e) for e in evs if first <= e['start'][:10] <= last]
+    return rows
 
 
 def fetched():
