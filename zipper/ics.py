@@ -305,9 +305,14 @@ def _day_grid(rows, enotes, slot=30, now_min=None):
     timed = [r for r in rows if not r['all_day'] and len(r['start']) > 10]
     allday = [r for r in rows if r not in timed]
     out = []
+    # Same strike as the day list below: an unmarked Today block reads as
+    # "all of this is still due" when most of it is already handed in.
     for r in allday:
-        out.append('- `all day` **%s** · %s%s'
-                   % (r['summary'], r['label'], _prep(r['uid'], r['start'], enotes)))
+        mark = '~~' if r.get('done') else ''
+        out.append('- `all day` %s**%s**%s · %s%s%s'
+                   % (mark, r['summary'], mark, r['label'],
+                      '  ✓ done' if mark else '',
+                      _prep(r['uid'], r['start'], enotes)))
     if allday and timed:
         out.append('')
     if not timed:
