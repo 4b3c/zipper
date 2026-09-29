@@ -444,8 +444,13 @@ def cmd_commit(a):
         # ZIPPER_CONVERSATION and no thread, so reading the thread here would
         # bring that bug back for every commit typed at the keyboard.
         mine = chat.current_conversation()
+        # Live means a pane with Claude in it, *or* a headless Discord turn in
+        # progress. `alive` alone only sees panes, so a Discord conversation
+        # mid-edit used to count as idle and its edits could be swept up.
+        from . import convhead
         live = [c for c in conversations.listing()
-                if c.get('alive') and c.get('thread_id') != mine]
+                if c.get('thread_id') != mine
+                and (c.get('alive') or convhead.turn_running(c.get('thread_id')))]
     except Exception:
         live = []
     if live and not getattr(a, 'force', False):

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run a bookkeeping pass at 09:00 and 21:00
+
+[Timer]
+OnCalendar=*-*-* 09,21:00:00
+# Not Persistent: a box that was down at 09:00 should not wake at 03:00 and
+# start a pass. The next one comes within twelve hours.
+Persistent=false
+
+[Install]
+WantedBy=timers.target

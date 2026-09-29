@@ -128,6 +128,7 @@ python3 -m zipper <command>          # --help lists everything
 | `decide "<title>"` / `event "<summary>"` / `events` | Scaffold a decision / an event note / list event notes |
 | `status` / `agenda` / `views` | Regenerate the snapshot / the agenda / the saved queries |
 | `hours …` | A timesheet ledger, pushed to Google Sheets |
+| `pass` | Fetch, and if anything's in the brief, have Claude do the pass; Discord only if something needs you |
 | `digest` | Evening what's-due message |
 | `discord send\|read\|status` | Talk through the relay |
 | `conversations` | List live Claude conversations |
@@ -233,6 +234,7 @@ python3 -m bot.discord_bot
 zipper-web.service       dashboard, views, POST /discord
 zipper-discord.service   the gateway connection (run with python3 -u)
 zipper-fetch.timer       hourly fetch
+zipper-pass.timer        09:00 and 21:00 bookkeeping pass
 zipper-digest.timer      19:00 digest
 ```
 

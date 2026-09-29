@@ -208,8 +208,10 @@ def touch(thread_id, active=False, **fields):
         row.setdefault('started', datetime.datetime.now().isoformat(timespec='seconds'))
     # A bound row's session id belongs to the conversation it adopted, not to
     # the thread -- overwriting it with the derived one would resume the wrong
-    # transcript if that session ever had to be restarted.
-        if not row.get('bound'):
+    # transcript if that session ever had to be restarted. `session_fixed` is the
+    # same promise without a pane: a scheduled pass's thread, attached afterwards
+    # to the session that did the pass.
+        if not (row.get('bound') or row.get('session_fixed') or fields.get('session_fixed')):
             row['session_id'] = session_id(thread_id)
         now = datetime.datetime.now().isoformat(timespec='seconds')
         row.setdefault('last_active', now)

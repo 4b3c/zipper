@@ -10,6 +10,11 @@ from . import (canvas, chat, conversations, decisions, digest, events, ext, gh, 
                google, hours, ics, lint, metrics, runqueue, status, sync, views)
 
 
+def _pass_cmd(a):
+    from . import scheduled
+    return scheduled.cmd_pass(a)
+
+
 def _github_cmd(a):
     from .inputs import github
     return github.cmd(a)
@@ -99,6 +104,11 @@ def main():
     s.set_defaults(fn=chat.cmd_discord)
     # The evening reminder. Reads the dashboard's own ranking and posts it to
     # Discord; --dry-run is how you look at one without sending it.
+    s = sub.add_parser('pass', help='fetch, and if the brief has anything, run a bookkeeping pass with Claude')
+    s.add_argument('--dry-run', action='store_true', help='run the pass but never post to Discord')
+    s.add_argument('--force', action='store_true', help='run even when the brief is empty')
+    s.add_argument('--timeout', type=int, default=1800, help='seconds to allow Claude')
+    s.set_defaults(fn=_pass_cmd)
     s = sub.add_parser('digest', help='post the evening what-is-due message to Discord')
     s.add_argument('--days', type=int, default=7, help='how far past tomorrow to look ahead')
     s.add_argument('--dry-run', action='store_true', help='print it instead of sending')

@@ -289,6 +289,19 @@ project in two threads at once; if that becomes a problem, the lock belongs in `
 
 ## Timers
 
+### The scheduled pass
+
+`zipper pass` runs at 09:00 and 21:00 (`zipper-pass.timer`). It fetches; if the brief is
+empty it stops. Otherwise a headless `claude -p` does the middle step of a pass and commits,
+and its final message starts `NOTIFY: yes` or `NOTIFY: no`. Only *yes* reaches Discord: a new
+thread in the main channel, attached to the pass's session (`session_fixed` on the registry
+row), so replying there continues the conversation that did the work. An unparseable answer
+counts as *yes*. `--dry-run` never posts; `--force` runs on an empty brief.
+
+It never passes `--force` to `commit`. A conversation counts as live if it has a pane with
+Claude in it *or* a headless turn holding its lock (`convhead.turn_running`), so a pass
+cannot sweep up edits a Discord conversation is in the middle of.
+
 ### The evening digest
 
 `zipper digest` posts what's due tomorrow, tomorrow's timed events, what's overdue, and the

@@ -207,6 +207,25 @@ def _turn_lock(thread_id, timeout=TURN_TIMEOUT):
         fh.close()
 
 
+def turn_running(thread_id):
+    """Is a headless turn running in this thread right now?
+
+    The turn holds `_turn_lock` for its whole length, so a lock we can't take is a
+    turn in progress. Taken and released at once, without waiting; a turn that
+    starts in that instant just polls a quarter-second longer.
+    """
+    p = _lock_path(thread_id)
+    if not os.path.exists(p):
+        return False
+    with open(p, 'a+') as fh:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return True
+        fcntl.flock(fh, fcntl.LOCK_UN)
+    return False
+
+
 def _message(text):
     """One line of stream-json: a user turn.
 

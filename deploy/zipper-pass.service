@@ -1,0 +1,19 @@
+[Unit]
+Description=Zipper — a bookkeeping pass, posted to Discord only if something needs you
+After=network-online.target zipper-discord.service zipper-web.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Fetch; if the brief is empty, stop. Otherwise a headless Claude works the
+# brief into the notes and commits, and a Discord thread opens only if its
+# answer says something needs the operator. See zipper/scheduled.py.
+ExecStart=/usr/bin/python3 -m zipper pass
+WorkingDirectory=/opt/zipper
+EnvironmentFile=/opt/zipper/.env
+# Claude reads its credentials from ~/.claude, and git needs HOME for identity.
+Environment=HOME=/root
+TimeoutStartSec=2400
+
+[Install]
+WantedBy=multi-user.target
