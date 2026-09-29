@@ -65,7 +65,11 @@ function drawChats(rows){
     // every one of them made the list harder to read, not easier.
     return '<button class="chat '+st+on+'" data-tid="'+r.thread_id+'" title="'+
            chatEsc(r.title)+' \u2014 '+st+'"><span class="dot"></span>'+
-           '<span class="ct">'+chatEsc(r.title)+'</span></button>';
+           '<span class="ct">'+chatEsc(r.title)+'</span>'+
+           // A span, not a button: buttons can't nest. Only a live row has one --
+           // a closed conversation has nothing left to close.
+           (st!=='closed'?'<span class="chatx" role="button" title="close this conversation">\u00d7</span>':'')+
+           '</button>';
   }).join('');
   // Deliberately no scrollIntoView on the selected row: the page moving under
   // him on a 6s poll is worse than a selected row sitting out of sight.
@@ -185,7 +189,27 @@ function openChat(tid){
       return loadChats();
     }).catch(()=>loadChats());
 }
+// Close ends the session and keeps the transcript: the row goes grey and can be
+// reloaded later, exactly like one the idle reaper closed.
+function closeChat(tid){
+  const row=(window.__chats||[]).find(r=>String(r.thread_id)===String(tid));
+  const name=row?row.title:'this conversation';
+  const busy=row&&row.state==='working'?' It is in the middle of a turn, which will be cut off.':'';
+  if(!confirm('Close \u201c'+name+'\u201d?'+busy+' It can be reloaded later at full price.')) return;
+  return fetch('/api/closeconversation',{method:'POST',headers:{'Content-Type':'application/json'},
+                                         body:JSON.stringify({thread_id:tid})})
+    .then(r=>r.json()).then(d=>{
+      if(!d.ok) alert('could not close: '+(d.error||'unknown error'));
+      return loadChats();       // checkShown swaps the terminal if it was this one
+    }).catch(()=>loadChats());
+}
 document.addEventListener('click',ev=>{
+  const x=ev.target.closest?ev.target.closest('.chatx'):null;
+  if(x){
+    ev.preventDefault(); ev.stopPropagation();
+    const b=x.closest('.chat'); if(b&&b.dataset.tid) closeChat(b.dataset.tid);
+    return;
+  }
   const b=ev.target.closest?ev.target.closest('.chat'):null;
   if(!b||!b.dataset.tid) return;
   const tid=b.dataset.tid;

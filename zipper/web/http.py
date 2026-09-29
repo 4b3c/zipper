@@ -8,7 +8,8 @@ lines, which meant no part of it could be read without loading all of it.
 """
 from .base import *
 from .base import box, core, canvas, chat, inputs, conversations, events, gh, google, hours, ics, metrics, usage
-from .conv import (PASTE_DIR, TTYD, _prune_pastes, _queue_prompt, conversation_rows,
+from .conv import (PASTE_DIR, TTYD, _prune_pastes, _queue_prompt, close_conversation,
+                   conversation_rows,
                    current_conversation, new_conversation, newest_buffer,
                    open_conversation, start_session)
 from .data import delete_task, toggle_done, week_worklist
@@ -324,6 +325,14 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 d = {}
             self._send(200, json.dumps(open_conversation(str(d.get('thread_id') or ''))),
+                       'application/json')
+        elif self.path == '/api/closeconversation':
+            n = int(self.headers.get('Content-Length', 0))
+            try:
+                d = json.loads(self.rfile.read(n).decode('utf-8')) if n else {}
+            except Exception:
+                d = {}
+            self._send(200, json.dumps(close_conversation(str(d.get('thread_id') or ''))),
                        'application/json')
         elif self.path == '/api/eventnote':
             n = int(self.headers.get('Content-Length', 0))

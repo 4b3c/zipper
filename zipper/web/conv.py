@@ -355,3 +355,16 @@ def open_conversation(thread_id):
     # Every conversation is served the same way: no special cases, no fixed
     # ports. `ensure_ttyd` is idempotent, so this is also the resume path.
     return conversations.ensure_ttyd(thread_id, host=TTYD['host'], cred=TTYD['cred'])
+
+
+def close_conversation(thread_id):
+    """The list's close button: end a pane's session, keeping its transcript.
+
+    Same `convstate.close` the reaper uses, so the row turns grey and can be
+    resumed later like any idle one. A bound pane is still refused -- the guard
+    lives in `close`, and a click is not a reason to force it.
+    """
+    if not _is_pane(thread_id):
+        return {'ok': False, 'error': 'only dashboard conversations can be closed here'}
+    return conversations.close(thread_id, reason='closed from the dashboard')
+

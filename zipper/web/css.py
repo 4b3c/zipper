@@ -233,6 +233,10 @@ TERM_CSS = """
 .chat.working .dot{background:#e0a52b;animation:chatpulse 1.4s ease-in-out infinite}
 .chat.closed .dot{background:#8a8a8a}
 .chat.closed .ct{opacity:.55}
+.chat .chatx{flex:0 0 auto;opacity:0;padding:0 3px;border-radius:4px;line-height:1;color:var(--dim)}
+.chat:hover .chatx,.chat.on .chatx{opacity:.7}
+.chat .chatx:hover{opacity:1;background:rgba(127,127,127,.2);color:inherit}
+@media (hover:none){.chat .chatx{opacity:.7}}
 @keyframes chatpulse{0%,100%{opacity:1}50%{opacity:.35}}
 #termcard.full{position:fixed;inset:0;z-index:99;margin:0;border-radius:0;display:flex;flex-direction:column}
 #termcard.full #termwrap{flex:1}
