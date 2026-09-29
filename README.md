@@ -1,22 +1,31 @@
 # Zipper
 
-**A personal assistant whose memory is a folder of markdown files.**
+Zipper is a personal assistant that runs on your own server. At its core is a note database —
+Obsidian-compatible markdown with structured frontmatter — fed by any number of inputs from
+the places your work actually happens: a calendar, a course site, GitHub, a timesheet. It
+keeps the notes up to date from those inputs and tells you what's due, what's slipping, and
+where your notes disagree with what you've actually done. You talk to it from a web dashboard
+or Discord.
 
-Three parts that only make sense together:
+## What it does
 
-1. **A vault** — plain markdown notes with structured frontmatter. That's the database.
-2. **An engine** — stdlib-only Python that reads the vault, fetches from the outside world,
-   and writes back **facts only**.
-3. **Front doors** — a web dashboard and a Discord relay, around Claude Code sessions that do
-   the writing a program can't.
+- **One list of what's due.** Deadlines, meetings and tasks from every input, ranked — on the
+  dashboard, in an evening Discord message, and inside the tools you already use.
+- **Notes that maintain themselves.** A push, a submission or a moved meeting updates the notes
+  it affects. You don't do the bookkeeping.
+- **Drift gets caught.** A project marked active that hasn't moved in 45 days is flagged; so is
+  work that happened but never made it into the notes.
+- **Answers from your own data.** "What did I decide about X?" or "what's slipping?" is answered
+  from the notes and their history, not guessed.
+- **Admin by message.** "Worked 1:30 to 9:30" becomes a row in the timesheet you get paid from.
+- **Reachable anywhere.** Discord from a phone, or a terminal in the browser. Several
+  conversations can run at once, all on the same notes.
+- **Private.** It runs on your box. This repository is the code; your notes never leave the
+  machine.
 
-The point: **questions get answered from data instead of memory.** *What's drifting? What
-did I push but never write down? What claims to be active and hasn't been touched in six
-weeks?* A note can lie; a note next to its own push dates and stall days has a harder time.
-
-Zipper used to be a self-modifying agent with its own tool loop. That was removed in
-September 2026. The problem was never the model; it was that the model had no job. The vault
-is the job.
+Each input is its own module — currently GitHub, ICS calendars, Canvas (via a browser
+extension), a bank CSV and a Google Sheets timesheet. Claude Code does the reasoning; the
+engine only fetches facts and writes them back.
 
 ---
 
