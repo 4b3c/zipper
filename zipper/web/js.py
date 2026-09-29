@@ -23,11 +23,12 @@ function drawFresh(){
   // per source; this is the one number worth reading without looking for it.
   const hd=document.getElementById('qfresh');
   if(hd){
-    const ks=['calendars','github','canvas'].map(k=>window.__epochs[k]).filter(x=>x!=null);
+    // Every input's age, not the vault's: the vault is edited, not fetched.
+    const ks=Object.keys(window.__epochs).filter(k=>k!=='vault').map(k=>window.__epochs[k]).filter(x=>x!=null);
     hd.textContent = ks.length ? 'fetched '+fmt(Math.min.apply(null,ks)) : 'never fetched';
   }
   const el=document.getElementById('fresh'); if(!el) return;
-  el.innerHTML=['vault','calendars','github','canvas'].map(k=>{
+  el.innerHTML=['vault'].concat(Object.keys(window.__epochs).filter(k=>k!=='vault')).map(k=>{
     const x = k==='canvas' ? ' <a href="'+window.__canvashost+'" target="_blank" rel="noopener">open Canvas</a>' : '';
     return '<span class="chip"><b>'+k+'</b> '+fmt(window.__epochs[k])+x+'</span>';
   }).join('');

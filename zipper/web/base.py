@@ -12,7 +12,7 @@ Split out of `zipper/serve.py` on 2026-09-07.
 import argparse, datetime, glob, html, json, os, shutil, subprocess, sys, tempfile, threading, time
 import base64, io, re, urllib.parse
 
-from .. import box, core, canvas, chat, conversations, events, ext, gh, google, hours, ics, metrics, usage
+from .. import box, core, canvas, inputs, chat, conversations, events, ext, gh, google, hours, ics, metrics, usage
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -35,42 +35,10 @@ LOCK = threading.Lock()
 
 # ---------------------------------------------------------------- freshness
 
-def _mtime_iso(path):
-    try:
-        return datetime.datetime.fromtimestamp(os.path.getmtime(path)).isoformat(timespec='seconds')
-    except OSError:
-        return None
-
-def _blob_fetched(path):
-    try:
-        blob = json.load(open(path, encoding='utf-8'))
-    except Exception:
-        return None
-    v = blob.get('fetched')
-    if v and len(v) == 10:          # calendars store a bare date; fall back to mtime
-        return _mtime_iso(path)
-    return v or _mtime_iso(path)
-
-def _hours_fetched():
-    try:
-        with open(os.path.join(core.INBOX, 'hours.json')) as fh:
-            return json.load(fh).get('sheet', {}).get('fetched')
-    except Exception:
-        return None
-
-
 def freshness():
-    cal = [_blob_fetched(p) for p in glob.glob(os.path.join(core.INBOX, 'calendar-*.json'))]
-    cal = [c for c in cal if c]
-    vault = max((_mtime_iso(p) for p in core.iter_notes()), default=None)
-    return {
-        'calendars': min(cal) if cal else None,
-        'github': _blob_fetched(core.GH_JSON),
-        'canvas': _blob_fetched(canvas.CANVAS_JSON),
-        # The timesheet is a real source now, so it ages like one.
-        'hours': _hours_fetched(),
-        'vault': vault,
-    }
+    """How old each enabled input's data is, plus the vault itself."""
+    vault = max((inputs.mtime_iso(p) for p in core.iter_notes()), default=None)
+    return dict(inputs.freshness(), vault=vault)
 
 def ago(iso):
     if not iso:

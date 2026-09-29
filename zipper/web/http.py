@@ -7,7 +7,7 @@ Split out of `zipper/serve.py` on 2026-09-07. That file had grown to 2,788
 lines, which meant no part of it could be read without loading all of it.
 """
 from .base import *
-from .base import box, core, canvas, chat, conversations, events, gh, google, hours, ics, metrics, usage
+from .base import box, core, canvas, chat, inputs, conversations, events, gh, google, hours, ics, metrics, usage
 from .conv import (PASTE_DIR, TTYD, _prune_pastes, _queue_prompt, conversation_rows,
                    current_conversation, new_conversation, newest_buffer,
                    open_conversation, start_session)
@@ -445,55 +445,24 @@ class Handler(BaseHTTPRequestHandler):
                 chat.discord_typing(False, tid)
             self._send(200 if res.get('ok') else 503, json.dumps(res),
                        'application/json')
-        elif self.path == '/api/hours':
-            # The sheet is the system of record for pay, so a snapshot of it
-            # overwrites the ledger rather than merging into it: rows he typed
-            # by hand are adopted, rows he deleted are dropped, and a captured
-            # row seen here stops being pending. Posting is therefore the only
-            # thing that can confirm an hour actually landed.
-            n = int(self.headers.get('Content-Length', 0))
-            try:
-                body = json.loads(self.rfile.read(n).decode('utf-8'))
-                rows = body.get('rows') if isinstance(body, dict) else body
-                tab = (body.get('tab') if isinstance(body, dict) else None)
-                if not isinstance(rows, list):
-                    raise ValueError('expected {"rows": [...]}')
-                res = hours.reconcile(rows, tab=tab,
-                                      complete=bool(isinstance(body, dict)
-                                                    and body.get('complete')),
-                                      force=bool(isinstance(body, dict)
-                                                 and body.get('force')))
-                res['write'] = hours.to_write()
-                publish('source', 'hours')
-                self._send(200, json.dumps({'ok': True, **res}), 'application/json')
-            except Exception as e:
-                self._send(400, json.dumps({'error': str(e)}), 'application/json')
-        elif self.path == '/api/canvas':
+        elif (self.path.startswith('/api/inputs/')
+              or self.path in ('/api/canvas', '/api/hours')):
+            # A pushed input: the browser read something this machine cannot, and
+            # hands it over. `/api/canvas` and `/api/hours` are the paths the
+            # extension and bookmarklet already use, kept as aliases.
+            name = self.path.rsplit('/', 1)[-1]
+            inp = inputs.get(name)
+            if not inp or not hasattr(inp, 'receive'):
+                self._send(404, json.dumps({'error': 'no input %r takes posts' % name}),
+                           'application/json')
+                return
             n = int(self.headers.get('Content-Length', 0))
             try:
                 before = snapshot_data()
-                body = json.loads(self.rfile.read(n).decode('utf-8'))
-                # Two shapes, on purpose. The bookmarklet has always posted a
-                # bare array and there is no reason to break a working tool to
-                # add a second caller, so the envelope is optional and the
-                # source is whatever the sender says it is -- which is the only
-                # way `canvas.json` can later admit *how* it was read.
-                if isinstance(body, dict):
-                    items = body.get('items') or []
-                    assignments = body.get('assignments')
-                    source = str(body.get('source') or 'unknown')[:32]
-                else:
-                    items, assignments, source = body, None, 'bookmarklet'
-                # `assignments` carries the per-course bodies, and only the
-                # extension sends them. Without it an assignment whose work
-                # lives on PrairieLearn keeps reading as outstanding, because
-                # the only evidence it is hosted elsewhere is in its text.
-                rows, skipped, described = canvas.ingest(items, assignments, source)
+                res = inp.receive(json.loads(self.rfile.read(n).decode('utf-8')))
                 emit_diff(before, snapshot_data())
-                publish('source', 'canvas')
-                self._send(200, json.dumps({'ok': True, 'kept': len(rows),
-                                            'described': described}),
-                           'application/json')
+                publish('source', name)
+                self._send(200, json.dumps(res), 'application/json')
             except Exception as e:
                 self._send(400, json.dumps({'error': str(e)}), 'application/json')
         else:

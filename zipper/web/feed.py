@@ -7,7 +7,8 @@ Split out of `zipper/serve.py` on 2026-09-07. That file had grown to 2,788
 lines, which meant no part of it could be read without loading all of it.
 """
 from .base import *
-from .base import core, canvas, conversations, events, gh, ics, metrics, usage
+from .base import core, conversations, events, metrics, usage
+from .. import inputs
 from .data import flags
 
 
@@ -212,142 +213,18 @@ def notes_watch(interval=4.0):
         publish('notes', rows=rows)
 
 def snapshot_data():
-    """What the diff is measured against. Keys only — cheap to compare."""
-    cal = set()
-    for f in glob.glob(os.path.join(core.INBOX, 'calendar-*.json')):
-        try:
-            for e in json.load(open(f, encoding='utf-8'))['events']:
-                # Carry the uid: it is the same across every occurrence of a
-                # recurring series, and emit_diff groups on it. Without it a new
-                # weekly class reports one row per expanded date.
-                cal.add((e['start'], e['summary'], e.get('uid') or ''))
-        except Exception:
-            pass
-    canvas = {}
-    try:
-        for r in json.load(open(canvas.CANVAS_JSON, encoding='utf-8'))['items']:
-            canvas[r['title']] = r['submitted']
-    except Exception:
-        pass
-    repos = {}
-    try:
-        for r in json.load(open(core.GH_JSON, encoding='utf-8'))['repos']:
-            repos[r['name']] = r.get('pushed_at', '')
-    except Exception:
-        pass
-    return {'cal': cal, 'canvas': canvas, 'repos': repos, 'flags': set(flags())}
-
-CADENCE = {1: 'daily', 7: 'weekly', 14: 'fortnightly', 28: '4-weekly'}
-
-
-def _shape(starts):
-    """Describe a run of occurrence dates: '(weekly x58, through 2027-10-06)'.
-
-    Only names a cadence when every gap is the same; a series with holidays cut
-    out of it says 'repeats' rather than inventing a rhythm it does not have.
-    """
-    if len(starts) < 2:
-        return ''
-    days = sorted({(datetime.date.fromisoformat(b[:10])
-                    - datetime.date.fromisoformat(a[:10])).days
-                   for a, b in zip(starts, starts[1:])})
-    word = CADENCE.get(days[0]) if len(days) == 1 else None
-    return '  (%s \u00d7%d, through %s)' % (word or 'repeats', len(starts), starts[-1][:10])
-
-
-def _window_guard():
-    """The slice of the ingest window that did not move since the last fetch.
-
-    parse_ics expands recurrence into a -180/+400 day window *relative to today*,
-    so the window slides. An event 400 days out crosses the front edge simply
-    because a day passed, and reporting that as `+ calendar` is a lie: nobody
-    added anything. Same at the back edge when a series scrolls out of range.
-
-    Only events inside the intersection of the old and new windows can have
-    genuinely changed, so that is what gets reported. The intersection is the
-    window shrunk by however many days actually elapsed -- read from the last
-    fetch stamp, not assumed to be one, since a box that was off for a week
-    slides seven days at once.
-    """
-    last = None
-    try:
-        last = json.load(open(FEED_JSON, encoding='utf-8')).get('last_fetch')
-    except Exception:
-        pass
-    try:
-        slide = (core.TODAY - datetime.date.fromisoformat(last[:10])).days
-    except Exception:
-        slide = 1
-    slide = max(1, min(slide, 400))
-    return ((core.TODAY - datetime.timedelta(days=180 - slide)).isoformat(),
-            (core.TODAY + datetime.timedelta(days=400 - slide)).isoformat())
-
-
-def _cal_events(keys, action, lo, hi):
-    """One event per series, not per occurrence.
-
-    parse_ics expands RRULE into concrete dates, so before this the day CSE 434's
-    lab appeared the feed published 58 identical-looking rows -- one calendar
-    entry drowning out the two real changes in the same run. Every occurrence of
-    a series shares an ICS uid, so group on it and state the shape of the run.
-    Events with no uid fall back to their own start+summary and stay separate.
-    """
-    groups = {}
-    for start, summary, uid in keys:
-        groups.setdefault(uid or '%s|%s' % (start, summary), (summary, []))[1].append(start)
-    out = []
-    for summary, starts in groups.values():
-        starts.sort()
-        if not (lo <= starts[0][:10] <= hi):
-            continue                    # window edge, not a real change
-        out.append({'system': 'calendar', 'action': action, 'when': starts[0],
-                    'text': '%s calendar  %s  %s%s'
-                            % ('+' if action == 'add' else '-', starts[0],
-                               summary, _shape(starts))})
-    return sorted(out, key=lambda e: e['when'])
-
-
-def _push_who(name, after_repos):
-    """'Abram' when the newest commits in the window are his.
-
-    On a personal repo that is always true and says nothing. On an ASU-LL repo
-    it is the whole point: commits_recent is the team's and only his own work
-    should move last_touched, so a push that is not his is a different fact.
-    """
-    try:
-        for r in json.load(open(core.GH_JSON, encoding='utf-8'))['repos']:
-            if r['name'] == name and r.get('commits'):
-                return 'Abram' if any(c.get('mine') for c in r['commits'][:5]) else 'team'
-    except Exception:
-        pass
-    return None
+    """What the diff is measured against: each enabled input's own snapshot."""
+    return inputs.snapshot()
 
 
 def emit_diff(before, after):
-    """Turn the difference between two fetches into typed events.
+    """Turn the difference between two fetches into typed queue rows.
 
-    Every row is {system, action, details} with `who` and `when` where the
-    source actually knows them -- a push knows both, a calendar entry knows
-    when it is but not who put it there. Optional means absent, never guessed.
+    Each input writes its own rows (`zipper/inputs/`). Every row is {system,
+    action, text} with `who` and `when` only where the source actually knows
+    them -- optional means absent, never guessed.
     """
-    lo, hi = _window_guard()
-    evs = []
-    evs += _cal_events(after['cal'] - before['cal'], 'add', lo, hi)
-    evs += _cal_events(before['cal'] - after['cal'], 'remove', lo, hi)
-    for title, done in sorted(after['canvas'].items()):
-        was = before['canvas'].get(title)
-        if was is None:
-            evs.append({'system': 'canvas', 'action': 'add', 'who': 'Abram',
-                        'text': '+ canvas    %s%s'
-                                % (title, '  (already submitted)' if done else '')})
-        elif done and not was:
-            evs.append({'system': 'canvas', 'action': 'submit', 'who': 'Abram',
-                        'text': 'submitted   %s' % title})
-    for name, ts in sorted(after['repos'].items()):
-        if before['repos'].get(name, '') != ts and before['repos'].get(name) is not None:
-            evs.append({'system': 'github', 'action': 'push', 'when': ts[:16],
-                        'who': _push_who(name, after['repos']),
-                        'text': 'pushed      %s  %s' % (name, ts[:16])})
+    evs = inputs.events(before, after)
     for e in evs:
         publish('diff', e.pop('text'), **e)
     # Flags deliberately do NOT become queue rows. A flag is a condition derived
@@ -382,20 +259,17 @@ def do_refresh():
     err, total = [], 0
     try:
         core.TODAY = datetime.date.today()
-        steps = [('calendars', ics.cmd_calendars, {}),
-                 ('github', gh.cmd_github, {'since_days': 30, 'full': False})]
-        # Canvas is deliberately not a step. The refresh button pulls the
-        # sources this machine can reach, and Canvas is no longer one of them:
-        # the browser extension POSTs canvas.json directly, so there is nothing
-        # here to re-pull and a button that appeared to refresh it would lie.
-        # Run the sources concurrently: a Canvas ICS feed alone can take ~6s to
-        # generate, and GitHub has no reason to queue behind it.
+        # Every input that pulls. A pushed input (Canvas) has nothing to re-pull,
+        # and a button that appeared to refresh it would lie. They run
+        # concurrently: a Canvas ICS feed alone can take ~6s to generate, and
+        # GitHub has no reason to queue behind it.
+        steps = [(i.name, i.pull) for i in inputs.enabled() if hasattr(i, 'pull')]
         dlock = threading.Lock()
 
-        def run(label, fn, kw):
+        def run(label, fn):
             nonlocal before, total
             try:
-                fn(argparse.Namespace(**kw))
+                fn()
             except Exception as e:
                 err.append('%s: %s' % (label, e))
                 publish('diff', 'error       %s: %s' % (label, e))

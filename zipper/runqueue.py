@@ -28,7 +28,7 @@ from .core import *          # noqa: F401,F403 -- the shared vocabulary
 from . import core
 from .events import resolve_events
 from .metrics import _ledger_update
-from . import canvas, gh, ics, status, sync, views
+from . import ics, inputs, status, sync, views
 
 
 QUEUE_JSON = os.path.join(INBOX, 'queue.json')
@@ -140,34 +140,7 @@ def feed_rows():
 def open_rows():
     return [r for r in feed_rows() if not r.get('done')]
 
-def _target_map():
-    """repo name -> note title, and canvas course -> note title.
-
-    Repos come from the hand-maintained `repos:` field, which is the source of
-    truth for that mapping and stays so -- nothing here fuzzy-matches. Courses
-    come from `feeds:` on a `Classes/` note: the project a course's work
-    actually lands in, which no other field records.
-    """
-    def listy(v):
-        # core.as_list only takes strings; parse_fm hands back a real list for
-        # `[a, b]` and a bare string otherwise, and both spellings appear.
-        if v is None:
-            return []
-        return v if isinstance(v, list) else as_list(v)
-
-    repos, courses = {}, {}
-    for p in iter_notes():
-        d = fm_dict(read_note(p)[0])
-        t = title_of(p)
-        for r in listy(d.get('repos')):
-            repos[str(r).split('/')[-1].strip()] = t
-        if d.get('type') == 'class' and d.get('code'):
-            feeds = [str(f).strip().strip('[]') for f in listy(d.get('feeds'))]
-            if feeds:
-                courses[str(d['code']).strip()] = feeds[0]
-    return repos, courses
-
-def classify(row):
+def classify(row, resolve=None):
     """Fill in system/action/target for a row, migrating pre-2026-09-06 ones.
 
     Rows written before the typed schema are flat display strings, so their
@@ -176,7 +149,6 @@ def classify(row):
     can change after a row was written.
     """
     text = row.get('text', '')
-    repos, courses = _target_map()
     out = dict(row)
     out.setdefault('clears', 'tick')
     if not out.get('system'):
@@ -194,15 +166,9 @@ def classify(row):
         else:
             out['system'] = 'other'
     if not out.get('target'):
-        if out['system'] == 'github':
-            m = re.match(r'pushed\s+(\S+)', text)
-            if m:
-                out['target'] = repos.get(m.group(1))
-        elif out['system'] == 'canvas':
-            for code, note in courses.items():
-                if code.replace(' ', '') in text.replace(' ', ''):
-                    out['target'] = note
-                    break
+        t = (resolve or inputs.target_resolver())(out)
+        if t:
+            out['target'] = t
     return out
 
 # ------------------------------------------------------------------ flags
@@ -302,40 +268,15 @@ def fetch_all(a, emit=True):
     thing you had to remember; making it the first step of the pass makes it a
     thing you cannot skip.
 
-    Every source is wrapped: a dead Canvas cookie or a GitHub outage must
+    Each input's `pull` is wrapped by `inputs.pull_all`: a GitHub outage must
     degrade the brief, never prevent it.
     """
     from . import serve
     serve.feed_load()
     before = serve.snapshot_data() if emit else None
 
-    print('== github ==')
-    class A: since_days = 30; full = False
-    try:
-        gh.cmd_github(A())
-    except Exception as e:
-        print('github step skipped: %s' % e)
-    print('\n== calendars ==')
-    try:
-        ics.cmd_calendars(a)
-    except Exception as e:
-        print('calendar step skipped: %s' % e)
-    # No canvas step. Canvas is no longer something this machine can pull: the
-    # reading is taken by the browser extension and POSTed to /api/canvas
-    # whenever he has Canvas open, so `Inbox/canvas.json` is already as current
-    # as it is ever going to be by the time a pass starts. The old step existed
-    # to beat `agenda` to the strike-throughs on a cookie that expired hourly;
-    # with no fetch there is no ordering left to enforce. `zipper canvas` still
-    # reports what was last read, and how long ago.
-    print('\n== hours ==')
-    try:
-        from . import hours as _hours
-        _hours.cmd_refresh(a)
-    except Exception as e:
-        # Same contract as every other source: a Google outage or a revoked
-        # token degrades the brief, it does not stop it.
-        print('hours step skipped: %s' % e)
-    print('\n== sync ==');   sync.cmd_sync(a)
+    inputs.pull_all()
+    print('== sync ==');   sync.cmd_sync(a)
     print('\n== agenda =='); a.days = getattr(a, 'days', 14) or 14; ics.cmd_agenda(a)
     print('\n== status =='); status.cmd_status(a)
     print('\n== views ==');  views.cmd_views(a)
@@ -357,10 +298,6 @@ def cmd_fetch(a):
     bookkeeping pass. It used to also happen when the dashboard launched, which
     tied how fresh the data was to when a browser happened to open -- so the
     morning page was current and an all-day tab was a day stale.
-
-    This also carries the Canvas cookie keepalive that `zipper canvas` used to.
-    ASU issues no API tokens, the cookie is idle-timed, and exercising it hourly
-    is what holds it open.
     """
     fetch_all(a, emit=True)
     print()
@@ -390,7 +327,8 @@ def cmd_brief(a):
     for t in dropped:
         fl.append('task left the list unfinished: "%s"' % t[:70])
 
-    rows = [classify(r) for r in open_rows()]
+    resolve = inputs.target_resolver()
+    rows = [classify(r, resolve) for r in open_rows()]
     changes = note_changes()
     q = {'generated': datetime.datetime.now().isoformat(timespec='seconds'),
          'events': rows, 'notes_uncommitted': changes,
