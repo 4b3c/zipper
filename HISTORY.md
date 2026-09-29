@@ -1,15 +1,46 @@
 # History
 
-Changes that are finished. Nothing here describes how Zipper works today — that is
-`README.md`, `zipper/README.md` and `CLAUDE.md`. This file exists so that the reasoning
-behind a removal survives the removal, without the code having to carry a description of
-something that is no longer there.
+What Zipper used to do, and the bugs that shaped what it does now. How it works today is
+in `README.md`, `zipper/README.md` and `CLAUDE.md`.
 
-**What belongs here:** a decision that deleted or replaced something, and what it cost to
-learn. **What does not:** rationale for the current shape of the code. That stays at the
-call site, stated in the present tense, because someone editing that line needs it.
+**Belongs here:** something removed or replaced, a fixed bug, and what each cost to learn.
+**Doesn't:** rationale for the current code. That stays at the call site, in the present
+tense.
 
 ---
+
+## 2026-09-08 → 09-17 — the Discord delivery bugs
+
+Each of these dropped or misrouted a reply. The rules they left behind are in the
+operator's Discord doc; this is what each one cost.
+
+- **Unlocked registry.** `conversations.json` was read-modify-written across processes
+  with no lock. The slower writer reverted the other's `last_delivered`, the `Stop` hook
+  compared against a stale fingerprint, and the reply was dropped. Long turns lost most.
+  Six concurrent writers lost four rows without `convcore.mutate()`, none with it.
+- **One provenance slot.** A follow-up sent mid-turn overwrote the fingerprint the running
+  turn was about to be judged against, so its reply was read as typed and dropped. Now a
+  bounded set.
+- **Queued messages aren't user rows.** Claude Code records a mid-turn message as a
+  `queue-operation` `enqueue`, not a `user` row, so the hook compared the wrong text.
+  `read_turn` now treats `enqueue` as a prompt.
+- **Ghost text.** An unsent draft redraws dimmed in an empty input box; `_input_line` read
+  it as typed input, so `_submit` burned 20s and reported failure for a message that had
+  landed. At least two messages were lost this way. Moot for Discord once delivery went
+  headless.
+- **Silent drops, endless typing.** The hook swallowed send errors, and the typing
+  indicator was cleared after the send, so a failed send left "typing" up forever. The
+  clear moved into a `finally` and every decision now goes to `Inbox/forward.log`. The
+  root cause of the drop that exposed this was never found.
+- **False "disconnected".** Every failed post, including a slow one, said the service was
+  down. The bot now checks the service and a second endpoint before saying so.
+- **Buffered logs.** The bot ran without `-u`; `"logged in as"` never once reached the
+  journal.
+- **Panes bound to threads** (09-17). Panes were started with `ZIPPER_DISCORD_THREAD` so a
+  keyboard conversation could continue on a phone. Once delivery went headless this
+  forwarded typed replies into Discord, and a thread with a pane could start a second
+  `claude --resume` on the same transcript. `bind()` was removed and panes moved to
+  `local-` ids.
 
 ## 2026-09-15 — streaming replies to Discord, removed the same day
 
