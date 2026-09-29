@@ -7,7 +7,7 @@ actions and ventures; then how old each input is.
 
 Chosen out of a run of contenders that lived at `/look/N` through September
 2026; the reasoning that survived is in the comments here. The page before it was
-retired on 2026-09-28, and `/old` redirects here.
+retired on 2026-09-28.
 
 Two rules this page exists to keep:
 

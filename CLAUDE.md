@@ -77,7 +77,9 @@ state: regenerable, gitignored, may hold secret URLs, never authoritative.
 
 - **Restart to deploy.** A page reload doesn't pick up Python changes: `systemctl restart
   zipper-web`. Conversations survive (`KillMode=process`) — check `tmux ls` creation times.
-- **Verify UI in a browser**, not in the HTML string.
+- **Verify UI in a browser**, not in the HTML string: `python3 tests/shot.py [path] [out.png]
+  [--click SELECTOR]` screenshots the page in headless Chromium and reports JS errors. Look
+  at the picture.
 - **Comments say why, in the present tense.** When something is removed, the reasoning goes
   in `HISTORY.md`, not in a comment about code that no longer exists.
 - **Timestamps:** APIs and ICS are UTC; the vault is local. Convert, never slice. Don't touch

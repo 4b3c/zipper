@@ -102,12 +102,6 @@ class Handler(BaseHTTPRequestHandler):
             if not re.match(r'^\d{4}-\d{2}-\d{2}$', day or ''):
                 day = None
             self._send(200, home.page(day))
-        elif self.path == '/old':
-            # The previous dashboard. Its cards now live on the front page.
-            self.send_response(301)
-            self.send_header('Location', '/')
-            self.send_header('Content-Length', '0')
-            self.end_headers()
         elif self.path == '/events':
             self._events()
         elif self.path.split('?')[0] == '/api/tmuxbuffer':
