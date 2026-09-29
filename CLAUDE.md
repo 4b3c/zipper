@@ -1,253 +1,164 @@
 # CLAUDE.md — working on this codebase
 
-Guidance for Claude Code working in **this repository**. It describes the system and its
-rules. It deliberately contains nothing about whose vault it runs against.
-
-**The operator's own context — projects, people, current state, the things worth arguing
-with them about — lives in the vault, not here.** Read `$ZIPPER_VAULT/CLAUDE.md` at the
-start of a session. If it is absent, you are working on the code only; do not infer facts
-about the operator from anything in this repo.
+How this repository works and the rules for changing it. It says nothing about whose vault
+it runs against: **the operator's context lives in `$ZIPPER_VAULT/CLAUDE.md`** — read that
+at the start of a session. If it's absent you're working on code only; infer nothing about
+the operator from this repo.
 
 ---
 
 ## 1. What this is
 
-Two programs and a data format.
+- **`python3 -m zipper`** — the engine. Reads a vault of markdown notes with YAML
+  frontmatter, fetches from outside sources, writes back facts only.
+- **`python3 -m zipper.serve`** — the dashboard. Stdlib HTTP server, no framework.
+- **`bot/`** — the Discord relay. Posts each message to the server's `/discord`, which hands
+  it to that thread's Claude conversation. Replies return via the `Stop` hook in `hooks/`.
+- **The vault** — plain markdown, one directory per note type. Not in this repository.
 
-- `python3 -m zipper` — the engine. Reads a vault of markdown notes with YAML frontmatter,
-  fetches from external sources, and writes back only facts.
-- `python3 -m zipper.serve` — a local web dashboard over what the engine wrote. Stdlib HTTP server,
-  no framework.
-- `bot/` — a Discord relay. It posts every message it sees to the server's `/discord`
-  endpoint, which delivers it into the live Claude session (or starts one primed with it).
-  Replies go back out **automatically**, forwarded by the `Stop` hook in `hooks/`.
-- The vault — plain markdown, one directory per note type. **Not in this repository.**
-
-Both are stdlib-only and target `python3` as shipped. No pip installs, no virtualenv. Keep
-it that way: the deployment target is a box where `apt install python3` is the whole setup.
+The engine and server are **stdlib-only**: no pip, no venv. The target is a box where
+`apt install python3` is the whole setup. Only `bot/` has dependencies.
 
 ## 2. Layout
 
 | Path | What |
 |---|---|
-| `zipper/core.py` | vault paths, frontmatter, and the helpers everything shares |
-| `zipper/cli.py` | the argument parser — the whole command surface, in one place |
-| `zipper/lint.py` `sync.py` `status.py` | validation, evidence, the generated snapshot |
-| `zipper/ics.py` `events.py` | calendars, recurrence, event notes |
-| `zipper/gh.py` `canvas.py` `metrics.py` | the fetchers and the numbers |
-| `zipper/runqueue.py` `views.py` | the between-runs diff, and the saved queries |
-| `zipper/chat.py` | the Discord CLI |
-| `zipper/serve.py` + `zipper/web/` | the dashboard — `serve.py` is the entry point, `web/` is the server, one module per concern |
-| `zipper/web/home.py` | **`/`** — the front page since 2026-09-18: four panels over a second row of queue · flags · zipper. Owns its own CSS |
-| `zipper/web/render.py` | **`/old`** — the page `/` replaced. Still the only home of the **Claude terminal**, so it is live, not an archive. Do not delete it until that has somewhere else to be |
-| `zipper/box.py` | the box's vital signs — CPU, memory, disk, uptime, and whether a unit started *before* the commit it is running. `/proc` and stdlib only. Samples itself once a minute into `Inbox/box-history.json` (24h deep, written by `zipper-web`) so the dashboard can draw a trend and not just a number |
-| `zipper/reddit.py` | the thread watcher: search Reddit, ask `claude -p` which threads are worth a comment, send the survivors to Discord. **What to watch is a vault note, not code** -- it names a product and a market, and this repository may not |
-| `zipper/usage.py` | the 5-hour and 7-day plan meters, from Anthropic's OAuth usage endpoint. The token is read at call time and never stored |
-| `zipper/conversations.py` | front door over `convcore.py` (identity, registry, paste), `ttyd.py` (a ttyd per conversation) and `convstate.py` (liveness, listing, reaper) |
-| `hooks/forward_reply.py` | the `Stop` hook that posts a reply back to its Discord thread |
-| `zipper/README.md` | operational reference. **Read before touching any of it** |
-| `HISTORY.md` | finished changes and the reasoning behind them. Never how anything works today |
-| `bot/` | Discord relay — gateway client, HTTP surface, and the send/history CLI's other half. `client.py` also saves a message's **attachments** to `/tmp/zipper-discord-files/<message id>/` and appends `attached file saved here: <path>` to the prompt, keeping the last 20 messages' worth. The path only means anything because the bot and the pane share `/tmp`: **`PrivateTmp` must stay off on `zipper-discord` and `zipper-web`**, or every forwarded path is a file the session cannot open |
-| `utils/` | `constants.py` and `text.py`, the bot's only dependencies |
-| `extension/` | the browser collector — Chrome and Firefox from one manifest. Reads what only a logged-in browser can see and POSTs it to the dashboard. **It collects and never concludes**; adding a site is one file in `collectors/`. See its own README |
+| `zipper/core.py` | Vault paths, frontmatter, shared helpers |
+| `zipper/cli.py` | The whole command surface |
+| `zipper/lint.py` `sync.py` `status.py` | Validation, evidence, the snapshot |
+| `zipper/ics.py` `events.py` | Calendars, recurrence, event notes |
+| `zipper/gh.py` `canvas.py` `metrics.py` | Fetchers and numbers |
+| `zipper/runqueue.py` `views.py` | The queue, the saved queries |
+| `zipper/chat.py` | The Discord CLI |
+| `zipper/conversations.py` | Front door over `convcore.py` (identity, registry), `convhead.py` (headless Discord conversations), `ttyd.py` (a ttyd per pane), `convstate.py` (liveness, reaper) |
+| `zipper/serve.py` + `zipper/web/` | The dashboard. `serve.py` is the entry point |
+| `zipper/web/home.py` | `/`, the front page |
+| `zipper/web/render.py` | `/old`. Still the only home of the Claude terminal — **live, not an archive** |
+| `zipper/box.py` | The box's vital signs, sampled each minute into `Inbox/box-history.json` |
+| `zipper/reddit.py` | Thread watcher. What it watches is a vault note, never code |
+| `zipper/usage.py` | Plan usage meters. The OAuth token is read at call time, never stored |
+| `hooks/forward_reply.py` | The `Stop` hook that posts a reply to its Discord thread |
+| `bot/` | Gateway client and HTTP surface. Saves attachments to `/tmp/zipper-discord-files/<message id>/` |
+| `utils/` | `constants.py`, `text.py` — the bot's only dependencies |
+| `extension/` | The browser collector. **Collects, never concludes.** See its README |
+| `zipper/README.md` | The operating reference. Read before changing anything |
+| `HISTORY.md` | What was removed and why. Never how anything works today |
 
-Run it as a module: `python3 -m zipper <command>`, `python3 -m zipper.serve`.
+- **Read `core.TODAY` through the module; never import it by value.** The server runs for
+  days and rolls the date at midnight. `import *` from `core` goes through an explicit
+  `__all__`.
+- **`PrivateTmp` must stay off** on `zipper-discord` and `zipper-web`, or attachment paths
+  point at files the session can't see.
 
-**`core.TODAY` is read through the module, never imported by value.** The server is
-long-running and re-reads it at midnight; a `from .core import TODAY` pins a stale
-date that only misbehaves after a rollover. Same reason `import *` from `core` is
-governed by an explicit `__all__` — the shared helpers are underscore-prefixed by
-convention, not by privacy.
 ## 3. The vault contract
 
-The engine assumes a vault laid out by note type — `Projects/`, `Areas/`, `Topics/`,
-`People/`, `Classes/`, `Tasks/`, `Decisions/`, `Events/`, `Log/`, `Metrics/`, `Meta/`,
-`Inbox/`. Every note carries frontmatter; `type` and `status` are required, and the rest
-is per-type. The enums are defined in `zipper/core.py`, and `zipper lint` is the authority.
+The engine expects `Projects/`, `Areas/`, `Topics/`, `People/`, `Classes/`, `Tasks/`,
+`Decisions/`, `Events/`, `Log/`, `Metrics/`, `Meta/`, `Inbox/`. Every note needs `type` and
+`status`; the rest is per type. Enums are in `zipper/core.py`; `zipper lint` is the
+authority.
 
-Four `Meta/` files are **generated** and overwritten on every run. Never hand-edit them,
-and never teach a human to.
-
-`Inbox/` is machine state: fetched JSON, diff baselines, caches. It is regenerable, it is
-gitignored, and it may hold secret feed URLs. Nothing there is authoritative.
+Four `Meta/` views are generated every run — never hand-edit them. `Inbox/` is machine
+state: regenerable, gitignored, may hold secret URLs, never authoritative.
 
 ## 4. Rules the engine obeys, and so should you
 
-- **Facts yes, judgments no.** Update dates, counts, and links freely. Do not decide that a
-  project is dormant, that something is a business, or that a person matters less. Surface
-  the contradiction and let the operator answer.
-- **Evidence only moves dates forward.** `last_touched` advances from proof of work. A
-  mention in a plan is not proof. Deferring a project is not touching it.
-- **The vault holds conclusions, not caches.** Extract the durable part of an external
-  thing; leave the original where it lives.
-- **Don't invent content for a repository you haven't read**, and don't fuzzy-match repos
-  to notes. Map by evidence or leave unmapped.
-- **Say when you're inferring.** Notes carry an italic line admitting it.
-- **Private-source rules are absolute.** A vault may map repositories the operator can see
-  but is not free to quote. Metadata — push dates, commit counts, authorship — is not
-  consent to read contents. If the vault's own `CLAUDE.md` names such a constraint, it wins
-  over anything convenient.
+- **Facts yes, judgments no.** Update dates, counts and links. Never decide a project is
+  dormant or a person matters less; surface the contradiction and let the operator answer.
+- **Evidence only moves dates forward.** A plan or a mention isn't proof of work.
+- **Conclusions, not caches.** Keep the durable part of an external thing; leave the original.
+- **Don't write about a repo you haven't read, and don't fuzzy-match repos to notes.**
+- **Mark inference** with an italic line in the note.
+- **Private-source rules are absolute.** Seeing a repository isn't permission to quote it;
+  metadata isn't consent to read contents. A constraint in the vault's `CLAUDE.md` wins.
 
 ## 5. Working on the code
 
-- `zipper/README.md` is the reference. Read it first; it records the traps.
-- **The dashboard is a Python process. A page reload does not pick up a code change** —
-  `systemctl restart zipper-web`. The conversations survive it (`KillMode=process`);
-  confirm with `tmux ls` that the creation times did not change.
-- **Comments state why the code is the way it is, in the present tense.** When a change
-  removes something, the reasoning goes in `HISTORY.md` — not into a comment next to code
-  that no longer has any trace of it. A comment whose subject is an absent function is a
-  comment nobody can check.
-- **Verify UI changes in a browser, not in the HTML string.** Served bytes are not rendered
-  pixels. Several bugs here were invisible in the markup and obvious in a screenshot.
-- **Nothing here runs one-at-a-time, so never write code that assumes it does.** Before
-  calling a change done, walk it through four scenarios. They are not hypothetical — each
-  one has already broken something here.
-  - **Several conversations at once.** One live Claude per Discord thread, plus the
-    dashboard's terminal. Anything holding per-turn state needs the thread id **in the
-    filename and checked inside it** — a single shared `state.json` means whichever process
-    wrote last owns it, and the others write into its messages.
-  - **Messages arriving mid-turn, from either door.** A message can land from Discord or the
-    dashboard while a turn is running, and the next turn can begin seconds after the last
-    one ended. So *recently written* never means *still running*: state has to say when it
-    is finished rather than leave it inferred from a clock.
-  - **A process killed at any line.** Watchers, hooks and services get restarted mid-turn.
-    Ask what a half-written file, an orphaned sentinel or a surviving lock does to the next
-    start — and whether the failure is distinguishable from the feature being switched off.
-  - **Two components answering the same question differently.** The watcher streamed without
-    consulting the delivery registry while the `Stop` hook refused to correct because it did;
-    the gap between them left a truncated reply standing as the final answer.
+- **Restart to deploy.** A page reload doesn't pick up Python changes: `systemctl restart
+  zipper-web`. Conversations survive (`KillMode=process`) — check `tmux ls` creation times.
+- **Verify UI in a browser**, not in the HTML string.
+- **Comments say why, in the present tense.** When something is removed, the reasoning goes
+  in `HISTORY.md`, not in a comment about code that no longer exists.
+- **Timestamps:** APIs and ICS are UTC; the vault is local. Convert, never slice. Don't touch
+  `parse_ics` without a fixture.
+- **Nothing here runs one at a time.** Walk every change through these four before calling it
+  done — each has already broken something:
+  1. **Several conversations at once.** Per-turn state needs the thread id in the filename
+     *and* checked inside it. A shared file belongs to whoever wrote last.
+  2. **Messages mid-turn, from either door.** *Recently written* never means *still running*;
+     state must say when it's finished.
+  3. **A process killed at any line.** What does a half-written file or orphaned lock do to
+     the next start, and can you tell that failure from the feature being off?
+  4. **Two components answering one question differently.** Make them consult the same record.
 
-  Two rules of thumb earned the same day. **Overwriting is worse than duplicating** — a
-  duplicate is visible and merely annoying, an overwrite silently destroys a message Discord
-  keeps no history of and still logs success. And **a freshness check fed by the thing it is
-  checking measures nothing**: the watcher rewrote its own state file on every post, so the
-  mtime it was gated on never aged out.
-- Timestamps from APIs are UTC; the vault dates everything local. Convert, never slice.
-- ICS feeds are UTC too, and recurring events are not pre-expanded. `parse_ics` handles
-  both; changing it without a fixture is how a semester becomes one event.
-- Finish any session that touched the vault with `lint`, then `status`, then `queue`.
-  **If lint isn't clean, you broke something.**
+  Also: **overwriting is worse than duplicating** (a duplicate is visible; an overwrite
+  destroys silently), and **a freshness check fed by what it checks measures nothing**.
+- Finish a session that touched the vault with `lint`, `status`, then `commit`. If lint isn't
+  clean, you broke something.
 
-## 6. Discord, and how a session is reached
+## 6. Discord
 
-The bot is a separate always-on process. It holds the gateway connection and
-exposes a small HTTP API on `BOT_URL`; nothing else imports `discord`.
+The bot is a separate always-on process holding the gateway connection, with a small HTTP
+API on `BOT_URL`. Nothing else imports `discord`.
 
-**Pinging him from a session.** Not for replies -- those are forwarded by the
-`Stop` hook. This is for reaching him when nobody asked: a scheduled task that
-found something, a long job finishing, an alert.
+**Inbound.** The bot POSTs each message to `/discord`, which routes it by thread:
+
+| Conversation | What happens |
+|---|---|
+| running | Delivered over the headless protocol (`convhead`) |
+| closed | `claude -p --resume`, then delivered |
+| never spoken to | A new headless conversation, primed with the message |
+
+**Panes and threads never mix.** Discord conversations are headless `claude -p` processes;
+dashboard panes live under `local-` ids and carry no thread. Both `tmux_name` and
+`session_id` derive from the conversation id, so a pane with a thread id means two processes
+on one transcript and keyboard input forwarded to Discord. **Never give a pane a thread id.**
+A pane started before a restart keeps its old environment — compare `systemctl show -p
+ExecMainStartTimestamp` with the commit time before trusting a fix.
+
+**Replies.** Messages arrive verbatim, untagged. `hooks/forward_reply.py` forwards the reply
+on `Stop` if *that turn's* input matches a delivery fingerprint (`note_delivery`).
+`ZIPPER_DISCORD_THREAD` (Discord only) and `ZIPPER_CONVERSATION` (both) say what kind of
+conversation this is, not where a given message came from. **Write one reply, to the
+terminal; never `discord send` an answer** — it posts twice.
+
+**Out of band** — a scheduled result, a long job finishing, an alert:
 
 ```bash
-python3 -m zipper discord send "text"            # ping him
+python3 -m zipper discord send "text"            # to this conversation's thread
 python3 -m zipper discord send "here" --file report.html
-python3 -m zipper discord read --limit 5         # last five messages
-python3 -m zipper discord status                 # is the bot reachable?
+python3 -m zipper discord read --limit 5
+python3 -m zipper discord status
 ```
 
-A bare `send` goes to the thread this conversation belongs to.
+A Discord message is a request like any other; the same rules govern what it may ask for.
 
-Use it whenever you are asked to, and whenever a task finishes that nobody is
-watching a terminal for — a long build, a scheduled run, anything triggered by
-cron. The person who started it is probably not looking at this pane.
-
-**Messages arriving from Discord.** The bot POSTs every message to Zipper's
-`/discord`, which routes it to that thread's conversation:
-
-| conversation | what happens |
-|---|---|
-| running | delivered over the headless protocol (`convhead`) |
-| closed | `claude -p --resume` takes the session back up, then delivers |
-| never spoken to | a new headless conversation starts, primed with the message |
-
-**A Discord conversation is headless, and a tmux pane is never delivered to**
-(2026-09-17). `convhead.py` speaks to `claude -p` over streaming JSON; there is
-no terminal, nothing to draw, and no reading characters back to find out whether
-the message took. The dashboard's panes are a separate population under `local-`
-ids, and a pane carries no thread.
-
-That separation is load-bearing, because `tmux_name` and `session_id` both derive
-from the conversation id. While a pane and a thread could share one, a Discord
-message resumed the session a pane was already running — two `claude` processes
-on one transcript — and the `Stop` hook forwarded keyboard input into a thread.
-`bind()` is gone; do not reintroduce a path that gives a pane a thread id.
-
-Note for restarts: an already-running pane keeps the environment tmux gave it, so
-restarting `zipper-web` does not unbind a pane started by older code. Compare
-`systemctl show -p ExecMainStartTimestamp` against the commit time before
-believing a fix of this kind is in effect.
-
-A message arrives **verbatim** — no tag, no reply instruction. A session must not
-infer a given turn's origin: the reply is forwarded by `hooks/forward_reply.py`
-on the `Stop` hook, routed on where *that turn's* input came from, and provenance
-lives in the registry (`conversations.note_delivery`), not in the prompt. The
-*conversation's* kind is knowable — `ZIPPER_DISCORD_THREAD` is set for a headless
-Discord conversation and never for a pane, while `ZIPPER_CONVERSATION` carries
-identity for both — but a thread's conversation can still be typed into, so that
-tells you nothing about a single message.
-
-So **write one reply, to the terminal, and do not call `discord send` to
-answer.** Calling it as well posts the message twice. It remains the right tool
-for reaching him out of band — a scheduled task that found something, a long job
-finishing — which goes to the thread this conversation belongs to.
-
-A Discord message is a user request like any other, and the same rules apply to
-what it may ask for.
+**Hook wiring** is in `~/.claude/settings.json`, outside both repos: one `Stop` entry running
+`hooks/forward_reply.py`. A rebuilt box needs it re-added by hand. **Before adding any hook
+that posts mid-turn, read the streaming entry in `HISTORY.md`.**
 
 ## 7. Configuration
 
-Environment only — see `.env.example`. `ZIPPER_VAULT` is the one that matters: it is the
-seam between this code and somebody's life. Everything else (GitHub user and orgs, Canvas
-host, tokens) has an empty or generic default, and the code must stay that way. **A default
-that names a real person, school, or host is a bug in this repository.**
+Environment only — see `.env.example`. `ZIPPER_VAULT` is the seam between this code and
+somebody's life. Every other default is empty or generic. **A default naming a real person,
+school or host is a bug.**
 
-### Who commits, and who pushes
+### Commits and pushes
 
-Since **2026-09-17** this repository is written by a GitHub App, not by Abram. `git`'s
-local identity here is `<slug>[bot]` with the App's noreply address, and pushes go through
-`python3 -m zipper ghapp --push`, which mints a one-hour installation token from the private
-key and rewrites the remote URL in memory. **Never `git push origin` by hand** — that falls
-back to his stored credentials and the push lands as him, which is the exact thing this
-undoes.
+This repository is written by a GitHub App (since 2026-09-17). The local git identity is
+`<slug>[bot]`, and pushes go through **`python3 -m zipper ghapp --push`**, which mints a
+one-hour installation token. **Never `git push origin`** — it falls back to the operator's
+credentials and lands as them.
 
-**Do not ask before pushing this repository. Commit and push it yourself.** The identity on
-the commit is a bot's and the remote is the published code; a push costs Abram nothing and
-asks him to arbitrate something he has no stake in. Waiting for permission just leaves work
-sitting locally where the next session cannot see it, and "eight commits, unpushed" is a
-status report nobody wanted.
+**Push without asking.** The commit is a bot's and the remote is published code; the operator
+has no stake in the timing, and unpushed work is invisible to the next session. The bar is
+low: something works, is verified, is fixed, or is worth not losing. Several small pushes are
+right. If something is knowingly half-built, say so in the message rather than holding it.
 
-A good stopping point, and the bar is low: something works, something is verified or tested,
-a bug is fixed, or a change is worth not losing. Push then. Several small pushes across a
-session are correct — the thing to avoid is a session that ends with the remote hours behind
-the box. If something is half-built and known broken, say so in the message rather than
-holding the commit back.
+**This applies to this repository only.** The vault is local-only and never pushed anywhere.
 
-**This licenses `/opt/zipper` only.** `/opt/vault` is local-only by design, has no remote but
-`/srv/vault.git`, and must never be pushed anywhere — see its own CLAUDE.md. Committing there
-is still how a bookkeeping pass ends; pushing there is not a thing that exists.
-
-Three properties worth keeping:
-
-- **The key on disk mints tokens and does nothing else.** A compromised box gets an hour of
-  `contents: write`, not an account.
-- **The token never reaches `.git/config`.** `push_url()` returns it; nothing stores it, and
-  a failed push has the URL scrubbed out of stderr before it is printed. A token in a log
-  line is a token in the Discord thread.
-- **Reading is still his.** `GITHUB_TOKEN` is unchanged, because `zipper github` reads 144
-  repos across an org the App is not installed on. Do not try to move the fetcher onto the
-  App — it would silently stop seeing most of the evidence.
-
-`zipper ghapp` with no flags prints the identity, mints a token and reports how many repos
-the installation reaches. `selection=all` is the intended setting, not a mistake to correct:
-the App is meant to work across his projects, not only on its own repository. The scope that
-matters is the account boundary — it is installed on the personal account, so ASU-LL is
-unreachable with this credential no matter what.
-
-**The hook is wired in `~/.claude/settings.json`, which is in neither repo.** One entry: `Stop`
-runs `hooks/forward_reply.py`, which posts the finished turn to the thread it belongs to. That
-is the whole wiring, and a rebuilt box needs it re-added by hand since the file is unversioned.
-
-There were briefly three entries — a `PostToolUse` forwarding every block as it was written
-and a `UserPromptSubmit` starting a stream watcher. Both are gone with the streaming feature;
-see `HISTORY.md`. **If you find yourself adding a hook that posts mid-turn, read that entry
-first.**
+- The key on disk only mints tokens — a compromised box gets an hour of `contents: write`.
+- The token never reaches `.git/config`, and is scrubbed from a failed push's stderr.
+- **Reading stays on `GITHUB_TOKEN`.** The App isn't installed on the org, so moving the
+  fetcher onto it would silently lose most of the evidence.
+- `zipper ghapp` prints the identity, mints a token, and counts reachable repos.
+  `selection=all` is intended.
