@@ -10,6 +10,11 @@ from . import (canvas, chat, conversations, decisions, digest, events, ext, gh, 
                google, hours, ics, lint, metrics, runqueue, status, sync, views)
 
 
+def _github_cmd(a):
+    from .inputs import github
+    return github.cmd(a)
+
+
 def main():
     ap = argparse.ArgumentParser(prog='zipper', description='vault command line')
     sub = ap.add_subparsers(dest='cmd')
@@ -67,7 +72,7 @@ def main():
     s.set_defaults(fn=ics.cmd_agenda)
 
     s = sub.add_parser('github'); s.add_argument('--since-days', type=int, default=30)
-    s.add_argument('--full', action='store_true'); s.set_defaults(fn=gh.cmd_github)
+    s.add_argument('--full', action='store_true'); s.set_defaults(fn=_github_cmd)
 
     # A bookkeeping pass is fetch -> reasoning -> commit. Only the ends are
     # commands; the middle is an agent reading the brief against the vault, so

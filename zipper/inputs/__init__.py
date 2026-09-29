@@ -15,6 +15,7 @@ An input is a module in this package that provides some of these. Only `name` an
     target(row, notes)    the note a queue row lands on, or None
     timeline(first, last) event rows between two dates (below)
     work()                work items: things that are due (below)
+    facts()               {note title: {field: value}} for `zipper.writer` to apply
     toggle(key)           cross a work item off by hand, or back; returns the state.
                           Keys are `<name>:...`, so the registry knows whose it is
     CALENDARS             ICS labels this input owns; the calendar input skips them
@@ -86,6 +87,11 @@ def pull_all(log=print):
             log('%s step skipped: %s' % (i.name, e))
             errors.append('%s: %s' % (i.name, e))
         log('')
+    # Then the facts, through the one writer, so every input obeys the same rules.
+    from .. import writer
+    log('== facts ==')
+    writer.apply_all()
+    log('')
     return errors
 
 

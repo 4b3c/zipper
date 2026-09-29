@@ -126,43 +126,8 @@ def cmd_github(a):
                    'user': owner, 'since': since, 'repos': repos}, fh, indent=1)
     print('commits fetched for %d changed repo(s), window %d days' % (fetched, a.since_days))
 
-    # write activity back onto the notes
-    by_note = {}
-    for r in repos:
-        if r['note']:
-            by_note.setdefault(r['note'], []).append(r)
-    idx = dict((title_of(p), p) for p in iter_notes())
-    bumped = 0
-    for note, rs in by_note.items():
-        p = idx[note]
-        pairs, body = read_note(p)
-        d = fm_dict(pairs)
-        newest = max(r['pushed_at'] for r in rs)
-        ncommits = sum(len(r['commits']) for r in rs)
-        mine = [c for r in rs for c in r['commits'] if c.get('mine')]
-        has_org = any(r.get('is_org') for r in rs)
-        changed = False
-        if newest[:10] != d.get('last_push'):
-            set_field(pairs, 'last_push', newest[:10]); changed = True
-        if str(ncommits) != d.get('commits_recent'):
-            set_field(pairs, 'commits_recent', str(ncommits)); changed = True
-        if has_org:
-            # On a team repo a push is the team's, not necessarily his. `last_touched`
-            # feeds the drift flags, which are about *his* attention — so only his own
-            # commits may move it. `commits_mine` keeps the distinction visible.
-            if str(len(mine)) != d.get('commits_mine'):
-                set_field(pairs, 'commits_mine', str(len(mine))); changed = True
-            when = max((c['date'] for c in mine), default='')
-            if when and when[:7] > (d.get('last_touched') or ''):
-                set_field(pairs, 'last_touched', when[:7]); changed = True
-        elif newest[:7] > (d.get('last_touched') or ''):
-            set_field(pairs, 'last_touched', newest[:7]); changed = True
-        if changed:
-            write_note(p, pairs, body); bumped += 1
-            print('  %-30s last_push %s  %d commit(s) in window%s'
-                  % (note, newest[:10], ncommits,
-                     '  (%d his)' % len(mine) if has_org else ''))
-    print('updated %d note(s)' % bumped)
+    # Writing onto the notes is not this function's job: `inputs.github.facts()`
+    # says what was seen and `zipper.writer` decides what may be written.
 
     # generated index
     L = ['---', 'tags: [meta, view]', 'type: view', 'view_kind: generated',

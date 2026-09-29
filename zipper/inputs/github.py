@@ -14,6 +14,42 @@ def pull():
     gh.cmd_github(argparse.Namespace(since_days=30, full=False))
 
 
+def cmd(a):
+    """`zipper github`: fetch, then write the facts. The CLI's face of pull()."""
+    rc = gh.cmd_github(a)
+    from .. import writer
+    writer.apply(facts(), source=name)
+    return rc
+
+
+def facts():
+    """Per mapped note: last push, commits in the window, and last_touched.
+
+    On an org repo a push is the team's, not necessarily the owner's, and
+    `last_touched` feeds the drift flags, which are about *their* attention -- so
+    only their own commits may move it, and `commits_mine` keeps the split visible.
+    """
+    by_note = {}
+    for r in _repos():
+        if r.get('note'):
+            by_note.setdefault(r['note'], []).append(r)
+    out = {}
+    for note, rs in by_note.items():
+        newest = max(r['pushed_at'] for r in rs)
+        mine = [c for r in rs for c in r.get('commits', []) if c.get('mine')]
+        f = {'last_push': newest[:10],
+             'commits_recent': sum(len(r.get('commits', [])) for r in rs)}
+        if any(r.get('is_org') for r in rs):
+            f['commits_mine'] = len(mine)
+            when = max((c['date'] for c in mine), default='')
+            if when:
+                f['last_touched'] = when[:7]
+        else:
+            f['last_touched'] = newest[:7]
+        out[note] = f
+    return out
+
+
 def fetched():
     return blob_fetched(core.GH_JSON)
 
