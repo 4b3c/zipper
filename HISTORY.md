@@ -36,6 +36,10 @@ operator's Discord doc; this is what each one cost.
   down. The bot now checks the service and a second endpoint before saying so.
 - **Buffered logs.** The bot ran without `-u`; `"logged in as"` never once reached the
   journal.
+- **A turn bigger than the tail** (09-28). The hook read only the transcript's last 1MB;
+  a turn that rewrote many large files was 1.7MB, its prompt fell outside the window, and
+  the reply was logged `empty turn` and never sent. With no turn start in view, `read_turn`
+  now reads the whole file.
 - **Panes bound to threads** (09-17). Panes were started with `ZIPPER_DISCORD_THREAD` so a
   keyboard conversation could continue on a phone. Once delivery went headless this
   forwarded typed replies into Discord, and a thread with a pane could start a second

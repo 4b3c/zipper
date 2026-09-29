@@ -55,11 +55,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def _tail(path, limit=1_000_000):
-    """The end of a transcript. These files reach megabytes and only the last
-    turn matters, so never read the whole thing."""
+    """The end of a transcript. These files reach megabytes and usually only the
+    last megabyte matters. `limit=None` reads the whole file -- `read_turn`'s
+    fallback when one turn is bigger than the window."""
     with open(path, 'rb') as fh:
         try:
-            if os.fstat(fh.fileno()).st_size > limit:
+            if limit and os.fstat(fh.fileno()).st_size > limit:
                 fh.seek(-limit, os.SEEK_END)
                 fh.readline()          # drop the partial line the seek landed in
         except OSError:
@@ -81,7 +82,7 @@ def _text_blocks(row):
     return []
 
 
-def read_turn(path):
+def read_turn(path, limit=1_000_000):
     """The last user message, and the last assistant text of this turn.
 
     A user row carrying only `tool_result` blocks is the harness feeding a tool
@@ -108,7 +109,8 @@ def read_turn(path):
     """
     last_user, last_asst, uuid_, closed = '', '', '', False
     turn_users = []
-    for row in _tail(path):
+    started = False
+    for row in _tail(path, limit):
         t = row.get('type')
         if t == 'user':
             # **Not every `user` row is a person speaking.** Invoking a skill
@@ -134,6 +136,7 @@ def read_turn(path):
                 # A `user` row starts a new turn, so the previous turn's
                 # prompts go with it.
                 turn_users = [body]
+                started = True
         elif t == 'queue-operation' and row.get('operation') == 'enqueue':
             # **A message that arrives mid-turn never becomes a `user` row.**
             # Claude Code queues it and records it here instead, as
@@ -167,6 +170,14 @@ def read_turn(path):
             # never coming is how this would hang on its own timeout.
             if (row.get('message') or {}).get('stop_reason') != 'tool_use':
                 closed = True
+    if not started and limit:
+        # **One turn can be bigger than the window.** A turn that rewrites
+        # several large files writes megabytes of tool calls, and the prompt
+        # that opened it falls off the front of the tail -- so the turn read as
+        # having no prompt, was logged `empty turn`, and its reply was never
+        # sent (2026-09-28, a 1.7MB turn). With no turn start in view, nothing
+        # in the window says where the turn came from, so read the whole file.
+        return read_turn(path, limit=None)
     return last_user, last_asst, uuid_, closed, turn_users
 
 
