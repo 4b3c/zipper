@@ -1,31 +1,27 @@
 # Zipper
 
-Zipper is a personal assistant that runs on your own server. At its core is a note database —
-Obsidian-compatible markdown with structured frontmatter — fed by any number of inputs from
-the places your work actually happens: a calendar, a course site, GitHub, a timesheet. It
-keeps the notes up to date from those inputs and tells you what's due, what's slipping, and
-where your notes disagree with what you've actually done. You talk to it from a web dashboard
-or Discord.
+Zipper is a personal assistant that runs on your own server. It keeps a folder of markdown
+notes about your projects, classes and plans, and updates them from wherever it can read
+your activity — right now that's your calendar, Canvas, GitHub and a work timesheet, and more
+can be added. You can ask it things over Discord or a web dashboard.
 
 ## What it does
 
-- **One list of what's due.** Deadlines, meetings and tasks from every input, ranked — on the
-  dashboard, in an evening Discord message, and inside the tools you already use.
-- **Notes that maintain themselves.** A push, a submission or a moved meeting updates the notes
-  it affects. You don't do the bookkeeping.
-- **Drift gets caught.** A project marked active that hasn't moved in 45 days is flagged; so is
-  work that happened but never made it into the notes.
-- **Answers from your own data.** "What did I decide about X?" or "what's slipping?" is answered
-  from the notes and their history, not guessed.
-- **Admin by message.** "Worked 1:30 to 9:30" becomes a row in the timesheet you get paid from.
-- **Reachable anywhere.** Discord from a phone, or a terminal in the browser. Several
-  conversations can run at once, all on the same notes.
-- **Private.** It runs on your box. This repository is the code; your notes never leave the
-  machine.
+- Shows everything that's due in one list: assignments, meetings and your own tasks. You see
+  it on the dashboard, in a Discord message every evening, and in place of Canvas's to-do list.
+- Updates your notes when something changes. If you push code, submit an assignment or a
+  meeting moves, the notes that mention it get updated.
+- Tells you when a note is wrong. If a project says it's active but nothing has happened in
+  45 days, you hear about it. Same if you did work and never wrote it down.
+- Answers questions from your notes, like "what did I decide about X?" or "what am I behind
+  on?"
+- Handles small admin. Text it "worked 1:30 to 9:30" and it adds the row to your timesheet.
+- Works from anywhere: Discord on your phone, or a terminal in the browser. You can have
+  several conversations going at once.
+- Stays on your server. This repository is only the code; your notes stay on your machine.
 
-Each input is its own module — currently GitHub, ICS calendars, Canvas (via a browser
-extension), a bank CSV and a Google Sheets timesheet. Claude Code does the reasoning; the
-engine only fetches facts and writes them back.
+Each input (GitHub, calendars, Canvas, the timesheet, a bank CSV) is its own module. Claude
+Code does the thinking; the Python engine just fetches data and writes it into the notes.
 
 ---
 
