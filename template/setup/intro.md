@@ -29,15 +29,17 @@ How to work through it:
   only after they agree; `../zipper plugin info <name>` shows its settings and secrets.
   Change a setting with `../zipper settings set <key> <value>`.
 - **Never ask them to paste a secret into this chat** — a chat is saved in a transcript.
-  Run `../zipper secret NAME`; it prints a one-time link to a page with a single password
-  field, and the value goes straight into the config. Then `../zipper secret NAME --check`.
+  Run `../zipper secret NAME` (with `--host <tailnet address>` on a server -- see *Where
+  it runs*); it prints a one-time link to a page with a single password field, and the
+  value goes straight into the config. Then `../zipper secret NAME --check`.
   If they paste one here anyway, save it with `../zipper secret` the same way and tell
   them it is now in the transcript.
 - **When a section is finished -- done or skipped -- remove it** with
   `../zipper setup done <section>` (the name after `setup:` in its marker).
   `../zipper setup remaining` lists what is left.
-- **Order matters only at the start and end:** Discord first -- without it the zipper
-  cannot be reached -- then who they are and what the notes are for, then how the zipper
+- **Order matters only at the start and end:** where it runs first (on a server, that is
+  when Tailscale is set up, which the secret pages need), then Discord -- without it the
+  zipper cannot be reached -- then who they are and what the notes are for, then how the zipper
   logs in to Claude; starting it is last. Everything else can be done later by asking any conversation to run
   `zipper plugin enable <name>`.
 
