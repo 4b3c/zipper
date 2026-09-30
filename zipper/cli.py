@@ -15,6 +15,13 @@ def _pass_cmd(a):
     return scheduled.cmd_pass(a)
 
 
+def _setup(name):
+    def run(a):
+        from . import setup
+        return getattr(setup, name)(a)
+    return run
+
+
 def _github_cmd(a):
     from .inputs import github
     return github.cmd(a)
@@ -144,6 +151,15 @@ def main():
     s.add_argument('--token', dest='print_token', action='store_true',
                    help='print a raw installation token')
     s.set_defaults(fn=ghapp.cmd_ghapp)
+
+    s = sub.add_parser('init', help='create a vault from the template')
+    s.add_argument('path'); s.add_argument('--owner'); s.add_argument('--id')
+    s.set_defaults(fn=_setup('cmd_init'))
+    s = sub.add_parser('setup', help='the wizard: inputs, Discord, schedule, Claude')
+    s.add_argument('--section', choices=['identity', 'vault', 'inputs', 'discord',
+                                         'schedule', 'claude'])
+    s.add_argument('--hook', action='store_true', help='only install the Stop hook')
+    s.set_defaults(fn=_setup('cmd_setup'))
 
     s = sub.add_parser('settings', help='show or change zipper.settings.json (never secrets)')
     ss = s.add_subparsers(dest='action')

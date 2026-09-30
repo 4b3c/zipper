@@ -66,7 +66,7 @@ BOOL_FIELDS  = ['revenue_intent', 'open_loop', 'open_problem', 'open_question',
 
 
 # ------------------------------------------------- frontmatter
-ENV_FILE = os.path.join(os.path.dirname(HERE), '.env')
+ENV_FILE = os.environ.get('ZIPPER_ENV_FILE') or os.path.join(os.path.dirname(HERE), '.env')
 
 
 def _env_file():

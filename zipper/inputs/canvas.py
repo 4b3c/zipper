@@ -17,6 +17,17 @@ from .. import canvas as lib, core, ics
 from . import OWNER, as_list, blob_fetched, event_row, read_calendar
 
 name = 'canvas'
+SETUP_TITLE = 'Canvas'
+SETUP_ABOUT = 'assignments and due dates; submission status comes from the browser extension'
+
+
+def setup(w):
+    w.setting('inputs.canvas.host', 'Your Canvas address, e.g. https://canvas.example.edu')
+    w.say('Canvas -> Calendar -> "Calendar Feed" gives a private URL.')
+    url = w.ask('Canvas calendar feed URL (blank to add later)')
+    if url:
+        w.run(['ingest-ics', url, '--label', 'canvas'])
+    w.say('For submitted/not-submitted, install the extension in extension/ -- see its README.')
 CALENDARS = ('canvas',)
 ICS_FILE = os.path.join(core.INBOX, 'calendar-canvas.json')
 

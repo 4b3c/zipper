@@ -8,6 +8,18 @@ from .. import core, ics
 from . import blob_fetched, claimed_calendars, event_row, read_calendar
 
 name = 'calendar'
+SETUP_TITLE = 'Calendars'
+SETUP_ABOUT = 'any ICS feed: Google Calendar, Outlook, a class schedule'
+
+
+def setup(w):
+    w.say('Google Calendar: Settings -> your calendar -> "Secret address in iCal format".')
+    while True:
+        url = w.ask('A calendar\'s secret iCal URL (blank when done)')
+        if not url:
+            return
+        label = w.ask('A short label for it', default='gcal')
+        w.run(['ingest-ics', url, '--label', label])
 
 CADENCE = {1: 'daily', 7: 'weekly', 14: 'fortnightly', 28: '4-weekly'}
 

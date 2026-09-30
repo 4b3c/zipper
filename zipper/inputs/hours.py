@@ -8,6 +8,16 @@ import json, os
 from .. import core, hours as lib
 
 name = 'hours'
+SETUP_TITLE = 'Timesheet (Google Sheets)'
+SETUP_ABOUT = 'log hours by message; a Google Sheet stays the record'
+
+
+def setup(w):
+    w.setting('inputs.hours.sheet', 'The sheet id -- the part of its URL after /d/')
+    w.setting('inputs.hours.metric', 'Metric name for weekly totals', default='hours_worked')
+    w.setting('google.client_id', 'Google OAuth client id (console.cloud.google.com -> Credentials)')
+    w.secret('ZIPPER_GOOGLE_CLIENT_SECRET', 'Its client secret')
+    w.say('Then run `zipper google --auth` and open the link to connect the account.')
 
 
 def pull():

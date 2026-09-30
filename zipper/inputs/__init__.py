@@ -19,6 +19,10 @@ An input is a module in this package that provides some of these. Only `name` an
     toggle(key)           cross a work item off by hand, or back; returns the state.
                           Keys are `<name>:...`, so the registry knows whose it is
     CALENDARS             ICS labels this input owns; the calendar input skips them
+    SETUP_TITLE, SETUP_ABOUT, setup(w)
+                          how `zipper setup` offers it: a line in the checklist, and
+                          the questions to ask once it is ticked. `w` is the wizard
+                          (zipper.setup.Wizard): setting(), secret(), ask(), say(), run()
 
 Two row shapes, because the dashboard asks two different questions.
 
