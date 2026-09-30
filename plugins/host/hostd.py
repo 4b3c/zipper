@@ -4,7 +4,7 @@ The host daemon: how a zipper in a container reaches the machine outside it,
 without holding root.
 
     zipper hostd init      (as root, once) write /etc/zipper-hostd.json + a TOTP secret
-    zipper hostd install   (as root) copy this file to /opt/zipper-hostd, install the unit
+    zipper hostd install   (as root) copy this file to /opt/zippers/hostd, install the unit
     zipper hostd serve     what the unit runs
 
 **Identity is the socket.** Every zipper gets its own socket, `<socket_dir>/<id>/hostd.sock`,
@@ -43,7 +43,9 @@ secret that also exists only here, is single-use, and five wrong codes lock
 approvals for ten minutes. So a fully compromised zipper can ask, but it cannot
 change what the operator reads and cannot produce the code.
 
-**It runs from its own copy.** `install` copies this file to /opt/zipper-hostd.
+**It runs from its own copy.** `install` copies this file to /opt/zippers/hostd, beside
+the zippers' folders but never inside one: a copy a container could write would let
+that container rewrite what runs as root. Nothing may mount /opt/zippers whole.
 A merged change to it therefore does nothing on the host until someone runs
 `install` again -- as root, on the host, which is the approval for updating the
 thing that grants root.
@@ -56,7 +58,8 @@ import subprocess, sys, threading, time, urllib.request
 
 CONFIG = os.environ.get('ZIPPER_HOSTD_CONFIG', '/etc/zipper-hostd.json')
 LOG = os.environ.get('ZIPPER_HOSTD_LOG', '/var/log/zipper-hostd.log')
-INSTALL_DIR = '/opt/zipper-hostd'
+INSTALL_DIR = '/opt/zippers/hostd'
+OLD_INSTALL_DIR = '/opt/zipper-hostd'   # before 2026-09-30; install removes it
 OUTPUT_CAP = 64 * 1024
 PENDING_TTL = 30 * 60
 LOCKOUT = (5, 10 * 60)          # wrong codes, seconds locked
@@ -405,6 +408,7 @@ WantedBy=multi-user.target
 
 def install():
     os.makedirs(INSTALL_DIR, exist_ok=True)
+    os.chmod(INSTALL_DIR, 0o700)
     src = os.path.abspath(__file__)
     dst = os.path.join(INSTALL_DIR, 'hostd.py')
     with open(src, 'rb') as a, open(dst, 'wb') as b:
@@ -415,6 +419,14 @@ def install():
     subprocess.run(['systemctl', 'daemon-reload'], check=True)
     subprocess.run(['systemctl', 'enable', '--now', 'zipper-hostd'], check=True)
     subprocess.run(['systemctl', 'restart', 'zipper-hostd'], check=True)
+    old = os.path.join(OLD_INSTALL_DIR, 'hostd.py')
+    if OLD_INSTALL_DIR != INSTALL_DIR and os.path.exists(old):
+        os.remove(old)
+        try:
+            os.rmdir(OLD_INSTALL_DIR)
+        except OSError:
+            pass
+        print('removed the old copy in %s' % OLD_INSTALL_DIR)
     print('installed %s and started zipper-hostd' % dst)
 
 
@@ -427,7 +439,7 @@ def cmd_hostd(a):
 
 
 if __name__ == '__main__':
-    # Run from its installed copy: `python3 /opt/zipper-hostd/hostd.py serve`.
+    # Run from its installed copy: `python3 /opt/zippers/hostd/hostd.py serve`.
     if len(sys.argv) > 1 and sys.argv[1] == 'serve':
         serve(load_config())
     else:
