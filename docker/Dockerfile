@@ -1,4 +1,6 @@
-# The zipper runtime. (ttyd is the upstream static build: Debian 13 dropped the package.)
+# The zipper runtime. (ttyd is the upstream static build: Debian 13 dropped the package.
+# gh comes from GitHub's own apt repository: `gh` calls and HTTPS pushes through its
+# credential helper need it.)
 # The image holds tools, not code: the code is a git
 # checkout on a volume (/zipper/code), because a zipper pulls its own updates
 # and restarts itself -- which code baked into an image could not do. The copy
@@ -11,6 +13,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && curl -fsSL -o /usr/local/bin/ttyd \
         "https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.$(uname -m)" \
     && chmod 755 /usr/local/bin/ttyd \
+    && curl -fsSL -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+        https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update && apt-get install -y --no-install-recommends gh \
+    && rm -rf /var/lib/apt/lists/* \
     && npm install -g @anthropic-ai/claude-code \
     && npm cache clean --force
 
