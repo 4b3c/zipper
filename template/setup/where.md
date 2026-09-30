@@ -3,11 +3,11 @@
 Ask first: **is this a server they reached over SSH, or their own computer?** Offer to
 explain either before they choose. What it means:
 
-- **A server** (a VPS, or a computer at home that never sleeps) -- the zipper answers
-  Discord at any hour, and the morning and evening passes and the evening digest always
+- **A server** (a VPS, or a computer at home that never sleeps) -- the zipper is there
+  at any hour, and the morning and evening passes and the evening digest always
   run. This is how a zipper is meant to be run.
 - **Their own computer** -- fine for trying it out, but when the lid is closed or the
-  machine is asleep the zipper is gone: Discord messages go unanswered, and scheduled
+  machine is asleep the zipper is gone: messages go unanswered, and scheduled
   passes and digests are skipped until it wakes.
 
 Note the answer; it changes how secrets and the dashboard are reached.

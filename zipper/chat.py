@@ -106,7 +106,19 @@ def discord_typing(active, thread_id=None):
         return {'ok': False, 'error': str(e)}
 
 
+def discord_on():
+    from . import plugins
+    return plugins.is_enabled('discord')
+
+
+OFF = {'ok': False, 'error': 'the discord plugin is off -- nothing was sent'}
+
+
 def discord_send(message, file_path=None, thread_id=None):
+    """Post to Discord. With the plugin off, sends nothing and says so; everything
+    that posts (the digest, pass alerts, peers, `discord send`) comes through here."""
+    if not discord_on():
+        return dict(OFF)
     thread_id = thread_id or default_thread()
     try:
         if file_path:
@@ -134,6 +146,8 @@ def discord_send(message, file_path=None, thread_id=None):
     return r
 
 def discord_history(limit=5, thread_id=None):
+    if not discord_on():
+        return []
     thread_id = thread_id or default_thread()
     return _bot('/history', {'limit': limit, 'thread_id': thread_id}).get('messages', [])
 

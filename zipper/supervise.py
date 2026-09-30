@@ -4,7 +4,7 @@
 inside a container, or on a laptop.
 
     the dashboard   python3 -m zipper.serve --daemon       always
-    the bot         python3 -u -m bot.discord_bot          required: DISCORD_TOKEN
+    the bot         python3 -u -m bot.discord_bot          the discord plugin, and DISCORD_TOKEN
     the schedule    fetch / pass / digest / update         from the enabled plugins
 
 Children are restarted when they exit, with a backoff so a crash loop does not
@@ -123,9 +123,9 @@ def _children():
            '--port', os.environ.get('ZIPPER_PORT', '8800')]
     if os.environ.get('ZIPPER_NO_TERMINAL'):
         web.append('--no-terminal')     # tests, and zippers that never want a shell
-    # The web process is core even without the dashboard plugin: it is where the
-    # bot hands each Discord message to a Claude conversation. Without the plugin
-    # it serves only that relay (zipper/web/http.py).
+    # The web process is core: it serves the dashboard and its terminals, and it is
+    # where the bot, when the discord plugin is on, hands each message to a Claude
+    # conversation (zipper/web/http.py).
     kids = [Child('web', web)]
     from . import plugins
     if os.environ.get('ZIPPER_NGINX') and (plugins.is_enabled('dashboard')
@@ -133,13 +133,13 @@ def _children():
         # In the container, nginx fronts the dashboard (8899) and the peer port
         # (8898) -- see docker/nginx.py. With neither, nothing listens outside.
         kids.append(Child('nginx', ['nginx', '-g', 'daemon off;']))
-    if core.cfg('DISCORD_TOKEN'):
-        kids.append(Child('bot', [py, '-u', '-m', 'bot.discord_bot']))
-    else:
-        # The one thing a zipper cannot do without. Say so on every start, and keep
-        # running: the container has to stay up for setup to finish.
-        print('[run] zipper needs a Discord bot: DISCORD_TOKEN is not set '
-              '(`zipper secret DISCORD_TOKEN`). Nothing will answer until it is.', flush=True)
+    if plugins.is_enabled('discord'):
+        if core.cfg('DISCORD_TOKEN'):
+            kids.append(Child('bot', [py, '-u', '-m', 'bot.discord_bot']))
+        else:
+            print('[run] the discord plugin is on but DISCORD_TOKEN is not set '
+                  '(`zipper secret DISCORD_TOKEN`); Discord will not answer until it is.',
+                  flush=True)
     return kids
 
 

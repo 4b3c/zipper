@@ -1,13 +1,18 @@
 """zipper.plugins
 
-Everything beyond the core is a plugin. The core is a Discord bot handing messages
-to Claude conversations that edit a vault, plus the queue, lint and commit. The
-rest -- GitHub, calendars, the dashboard, backups, scheduled passes -- lives in
+Everything beyond the core is a plugin. The core is Claude conversations that edit a
+vault, plus the queue, lint and commit. The rest -- Discord, GitHub, calendars, the
+dashboard, backups, scheduled passes -- lives in
 `plugins/<name>/` at the top of the repository:
 
     plugins/<name>/plugin.json    the manifest: title, about, default settings,
                                   secrets it needs, env variables its settings stand for
     plugins/<name>/__init__.py    the code, imported only when the plugin is enabled
+
+A manifest may say `"requires": ["discord"]`: the plugin counts as off while any of
+those is off, and `enable` refuses until they are on. `"default_on_when": "<setting>"`
+makes an unset plugin count as on when that setting has a value -- how a zipper that
+had Discord before it was a plugin keeps it.
 
 **Enabled means `plugins.<name>.enabled` in the settings file**, nothing else -- not
 whether its credentials happen to be present. A plugin that switches itself on or off
@@ -75,13 +80,31 @@ def manifests():
     return out
 
 
-def is_enabled(name, s=None):
-    m = manifests().get(name)
-    if not m:
+def _setting(s, path):
+    cur = s
+    for k in path.split('.'):
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(k)
+    return cur
+
+
+def is_enabled(name, s=None, _seen=()):
+    ms = manifests()
+    m = ms.get(name)
+    if not m or name in _seen:
         return False
     s = s if s is not None else settings.load()
-    v = (s.get('plugins') or {}).get(name, {}).get('enabled')
-    return bool(m.get('default_on')) if v is None else bool(v)
+    # Whether it was ever set, from the file itself: the merged settings fill every
+    # plugin's `enabled` in from its default, which hides "never set".
+    written = settings._legacy(settings.raw()) if settings.is_legacy() else settings.raw()
+    v = ((written.get('plugins') or {}).get(name) or {}).get('enabled')
+    if v is None:
+        on = bool(m.get('default_on')) or bool(m.get('default_on_when')
+                                               and _setting(s, m['default_on_when']))
+    else:
+        on = bool(v)
+    return on and all(is_enabled(r, s, _seen + (name,)) for r in m.get('requires') or [])
 
 
 def names():
@@ -379,7 +402,9 @@ def cmd_plugin(a):
     if action == 'list':
         s = settings.load()
         for n, m in ms.items():
-            print('  [%s] %-10s %s' % ('x' if is_enabled(n, s) else ' ', n, m.get('title', '')))
+            needs = m.get('requires') or []
+            print('  [%s] %-10s %s%s' % ('x' if is_enabled(n, s) else ' ', n, m.get('title', ''),
+                                         ('  (needs %s)' % ', '.join(needs)) if needs else ''))
         return 0
     name = a.name
     if name not in ms:
@@ -395,7 +420,17 @@ def cmd_plugin(a):
         for sec in m.get('secrets') or []:
             print('  secret   %s  (%s)' % (sec, 'set' if core.cfg(sec) else 'not set'))
         return 0
+    if action == 'enable':
+        off = [r for r in m.get('requires') or [] if not is_enabled(r)]
+        if off:
+            print('plugin: %s needs %s -- enable %s first' % (name, ', '.join(off),
+                                                                ' and '.join(off)))
+            return 1
     settings.put('plugins.%s.enabled' % name, action == 'enable')
+    if action == 'disable':
+        needed_by = [n for n, x in ms.items() if name in (x.get('requires') or [])]
+        if needed_by:
+            print('  also off now, because they need it: %s' % ', '.join(needed_by))
     print('%s %s. Restart for running services to pick it up (`zipper restart --when-idle`).'
           % (m.get('title', name), 'enabled' if action == 'enable' else 'disabled'))
     if action == 'enable':

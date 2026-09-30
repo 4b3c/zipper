@@ -5,8 +5,9 @@ Everything is chosen; now run it. From `{{HOME}}`:
     cd {{HOME}} && docker compose up -d --build
     docker compose logs --tail 20
 
-The first build takes a few minutes. In the logs, `[run] {{ID}} up: web, bot` means it is
-running; if it says it needs a Discord bot, `DISCORD_TOKEN` is not set.
+The first build takes a few minutes. In the logs, `[run] {{ID}} up: web` (with `bot` too,
+if Discord is on) means it is running; if it says `DISCORD_TOKEN` is not set, the Discord
+plugin is on without its token.
 
 If they chose their subscription, ask them to run `docker exec -it {{ID}} claude` in a
 terminal and `/login`, then `/exit`.

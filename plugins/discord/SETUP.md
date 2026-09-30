@@ -1,7 +1,12 @@
-## Discord (required)
+## Discord
 
-A zipper is reached through Discord: each thread in one channel is its own conversation
-with Claude. They need a Discord server of their own (any — a new one is fine) and a bot:
+Optional: without it they use the zipper from the dashboard, which is always there. With
+it they can reach the zipper from their phone, where each thread in one channel is its
+own conversation, and the evening digest can reach them. It takes a Discord server of
+their own and a bot they make, about five minutes. Ask whether they want it now; it can
+always be added later.
+
+If yes, they need a Discord server of their own (any -- a new one is fine) and a bot:
 
 1. discord.com/developers/applications → **New Application**, name it.
 2. **Bot** tab → **Reset Token** → copy it. On the same page turn on **Message Content
@@ -20,3 +25,4 @@ Then:
 Optionally a second channel for messages the zipper sends on its own (the digest, alerts),
 so they don't bury the conversations: `../zipper settings set discord.notify_channel <id>`.
 
+Then `../zipper plugin enable discord`.
