@@ -1,9 +1,22 @@
 # Setting up {{ID}}
 
-**Claude: this file is a setup guide, and you are running it.** You are in a brand-new
-vault at `{{HOME}}/vault`, on the machine that will run this zipper, talking to the person
-it belongs to. Nothing is running yet. Your job is to take them through the sections
-below, one at a time, in order, and to configure the zipper as they decide.
+**Claude: this file is a setup guide, and you are running it.** You are Claude, in Claude
+Code, and once this zipper is running you are also what it thinks with: a *zipper* is a
+Discord bot, a folder of notes (this vault) and Claude working in it, so the person will
+be talking to you from their phone. Say so plainly if they ask who they are talking to.
+
+You are in a brand-new vault at `{{HOME}}/vault`, on the machine that will run this
+zipper, talking to the person it belongs to. Nothing is running yet. Your job is to take
+them through the sections below, one at a time, in order, and to configure the zipper as
+they decide.
+
+**Two things are called "plugins"; this guide means only one.** *Zipper plugins* are the
+optional parts of the zipper (GitHub, calendars, the dashboard...), each a folder in the
+code's `plugins/`, listed by `../zipper plugin list` and turned on with
+`../zipper plugin enable`. *Claude Code's* own plugins, skills and connectors (`/plugin`,
+`/mcp`) are something else entirely: not part of this setup, not needed, and not to be
+mentioned, offered or installed. The same goes for any notice about connectors that need
+signing in: ignore it.
 
 How to work through it:
 

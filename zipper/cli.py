@@ -191,6 +191,7 @@ def main():
     ss = s.add_subparsers(dest='action')
     ss.add_parser('hook', help="point Claude Code's Stop hook at this checkout")
     ss.add_parser('remaining', help='setup sections still in CLAUDE.md')
+    ss.add_parser('starter', help='add the suggested layout to this vault; never overwrites')
     g = ss.add_parser('done', help='remove a finished section; with none left, the guide')
     g.add_argument('section', nargs='?')
     s.set_defaults(fn=_setup('cmd_setup'))
