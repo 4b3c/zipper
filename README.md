@@ -237,37 +237,40 @@ renders; it never concludes.** See `extension/README.md`.
 
 ## Running it
 
-You need three things: **Docker**, **Claude Code** (`claude`), and a **Discord server with a
-bot** (the setup explains how to make one) -- and a machine that stays on. A zipper on a
-laptop goes quiet whenever the lid closes: Discord goes unanswered and the scheduled passes
-are skipped. A small VPS or a computer at home that never sleeps is the real home for one;
-a laptop is for trying it out. On a server, the setup has you join it to Tailscale first.
-Then:
+You need **Docker**, a **Claude account**, and a machine that stays on. A zipper on a
+laptop goes quiet whenever the lid closes: scheduled passes are skipped and nothing
+answers. A small VPS or a computer at home that never sleeps is the real home for one; a
+laptop is for trying it out.
 
 ```bash
 git clone https://github.com/4b3c/Zipper && cd Zipper
-./bin/zipper init ~/zipper          # the vault, its config and backup, a compose file
-cd ~/zipper/vault && claude         # and say "set me up"
+./bin/zipper init ~/zippers/me --owner <your name>
 ```
 
-`init` makes one folder per zipper:
+`init` makes the zipper's folder, starts its container, and prints its dashboard's address
+and password. **On a server** (you're over SSH), the dashboard goes on the machine's
+Tailscale address so you open it from your own laptop or phone; if the machine isn't on
+Tailscale yet, `init` says how and stops before making anything. On your own computer it
+goes on `127.0.0.1` (`--local` forces that).
 
-- `vault/` — the notes (a git repository). Its first `CLAUDE.md` is a **setup guide**:
-  Claude walks through it with you — your name, what the notes are for, how the zipper's own Claude
-  logs in, then each plugin: what it does, whether you want it, and its settings — and
-  removes each section as it is done, until only the everyday rules are left.
-- `vault/settings.json` — the one settings file: plugins, their timers, the dashboard's cards.
+Open the dashboard, open a terminal in it, log in to Claude when it asks, and say **"set me
+up"**. Everything from there happens in that browser: Claude walks through who you are,
+what your notes are for, and each plugin -- Discord among them, all optional -- and removes
+each part of its setup guide as it is done, until only the everyday rules are left.
+
+The zipper's folder holds all of it:
+
+- `vault/` — the notes (a git repository) and `settings.json`, the one settings file.
 - `config/` — `.env`: secrets only, never in the vault.
 - `backup/` — a second copy of the vault, pushed on every commit.
+- `zipper/`, `home/` — its own checkout of the code, and its Claude login and transcripts.
 - `compose.yml`, and `./zipper`: this zipper's command on this machine.
 
-**Secrets never go through the chat.** `zipper secret NAME` prints a one-time link to a
-page with a single password field; the value goes straight into `.env` and Claude only
-learns that it was saved (`--tty` asks in a terminal instead).
+`docker compose down` and `rm -r` the folder, and nothing of it is left.
 
-The last step of the guide starts it (`docker compose up -d --build`) and has you send a
-first message on Discord. Plugins can be changed any time after: ask the zipper, or
-`zipper plugin enable|disable <name>`.
+**Secrets never go through the chat.** `zipper secret NAME` prints a one-time link to a
+page with a single password field, opened through the dashboard; the value goes straight
+into `.env` and Claude only learns that it was saved (`--tty` asks in a terminal instead).
 
 **Several people on one machine:** one `init` per person, each with its own `--id`, or
 `compose.example.yml` for all of them in one file. Zippers on a shared Docker network can

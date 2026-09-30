@@ -121,9 +121,10 @@ def env_get(key):
     return _env_file().get(key, '')
 
 
-def env_set(key, value):
+def env_set(key, value, path=None):
     """Set one line of `.env`, keeping every other line (and comment) as it was.
-    Written 600: it is the file of secrets."""
+    Written 600: it is the file of secrets. `path`: another zipper's, for init."""
+    ENV_FILE = path or globals()['ENV_FILE']
     lines = []
     if os.path.exists(ENV_FILE):
         with open(ENV_FILE, encoding='utf-8') as fh:
@@ -190,10 +191,10 @@ def _backup_default():
 SETUP_DIR = os.path.join(ROOT, 'template', 'setup')
 HOME_TEMPLATE = os.path.join(ROOT, 'template', 'home')
 # The guide's order. Plugins not named here follow, alphabetically.
-FIRST = ('where', 'about', 'notes', 'claude')
+FIRST = ('about', 'notes')
 PLUGIN_ORDER = ('discord', 'dashboard', 'backup', 'github', 'calendar', 'canvas', 'hours', 'passes',
                 'digest', 'upstream', 'peers', 'host')
-LAST = ('start', 'finish')
+LAST = ('finish',)
 GUIDE_OPEN, GUIDE_CLOSE = '<!-- setup -->', '<!-- /setup -->'
 
 
@@ -286,15 +287,18 @@ def host_timezone():
     return 'UTC'
 
 
-def init_home(home, owner='', zid='zipper-0', starter=False):
+def init_home(home, owner='', zid='zipper-0', starter=False, addr='127.0.0.1', port=8899,
+              cred=''):
     """Stand up a whole zipper in `home`: the vault (with the setup guide as its
     CLAUDE.md), its config, a backup, a compose file, and a `zipper` command for this
-    machine. Returns what it made."""
+    machine. The dashboard is published on `addr:port`, behind `cred` (user:password)
+    when given. Returns what it made."""
     home = os.path.abspath(os.path.expanduser(home))
     if os.path.exists(os.path.join(home, 'vault', 'settings.json')):
         raise RuntimeError('%s already holds a zipper -- leaving it alone' % home)
     subs = {'{{HOME}}': home, '{{ID}}': zid, '{{CODE}}': ROOT,
-            '{{OWNER}}': owner or 'the operator', '{{TZ}}': host_timezone()}
+            '{{OWNER}}': owner or 'the operator', '{{TZ}}': host_timezone(),
+            '{{ADDR}}': addr, '{{PORT}}': str(port)}
     os.makedirs(os.path.join(home, 'config'), exist_ok=True)
     os.makedirs(os.path.join(home, 'backup'), exist_ok=True)
     envf = os.path.join(home, 'config', '.env')
@@ -302,6 +306,9 @@ def init_home(home, owner='', zid='zipper-0', starter=False):
         fd = os.open(envf, os.O_WRONLY | os.O_CREAT, 0o600)
         with os.fdopen(fd, 'w') as fh:
             fh.write('# Secrets only. Written by `zipper secret NAME`; never opened by Claude.\n')
+    if cred:
+        env_set('ZIPPER_TERM_CRED', cred, envf)
+    env_set('ZIPPER_DASHBOARD_URL', 'http://%s:%d' % (addr, port), envf)
     for f in os.listdir(HOME_TEMPLATE):
         with open(os.path.join(HOME_TEMPLATE, f), encoding='utf-8') as fh:
             t = fh.read()
@@ -323,22 +330,45 @@ def init_home(home, owner='', zid='zipper-0', starter=False):
     return home
 
 
+def default_id(path):
+    """A zipper is named after its folder unless told otherwise: `init /opt/zippers/quinn`
+    makes `quinn`. Two zippers both defaulting to `zipper-0` is a container-name clash."""
+    base = re.sub(r'[^a-z0-9-]+', '-', os.path.basename(os.path.abspath(path)).lower()).strip('-')
+    return base or 'zipper-0'
+
+
 def cmd_init(a):
-    if not a.vault_only:
-        try:
-            home = init_home(a.path, owner=a.owner or '', zid=a.id or 'zipper-0',
-                             starter=a.starter)
-        except RuntimeError as e:
-            print('init: %s' % e); return 1
-        print('Made a zipper in %s:' % home)
-        print('  vault/    the notes, with a setup guide as its CLAUDE.md')
-        print('  config/   settings and secrets    backup/   the vault\'s second copy')
-        print('  compose.yml, and ./zipper -- this zipper\'s command on this machine')
-        print()
-        print('Next:  cd %s/vault && claude' % home)
-        print('       and say "set me up".')
-        return 0
-    return cmd_init_vault(a)
+    if a.vault_only:
+        return cmd_init_vault(a)
+    from . import install
+    addr = a.address or '127.0.0.1'
+    if not a.address and install.remote() and not a.local:
+        addr = install.tailnet_address()
+        if not addr:
+            print(install.TAILSCALE_FIRST)
+            return 1
+    try:
+        port = install.free_port(addr)
+        user, pw = 'zipper', install.password()
+        home = init_home(a.path, owner=a.owner or '', zid=a.id or default_id(a.path),
+                         starter=a.starter, addr=addr, port=port, cred='%s:%s' % (user, pw))
+    except RuntimeError as e:
+        print('init: %s' % e); return 1
+    print('Made a zipper in %s (vault, config, backup, compose.yml).' % home)
+    if not a.no_start:
+        ok, msg = install.start(home)
+        if not ok:
+            print(msg); return 1
+    url = 'http://%s:%d' % (addr, port)
+    print()
+    print('Open its dashboard%s:' % (' from your laptop or phone (on Tailscale)'
+                                    if addr.startswith('100.') else ''))
+    print('    %s' % url)
+    print('    user: %s   password: %s   (shown once; it is in config/.env)' % (user, pw))
+    print()
+    print('Then open a terminal on the dashboard, log in to Claude when it asks, and say')
+    print('"set me up".')
+    return 0
 
 
 def cmd_init_vault(a):

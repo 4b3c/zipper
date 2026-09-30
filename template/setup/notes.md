@@ -13,7 +13,7 @@ sure. Common ones:
 - **Decisions** -- what they chose and why, so they can revisit it
 - School classes, work, money, health, reading... whatever their life actually has in it
 
-If they want a head start, `../zipper setup starter` adds a suggested layout -- folders for
+If they want a head start, `zipper setup starter` adds a suggested layout -- folders for
 the above, a task list, a home page and a schema note -- without touching anything that is
 already there. Either way, write two or three lines on what they said into *This vault's
 layout* in the rules below, so every later conversation knows what the notes are for.

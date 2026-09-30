@@ -180,6 +180,10 @@ def main():
 
     s = sub.add_parser('init', help='stand up a zipper in a folder: vault, config, backup, compose')
     s.add_argument('path'); s.add_argument('--owner'); s.add_argument('--id')
+    s.add_argument('--local', action='store_true',
+                   help='this is your own computer: the dashboard on 127.0.0.1, even over SSH')
+    s.add_argument('--address', help='publish the dashboard on this address instead')
+    s.add_argument('--no-start', action='store_true', help='make the folder, start nothing')
     s.add_argument('--vault-only', action='store_true',
                    help='only make a vault at PATH (what a container or a test wants)')
     s.add_argument('--backup', help='a bare git repo, outside the vault, pushed on every commit')

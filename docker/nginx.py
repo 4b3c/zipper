@@ -52,6 +52,9 @@ server {
         proxy_buffering off;
         proxy_read_timeout 1d;
     }
+    location ~ ^/s/(886[0-9])/([A-Za-z0-9_-]+)$ {
+        proxy_pass http://127.0.0.1:$1/$2;
+    }
     location ~ ^/(api/inputs/|api/canvas|api/hours|bookmarklet) {
         auth_basic off;
         proxy_pass http://127.0.0.1:%(web)s;

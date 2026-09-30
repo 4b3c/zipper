@@ -19,10 +19,10 @@ If yes, they need a Discord server of their own (any -- a new one is fine) and a
 
 Then:
 
-    ../zipper secret DISCORD_TOKEN          # they paste the token on the page
-    ../zipper settings set discord.channel <channel id>
+    zipper secret DISCORD_TOKEN          # they paste the token on the page
+    zipper settings set discord.channel <channel id>
 
 Optionally a second channel for messages the zipper sends on its own (the digest, alerts),
-so they don't bury the conversations: `../zipper settings set discord.notify_channel <id>`.
+so they don't bury the conversations: `zipper settings set discord.notify_channel <id>`.
 
-Then `../zipper plugin enable discord`.
+Then `zipper plugin enable discord`.
