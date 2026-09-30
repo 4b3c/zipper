@@ -76,6 +76,52 @@ class HostTiers(unittest.TestCase):
         self.assertIn('not yours', hostd._approve(st, 'zipper-1', ['1', code])['error'])
         self.assertIn(1, st.pending)
 
+    def test_routine_commands_match_exactly(self):
+        cfg = dict(self.cfg, routine_commands=['systemctl restart zipper-bridge'])
+        self.assertEqual(hostd.classify(cfg, 'zipper-0', 'run',
+                                        ['systemctl', 'restart', 'zipper-bridge'])[0], 'routine')
+        self.assertEqual(hostd.classify(cfg, 'zipper-0', 'run',
+                                        ['systemctl restart zipper-bridge; rm -rf /x'])[0], 'advanced')
+
+
+class HostWindow(unittest.TestCase):
+    secret = base64.b32encode(b'D' * 20).decode()
+
+    def setUp(self):
+        hostd.LOG = os.path.join(TMP, 'hostd.log')
+        self.st = hostd.State(dict(hostd.DEFAULT_CONFIG, totp_secret=self.secret, window_minutes=15,
+                                   zippers={'zipper-0': {'tiers': ['advanced']},
+                                            'zipper-1': {'tiers': ['advanced']}}))
+
+    def ask(self, zid='zipper-0', why='check the box', cmd='true'):
+        return hostd.handle(self.st, zid, {'verb': 'run', 'args': [cmd], 'why': why})
+
+    def test_run_needs_a_reason(self):
+        self.assertIn('--why', self.ask(why='')['error'])
+        self.assertEqual(self.st.pending, {})
+
+    def test_an_approval_opens_a_window_for_that_zipper_only(self):
+        rid = self.ask()['pending']
+        res = hostd._approve(self.st, 'zipper-0', [str(rid), hostd.totp(self.secret)[0]])
+        self.assertTrue(res['ok'])
+        self.assertGreater(self.st.window_left('zipper-0'), 14 * 60)
+        now = self.ask(cmd='echo inside')
+        self.assertTrue(now['ok'])
+        self.assertNotIn('pending', now)
+        self.assertIn('inside', now['output'])
+        self.assertIn('pending', self.ask(zid='zipper-1'))
+
+    def test_the_window_closes(self):
+        self.st.windows['zipper-0'] = time.time() - 1
+        self.assertIn('pending', self.ask())
+
+    def test_no_window_when_turned_off(self):
+        self.st.cfg['window_minutes'] = 0
+        rid = self.ask()['pending']
+        hostd._approve(self.st, 'zipper-0', [str(rid), hostd.totp(self.secret)[0]])
+        self.assertEqual(self.st.window_left('zipper-0'), 0)
+        self.assertIn('pending', self.ask())
+
 
 class Schedule(unittest.TestCase):
     JOBS = [('pass', '09:00'), ('pass', '21:00'), ('digest', '19:00')]
