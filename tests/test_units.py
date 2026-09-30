@@ -371,8 +371,8 @@ class Setup(unittest.TestCase):
         left = setup.remaining(g)
         for name in plugins.manifests():
             self.assertIn(name, left)
-        self.assertEqual(left[:4], ['where', 'about', 'notes', 'claude'])
-        self.assertEqual(left[-2:], ['start', 'finish'])
+        self.assertEqual(left[:3], ['about', 'notes', 'discord'])
+        self.assertEqual(left[-1:], ['finish'])
         self.assertNotIn('{{', g)
 
     def test_sections_come_out_one_at_a_time_then_the_guide(self):
@@ -408,10 +408,61 @@ class Setup(unittest.TestCase):
         setup.init_home(home, owner='Sam', zid='zipper-7')
         with open(os.path.join(home, 'vault/CLAUDE.md'), encoding='utf-8') as fh:
             text = fh.read()
-        self.assertEqual(setup.remaining(text)[:4], ['where', 'about', 'notes', 'claude'])
+        self.assertEqual(setup.remaining(text)[:2], ['about', 'notes'])
         self.assertIn('Two things are called "plugins"', text)
         with open(os.path.join(home, 'vault/settings.json'), encoding='utf-8') as fh:
             self.assertTrue(json.load(fh).get('timezone'))
+
+    def test_init_publishes_the_dashboard_with_a_password(self):
+        home = os.path.join(TMP, 'home-dash')
+        setup.init_home(home, zid='zipper-6', addr='100.64.0.9', port=8905, cred='zipper:pw')
+        with open(os.path.join(home, 'compose.yml'), encoding='utf-8') as fh:
+            self.assertIn('"100.64.0.9:8905:8899"', fh.read())
+        with open(os.path.join(home, 'config', '.env'), encoding='utf-8') as fh:
+            env = fh.read()
+        self.assertIn('ZIPPER_TERM_CRED=zipper:pw', env)
+        self.assertIn('ZIPPER_DASHBOARD_URL=http://100.64.0.9:8905', env)
+
+    def test_over_ssh_without_tailscale_init_makes_nothing(self):
+        from zipper import install
+        home = os.path.join(TMP, 'home-ssh')
+        saved = install.remote, install.tailnet_address
+        install.remote, install.tailnet_address = (lambda: True), (lambda: '')
+        try:
+            class A:
+                path, owner, id, starter = home, 'Sam', 'zipper-4', False
+                vault_only = local = no_start = False
+                address = None
+            self.assertEqual(setup.cmd_init(A), 1)
+        finally:
+            install.remote, install.tailnet_address = saved
+        self.assertFalse(os.path.exists(home))
+
+    def test_a_zipper_is_named_after_its_folder(self):
+        self.assertEqual(setup.default_id('/opt/zippers/zipper-1'), 'zipper-1')
+        self.assertEqual(setup.default_id('~/Quinn Z'), 'quinn-z')
+
+    def test_secret_links_go_through_the_dashboard_in_a_container(self):
+        from zipper import secret
+        self.assertEqual(secret.dashboard_url(), '')
+        setup.env_set('ZIPPER_DASHBOARD_URL', 'http://100.64.0.9:8905/')
+        os.environ['ZIPPER_NGINX'] = '1'
+        try:
+            self.assertEqual(secret.dashboard_url(), 'http://100.64.0.9:8905')
+        finally:
+            del os.environ['ZIPPER_NGINX']
+
+    def test_free_port_skips_a_taken_one(self):
+        import socket
+        from zipper import install
+        s = socket.socket()
+        s.bind(('127.0.0.1', 0))
+        s.listen()
+        taken = s.getsockname()[1]
+        try:
+            self.assertNotEqual(install.free_port('127.0.0.1', taken), taken)
+        finally:
+            s.close()
 
     def test_starter_never_overwrites(self):
         vault = os.path.join(TMP, 'starter-vault')

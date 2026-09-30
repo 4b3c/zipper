@@ -13,7 +13,10 @@ and it goes straight into `.env`. Claude only ever learns that it was saved.
 
 The page is deliberately narrow: one random, unguessable path; one submission, then it
 shuts down; ten minutes, then it shuts down anyway; loopback only unless `--host` says
-otherwise (a tailnet address, for a machine you reach remotely). It writes through
+otherwise. **In a container with a dashboard** (`ZIPPER_DASHBOARD_URL` set by `zipper
+init`) the page takes a port in 8860-8869 and the link goes through the dashboard,
+`<dashboard>/s/<port>/<token>`, behind its password: the person opens it in the browser
+they are already using, wherever that is (docker/nginx.py). It writes through
 `setup.env_set`, the same writer as everything else, so `.env` stays 600.
 """
 import getpass, html, os, secrets, subprocess, sys, threading, time
@@ -97,15 +100,48 @@ def _free_port(host):
     return port
 
 
+PROXY_PORTS = range(8860, 8870)
+
+
+def _proxy_port():
+    import socket
+    for port in PROXY_PORTS:
+        s = socket.socket()
+        try:
+            s.bind(('127.0.0.1', port))
+            return port
+        except OSError:
+            continue
+        finally:
+            s.close()
+    return None
+
+
+def dashboard_url():
+    """The dashboard's own address when secret pages can go through it, else ''."""
+    if not os.environ.get('ZIPPER_NGINX'):
+        return ''
+    return (core.cfg('ZIPPER_DASHBOARD_URL') or '').rstrip('/')
+
+
 def start_page(name, host='127.0.0.1'):
     """Start the page in a detached process; return its URL at once."""
     token = secrets.token_urlsafe(24)
+    dash = dashboard_url() if host == '127.0.0.1' else ''
+    port = _proxy_port() if dash else None
+    if port:
+        _spawn(name, '127.0.0.1', port, token)
+        return '%s/s/%d/%s' % (dash, port, token)
     port = _free_port(host)
+    _spawn(name, host, port, token)
+    return 'http://%s:%d/%s' % (host, port, token)
+
+
+def _spawn(name, host, port, token):
     subprocess.Popen([sys.executable, '-m', 'zipper', '_secret_page', name, host, str(port), token],
                      start_new_session=True, stdin=subprocess.DEVNULL,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(0.3)
-    return 'http://%s:%d/%s' % (host, port, token)
 
 
 def cmd_secret(a):
@@ -128,7 +164,7 @@ def cmd_secret(a):
     url = start_page(name, a.host)
     print('Open this link and paste %s there (works once, for ten minutes):' % name)
     print('  %s' % url)
-    if a.host in ('127.0.0.1', 'localhost'):
+    if a.host in ('127.0.0.1', 'localhost') and '/s/' not in url:
         print('On another computer? Forward the port first: ssh -L %s:127.0.0.1:%s <this machine>,'
               % (url.split(':')[2].split('/')[0], url.split(':')[2].split('/')[0]))
         print('or run `zipper secret %s --tty` in a terminal on this machine.' % name)

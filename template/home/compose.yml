@@ -1,4 +1,5 @@
 # {{ID}}: one zipper. From this folder: docker compose up -d --build
+# Its dashboard: http://{{ADDR}}:{{PORT}}
 #
 #   vault/    the notes, settings.json and the dashboard's cards -- a git repository
 #   config/   .env: secrets only, never in the vault
@@ -26,6 +27,6 @@ services:
       - ./backup:/zipper/backup
       - ./zipper:/zipper/code
       - ./home:/zipper/home
-    # The dashboard (plugin), on this machine only. To reach it from elsewhere, publish
-    # it on a private address (a tailnet IP), never 0.0.0.0.
-    ports: ["127.0.0.1:8899:8899"]
+    # The dashboard: on this machine's Tailscale address (a server) or 127.0.0.1 (your own
+    # computer), behind the password in config/.env. Never 0.0.0.0.
+    ports: ["{{ADDR}}:{{PORT}}:8899"]
