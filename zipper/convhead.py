@@ -59,14 +59,15 @@ BASE_FLAGS = ['-p', '--verbose',
               '--output-format', 'stream-json',
               '--replay-user-messages']
 
-# How long a turn may go *silent*. A turn here does real work -- tools, file
-# edits, a build -- so this bounds a hang, not a long reply: every event read
-# pushes the deadline out again. It was once a limit on the whole turn, and a
-# fifteen-minute build was killed mid-push with its reply unsent -- the Stop hook
-# runs inside the process, so a killed turn forwards nothing.
-TURN_TIMEOUT = float(os.environ.get('ZIPPER_HEAD_TIMEOUT', 900))
-# A ceiling on the whole turn regardless, so a loop that keeps talking still ends.
-TURN_MAX = float(os.environ.get('ZIPPER_HEAD_MAX', 7200))
+# **No turn has a time limit.** A turn does real work, and one tool call can run
+# for hours -- a build, a training run, a long fetch. There was a limit (900s on
+# the whole turn) and it killed a build mid-push: the Stop hook runs inside the
+# process, so the reply died with it, unsent and unlogged. Nor is there an idle
+# limit, since a tool that prints nothing for an hour is still working. A turn
+# ends when Claude ends it; a genuinely wedged one is closed by hand with
+# `zipper conversations --close <thread>`. Set this only to bound tests.
+_t = os.environ.get('ZIPPER_HEAD_TIMEOUT', '').strip()
+TURN_TIMEOUT = float(_t) if _t else None
 
 
 def _claude():
@@ -170,7 +171,7 @@ def _lock_path(thread_id):
 
 
 @contextlib.contextmanager
-def _turn_lock(thread_id, timeout=TURN_TIMEOUT):
+def _turn_lock(thread_id, timeout=TURN_TIMEOUT, on_queue=None):
     """One turn at a time per conversation. A message arriving mid-turn waits.
 
     Two `--resume` processes against one session id would interleave writes to
@@ -193,14 +194,17 @@ def _turn_lock(thread_id, timeout=TURN_TIMEOUT):
     """
     os.makedirs(INBOX, exist_ok=True)
     fh = open(_lock_path(thread_id), 'a+')
-    waited, end = 0.0, time.time() + timeout
+    waited = 0.0
+    end = None if timeout is None else time.time() + timeout
     try:
         while True:
             try:
                 fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
             except OSError:
-                if time.time() >= end:
+                if waited == 0.0 and on_queue:
+                    on_queue()          # safely waiting: that is a delivery answer
+                if end is not None and time.time() >= end:
                     raise TimeoutError('another turn is still running')
                 time.sleep(0.25)
                 waited += 0.25
@@ -250,11 +254,10 @@ def _events(proc, timeout):
     output it could not read. The distinction between those two is precisely
     what the pane could never make.
     """
-    start = time.time()
-    end = start + timeout
+    end = None if timeout is None else time.time() + timeout
     buf = b''
     while True:
-        if time.time() >= end or time.time() - start >= max(TURN_MAX, timeout):
+        if end is not None and time.time() >= end:
             return
         if not select.select([proc.stdout], [], [], 0.5)[0]:
             if proc.poll() is not None:
@@ -263,7 +266,6 @@ def _events(proc, timeout):
         chunk = os.read(proc.stdout.fileno(), 65536)
         if not chunk:
             break
-        end = time.time() + timeout         # alive: the idle clock restarts
         buf += chunk
         while b'\n' in buf:
             raw, buf = buf.split(b'\n', 1)
@@ -275,7 +277,7 @@ def _events(proc, timeout):
                 yield None
 
 
-def _run_turn(thread_id, text, timeout, out, on_echo=None):
+def _run_turn(thread_id, text, timeout, out, on_echo=None, on_queue=None):
     """Hand the message over and read the turn to its end. Fills `out` in place.
 
     Separated from `deliver` so the two questions can be answered at different
@@ -285,7 +287,7 @@ def _run_turn(thread_id, text, timeout, out, on_echo=None):
     mode = os.environ.get('ZIPPER_PERMISSION_MODE', 'auto')
 
     try:
-        with _turn_lock(thread_id, timeout) as waited:
+        with _turn_lock(thread_id, timeout, on_queue=on_queue) as waited:
             out['queued_for'] = waited
             # **Decided inside the lock, and retried on collision.** Reading
             # this before waiting is what produced the 12:45 503 on
@@ -323,19 +325,6 @@ def _run_turn(thread_id, text, timeout, out, on_echo=None):
             'acknowledged but the turn did not complete%s'
             % (' -- %s' % err[:300] if err else ''))
     return out
-
-
-def _say_cut_off(thread_id):
-    """Tell the thread its turn was killed. The Stop hook died with the process,
-    so without this the operator waits on a reply that is never coming."""
-    try:
-        from . import chat
-        chat.discord_send('That turn was stopped before it finished -- no output '
-                          'for %d minutes, or %d in total. Work done up to then is on disk; '
-                          'say "continue" to pick it up.'
-                          % (TURN_TIMEOUT // 60, TURN_MAX // 60), thread_id=thread_id)
-    except Exception as e:
-        print('convhead: could not report a cut-off turn: %s' % e)
 
 
 def _attempt(cmd, thread_id, text, timeout, out, on_echo=None):
@@ -392,7 +381,6 @@ def _attempt(cmd, thread_id, text, timeout, out, on_echo=None):
         if proc.poll() is None:
             proc.kill()
             proc.wait(timeout=5)
-            _say_cut_off(thread_id)
         err = (proc.stderr.read() or b'').decode('utf-8', 'replace').strip()
         for h in (proc.stdout, proc.stderr):
             with contextlib.suppress(OSError):
@@ -456,12 +444,22 @@ def deliver(thread_id, text, wait='turn', timeout=None):
     """
     out = {'ok': False, 'error': '', 'echoed': False, 'recorded': False,
            'turn_ok': False, 'reply': '', 'session_id': '', 'resumed': False,
-           'queued_for': 0.0}
+           'queued_for': 0.0, 'queued': False}
     echoed, done = threading.Event(), threading.Event()
+
+    def queued():
+        # Behind a running turn, which may last hours. The message is held, in
+        # order, and will be delivered when the conversation is free -- so for
+        # the Discord door that *is* the answer. Waiting for an echo here used to
+        # time out, report a failure and clear the delivery fingerprint, and the
+        # reply to a message that did run later was never forwarded.
+        out['queued'] = True
+        echoed.set()
 
     def run():
         try:
-            _run_turn(thread_id, text, timeout, out, on_echo=echoed.set)
+            _run_turn(thread_id, text, timeout, out, on_echo=echoed.set,
+                      on_queue=queued)
         except Exception as e:                      # a thread dying silently is
             out['error'] = out['error'] or repr(e)  # how a message goes missing
         finally:
@@ -480,7 +478,7 @@ def deliver(thread_id, text, wait='turn', timeout=None):
 
     # wait='echo': the handover, bounded independently of the turn.
     echoed.wait(min(ECHO_TIMEOUT, timeout or ECHO_TIMEOUT))
-    out['ok'] = out['echoed']
+    out['ok'] = out['echoed'] or out['queued']
     if not out['ok'] and not out['error']:
         out['error'] = 'the session did not acknowledge the message in %gs' % ECHO_TIMEOUT
     return out
