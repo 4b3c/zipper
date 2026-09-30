@@ -188,6 +188,20 @@ def update(force=False, check_only=False, log=print):
         log('update: ROLLED BACK to %s -- the new code did not pass: %s' % (head[:8], problem))
         _notify('Update to %s was rolled back: %s' % (up[:8], problem))
         return 1
+    if supervise.turns_running():
+        # This update was started from inside a turn (the scheduler waits for
+        # quiet). Restarting now would cut that turn off, so the restart, the
+        # health check and any rollback run once it has finished.
+        supervise.when_idle(['update', '--finish', head, up])
+        log('update: at %s on disk; restart and health check will run when the current '
+            'turn finishes' % up[:8])
+        return 0
+    return finish(head, up, log)
+
+
+def finish(head, up, log=print):
+    """Restart onto `up`, check it, and roll back to `head` if it does not come up."""
+    from . import supervise
     supervise.restart()
     time.sleep(3)
     if not healthy():
@@ -240,6 +254,8 @@ def cmd_code(a):
 
 def cmd_update(a):
     try:
+        if a.finish:
+            return finish(*a.finish)
         return update(force=a.force, check_only=a.check)
     except RuntimeError as e:
         print('update: %s' % e)

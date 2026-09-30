@@ -170,7 +170,12 @@ def main():
     s.add_argument('--no-schedule', action='store_true', help='run the services only')
     s.set_defaults(fn=_mod('supervise', 'cmd_run'))
     s = sub.add_parser('restart', help='reload this zipper\'s code; conversations survive')
+    s.add_argument('--when-idle', action='store_true',
+                   help='wait until no turn is running (use from inside a conversation)')
     s.set_defaults(fn=_mod('supervise', 'cmd_restart'))
+    s = sub.add_parser('_when_idle')    # internal: the detached waiter
+    s.add_argument('argv', nargs=argparse.REMAINDER)
+    s.set_defaults(fn=_mod('supervise', 'cmd_when_idle'))
 
     s = sub.add_parser('host', help='ask the host daemon: status, services, approved root commands')
     s.add_argument('verb'); s.add_argument('args', nargs=argparse.REMAINDER)
@@ -189,6 +194,7 @@ def main():
     s = sub.add_parser('update', help='take merged changes: pull, check, restart, or roll back')
     s.add_argument('--check', action='store_true', help='only say what is new')
     s.add_argument('--force', action='store_true', help='even with conversations live')
+    s.add_argument('--finish', nargs=2, metavar=('OLD', 'NEW'), help=argparse.SUPPRESS)
     s.set_defaults(fn=_mod('code', 'cmd_update'))
 
     s = sub.add_parser('msg', help='send a message to another zipper')

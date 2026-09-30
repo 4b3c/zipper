@@ -205,8 +205,48 @@ def supervisor_pid():
         return None
 
 
-def restart():
-    """Reload this zipper's code. True if something was restarted."""
+def turns_running():
+    """Is any headless turn in progress? Each holds its thread's lock for the
+    whole turn (zipper.convhead), including the one that may be asking."""
+    import glob
+    from . import convhead
+    for p in glob.glob(os.path.join(core.INBOX, 'head-*.lock')):
+        if convhead.turn_running(os.path.basename(p)[len('head-'):-len('.lock')]):
+            return True
+    return False
+
+
+def when_idle(argv):
+    """Run `zipper <argv>` once no turn is running, from a detached process.
+
+    **A restart under a running turn cuts it off.** The web process reads each
+    headless turn's output; restart it and the turn loses its reader mid-reply.
+    Under systemd that happened to the very turn that scheduled a restart with
+    a timer. The waiter polls the turn locks, and a turn's lock is held until
+    its process -- Stop hook and all -- has exited, so the reply is out first.
+    Detached with its own session, so it outlives the turn that started it.
+    """
+    subprocess.Popen([sys.executable, '-m', 'zipper', '_when_idle'] + list(argv), cwd=ROOT,
+                     start_new_session=True, stdin=subprocess.DEVNULL,
+                     stdout=open(os.path.join(core.INBOX, 'when-idle.log'), 'a'),
+                     stderr=subprocess.STDOUT)
+
+
+def cmd_when_idle(a):
+    while turns_running():
+        time.sleep(5)
+    print('[when-idle] %s  zipper %s' % (datetime.datetime.now().isoformat(timespec='seconds'),
+                                         ' '.join(a.argv)), flush=True)
+    return subprocess.run([sys.executable, '-m', 'zipper'] + a.argv, cwd=ROOT).returncode
+
+
+def restart(idle=False):
+    """Reload this zipper's code. True if something was (or will be) restarted.
+    `idle`: wait until no turn is running -- use it from inside a conversation."""
+    if idle and turns_running():
+        when_idle(['restart'])
+        print('restart: will happen when the running turn(s) finish')
+        return True
     pid = supervisor_pid()
     if pid:
         os.kill(pid, signal.SIGHUP)
@@ -222,4 +262,4 @@ def restart():
 
 
 def cmd_restart(a):
-    return 0 if restart() else 1
+    return 0 if restart(idle=getattr(a, 'when_idle', False)) else 1
