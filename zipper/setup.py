@@ -23,35 +23,43 @@ import getpass, importlib, json, os, re, shutil, subprocess, sys
 from . import settings
 
 ROOT = settings.ROOT
-TEMPLATE = os.path.join(ROOT, 'template', 'vault')
+TEMPLATE = os.path.join(ROOT, 'template', 'vault')      # always: CLAUDE.md, .gitignore
+STARTER = os.path.join(ROOT, 'template', 'starter')     # optional: a suggested layout
 from .core import ENV_FILE
 HOOK = os.path.join(ROOT, 'hooks', 'forward_reply.py')
 
-# The vault's directories. `core` expects them; git does not keep empty ones.
-DIRS = ('Projects', 'Areas', 'Topics', 'Life', 'People', 'Classes', 'Tasks',
-        'Decisions', 'Events', 'Log', 'Metrics', 'Meta', 'Inbox')
+# The starter layout's folders. None is required: the engine makes Inbox/, Meta/,
+# Log/ and Metrics/ when it first writes to them, and a vault is otherwise
+# whatever folders its owner wants.
+STARTER_DIRS = ('Projects', 'Areas', 'Topics', 'People', 'Tasks', 'Decisions', 'Events')
 
 
 # ---------------------------------------------------------------- the vault
 
-def init_vault(path, owner='', zid='', git_name='', git_email='', backup=''):
-    """Create a vault at `path` from the template. Refuses a non-empty directory
-    that is not already a vault: overwriting someone's notes is the one mistake
-    here that cannot be undone. Returns the list of files written."""
+def init_vault(path, owner='', zid='', git_name='', git_email='', backup='', starter=False):
+    """Make `path` a vault: a git repository with a CLAUDE.md and a .gitignore.
+
+    That is all a vault needs. `starter` adds a suggested layout (folders, a
+    schema, Dataview pages for Obsidian) that is just that -- a suggestion.
+    Refuses a non-empty directory that is not already a vault: overwriting
+    someone's notes is the one mistake here that cannot be undone. Returns the
+    files written."""
     path = os.path.abspath(os.path.expanduser(path))
     if os.path.exists(os.path.join(path, 'CLAUDE.md')):
         raise RuntimeError('%s already holds a vault -- leaving it alone' % path)
     if os.path.isdir(path) and _has_notes(path):
         raise RuntimeError('%s is not empty and is not a vault' % path)
     os.makedirs(path, exist_ok=True)
-    for d in DIRS:
-        os.makedirs(os.path.join(path, d), exist_ok=True)
     subs = {'{{OWNER}}': owner or 'the operator', '{{ID}}': zid or settings.zipper_id()}
     written = []
-    for base, _dirs, files in os.walk(TEMPLATE):
+    sources = [TEMPLATE] + ([STARTER] if starter else [])
+    if starter:
+        for d in STARTER_DIRS:
+            os.makedirs(os.path.join(path, d), exist_ok=True)
+    for src_root, base, _dirs, files in ((r,) + w for r in sources for w in os.walk(r)):
         for f in files:
             src = os.path.join(base, f)
-            rel = os.path.relpath(src, TEMPLATE)
+            rel = os.path.relpath(src, src_root)
             dst = os.path.join(path, rel)
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             with open(src, encoding='utf-8') as fh:
@@ -61,10 +69,6 @@ def init_vault(path, owner='', zid='', git_name='', git_email='', backup=''):
             with open(dst, 'w', encoding='utf-8') as fh:
                 fh.write(text)
             written.append(rel)
-    csv = os.path.join(path, 'Metrics', 'metrics.csv')
-    if not os.path.exists(csv):
-        with open(csv, 'w', encoding='utf-8') as fh:
-            fh.write('date,key,value,note,source\n')
     # A local identity, always: services run with no HOME, and a commit that
     # falls back to root@hostname is how a history stops meaning anything.
     if not os.path.isdir(os.path.join(path, '.git')):
@@ -265,8 +269,10 @@ def wizard(w, only=None):
                            '(blank for none)', default=_backup_default()
                            or os.path.join(os.path.dirname(path.rstrip('/')), 'vault-backup.git'))
                 try:
+                    start = w.yes('Add the starter layout (Projects/, Tasks/, a schema, '
+                                  'Obsidian pages)? It is only a suggestion', default=False)
                     init_vault(path, owner=settings.get('owner'), zid=settings.get('id'),
-                               backup=bk)
+                               backup=bk, starter=start)
                     w.say('created %s%s' % (path, ', backed up to %s' % bk if bk else ''))
                 except RuntimeError as e:
                     w.say(str(e))
@@ -337,7 +343,8 @@ def _host_tz():
 def cmd_init(a):
     try:
         files = init_vault(a.path, owner=a.owner or settings.get('owner'),
-                           zid=a.id or settings.zipper_id(), backup=a.backup or _backup_default())
+                           zid=a.id or settings.zipper_id(), backup=a.backup or _backup_default(),
+                           starter=a.starter)
     except RuntimeError as e:
         print('init: %s' % e); return 1
     print('vault: %s (%d files)' % (os.path.abspath(a.path), len(files)))

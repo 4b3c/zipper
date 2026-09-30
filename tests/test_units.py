@@ -137,6 +137,17 @@ class InitVault(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             setup.init_vault(path)
 
+    def test_a_vault_is_just_git_and_claude_md(self):
+        path = os.path.join(TMP, 'v3')
+        setup.init_vault(path)
+        self.assertEqual(sorted(os.listdir(path)), ['.git', '.gitignore', 'CLAUDE.md'])
+
+    def test_starter_is_optional_extra(self):
+        path = os.path.join(TMP, 'v4')
+        setup.init_vault(path, starter=True)
+        for rel in ('CLAUDE.md', 'Tasks/Main.md', 'Meta/Schema.md', 'Projects'):
+            self.assertTrue(os.path.exists(os.path.join(path, rel)), rel)
+
     def test_engine_output_is_not_notes(self):
         path = os.path.join(TMP, 'v2')
         os.makedirs(os.path.join(path, 'Meta'))
@@ -175,10 +186,11 @@ class Backup(unittest.TestCase):
         vault, bare = os.path.join(TMP, 'b3'), os.path.join(TMP, 'b3.git')
         setup.init_vault(vault, backup=bare)
         self.use(vault)
-        with open(os.path.join(vault, 'Tasks', 'Main.md'), 'a') as fh:
-            fh.write('\n- [ ] something\n')
+        with open(os.path.join(vault, 'Note.md'), 'w') as fh:
+            fh.write('---\ntype: topic\nstatus: active\n---\nsomething\n')
         old = '2026-01-01T00:00:00'
-        self.git(vault, 'commit', '-qam', 'old work', GIT_COMMITTER_DATE=old, GIT_AUTHOR_DATE=old)
+        self.git(vault, 'add', 'Note.md')
+        self.git(vault, 'commit', '-qm', 'old work', GIT_COMMITTER_DATE=old, GIT_AUTHOR_DATE=old)
         self.assertIn('1 commit(s) behind', ' '.join(backup.flags()))
         self.assertEqual(backup.push(), '')
         self.assertEqual(backup.flags(), [])

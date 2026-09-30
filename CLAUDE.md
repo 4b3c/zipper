@@ -42,7 +42,7 @@ Dependencies are allowed where they earn their place; `requirements.txt` lists t
 | `zipper/code.py` | `zipper code` (proposing changes) and `zipper update` (taking them) |
 | `zipper/hostd.py` `host.py` | The host daemon (root, on the host) and its client |
 | `docker/` | The image, entrypoint and nginx generator; `compose.example.yml` runs several |
-| `template/vault/` | What `zipper init` copies into a new vault |
+| `template/vault/` `template/starter/` | What every new vault gets; an optional suggested layout |
 | `zipper/box.py` | The box's vital signs, sampled each minute into `Inbox/box-history.json` |
 | `zipper/usage.py` | Plan usage meters. The OAuth token is read at call time, never stored |
 | `hooks/forward_reply.py` | The `Stop` hook that posts a reply to its Discord thread |
@@ -60,13 +60,19 @@ Dependencies are allowed where they earn their place; `requirements.txt` lists t
 
 ## 3. The vault contract
 
-The engine expects `Projects/`, `Areas/`, `Topics/`, `People/`, `Classes/`, `Tasks/`,
-`Decisions/`, `Events/`, `Log/`, `Metrics/`, `Meta/`, `Inbox/`. Every note needs `type` and
-`status`; the rest is per type. Enums are in `zipper/core.py`; `zipper lint` is the
-authority.
+**A vault is a folder of markdown files in a git repository, and nothing else is required.**
+No folder layout is assumed: code that reads a conventional folder (`Tasks/`, `Classes/`,
+`Decisions/`, `Events/`) must treat it as optional, and a command that writes to one creates
+it. The engine owns only `Inbox/` (machine state: regenerable, gitignored, may hold secret
+URLs), the four generated `Meta/` views (never hand-edit), `Log/` and `Metrics/`.
 
-Four `Meta/` views are generated every run — never hand-edit them. `Inbox/` is machine
-state: regenerable, gitignored, may hold secret URLs, never authoritative.
+Git is load-bearing: uncommitted edits are the queue's `vault` rows, so a vault that isn't a
+repository loses that. Obsidian, CouchDB and LiveSync are ways some owners view and sync the
+folder; **no code may depend on them.**
+
+Every note needs `type` and `status`; enums are in `zipper/core.py`; `zipper lint` is the
+authority. `template/vault/` is what every vault gets; `template/starter/` is an optional
+suggested layout.
 
 ## 4. Rules the engine obeys, and so should you
 

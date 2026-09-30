@@ -160,6 +160,8 @@ def main():
     s = sub.add_parser('init', help='create a vault from the template')
     s.add_argument('path'); s.add_argument('--owner'); s.add_argument('--id')
     s.add_argument('--backup', help='a bare git repo, outside the vault, pushed on every commit')
+    s.add_argument('--starter', action='store_true',
+                   help='add a suggested layout: folders, a schema, Obsidian pages')
     s.set_defaults(fn=_setup('cmd_init'))
     s = sub.add_parser('setup', help='the wizard: inputs, Discord, schedule, Claude')
     s.add_argument('--section', choices=['identity', 'vault', 'inputs', 'discord',
