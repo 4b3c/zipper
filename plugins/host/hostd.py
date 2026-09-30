@@ -19,9 +19,20 @@ function. Three tiers:
 
     read       status, service.status, service.logs, containers     just runs
     routine    service.restart <name in restart_auto>,              runs, logged,
-               container.restart <the caller's own id>              and announced
+               container.restart <the caller's own id>,             and announced
+               run <a command listed in routine_commands, exactly>
     advanced   service.restart <any other allowed service>,         needs approval
                run <command>  (a root shell command)
+
+**Every `run` says why, in plain English** (`--why`). The operator may not read shell;
+what they can judge is whether the reason matches what they were just doing. The post
+leads with the reason and shows the command under it.
+
+**An approval opens a window.** For `window_minutes` after a code is accepted (15 by
+default, 0 to turn it off), that zipper's advanced requests run at once, each still
+announced. The code guards against a zipper acting while nobody is there -- a pass at
+3am tricked by something it read -- not against one command in a session the operator
+is sitting in; asking for a code per command in that session was friction, not safety.
 
 **Approval the agent cannot fake.** An advanced request is held and posted, by
 hostd itself, to a Discord *webhook* -- send-only, and its URL lives only in
@@ -59,6 +70,8 @@ DEFAULT_CONFIG = {
     'zippers': {'zipper-0': {'tiers': ['read', 'routine', 'advanced']}},
     'services': ['zipper-web', 'zipper-discord'],   # service.* may name only these
     'restart_auto': ['zipper-web', 'zipper-discord'],  # restarted without approval
+    'routine_commands': [],     # `run` commands, matched exactly, that need no code
+    'window_minutes': 15,       # after an approval, advanced requests run without one
     'systemctl': 'systemctl',
     'journalctl': 'journalctl',
     'docker': 'docker',
@@ -101,6 +114,16 @@ class State:
         self.next_id = 1
         self.last_counter = 0
         self.failures = []          # timestamps of wrong codes
+        self.windows = {}           # zipper id -> time its approval window closes
+
+    def window_left(self, zid):
+        """Seconds left in this zipper's approval window, 0 if none is open."""
+        return max(0, int(self.windows.get(zid, 0) - time.time()))
+
+    def open_window(self, zid):
+        mins = self.cfg.get('window_minutes', 0) or 0
+        if mins > 0:
+            self.windows[zid] = time.time() + mins * 60
 
     def locked_out(self):
         n, secs = LOCKOUT
@@ -178,6 +201,8 @@ def classify(cfg, zid, verb, args):
         cmd = ' '.join(args).strip()
         if not cmd:
             raise ValueError('run needs a command')
+        if cmd in cfg.get('routine_commands', []):
+            return 'routine', cmd, cmd
         return 'advanced', cmd, cmd
     raise ValueError('unknown verb %r' % verb)
 
@@ -207,12 +232,14 @@ def _execute(what):
 def handle(state, zid, req):
     cfg = state.cfg
     verb, args = req.get('verb', ''), [str(a) for a in req.get('args', [])]
+    why = ' '.join(str(req.get('why') or '').split())[:300]
     allowed = cfg['zippers'].get(zid, {}).get('tiers', [])
 
     if verb == 'verbs':
         return {'ok': True, 'tiers': allowed,
                 'output': 'status, containers, service.status|logs|restart <%s>, '
-                          'container.restart, run <command>' % '|'.join(cfg['services'])}
+                          'container.restart, run --why "<reason>" <command>'
+                          % '|'.join(cfg['services'])}
 
     if verb == 'approve':
         return _approve(state, zid, args)
@@ -221,6 +248,11 @@ def handle(state, zid, req):
         tier, what, desc = classify(cfg, zid, verb, args)
     except ValueError as e:
         return {'ok': False, 'error': str(e)}
+    if verb == 'run' and not why:
+        return {'ok': False, 'error': 'run needs --why: one plain sentence saying what it '
+                                      'does and why, for someone who does not read shell'}
+    host = cfg.get('host_name') or 'the host'
+    said = ('%s\n' % why) if why else ''
     if tier not in allowed:
         log('%s refused %s (tier %s not granted)' % (zid, desc, tier))
         return {'ok': False, 'error': 'this zipper is not granted %s requests' % tier}
@@ -230,19 +262,30 @@ def handle(state, zid, req):
     if tier == 'routine':
         log('%s ran %s' % (zid, desc))
         res = _execute(what)
-        announce(cfg, '`%s` ran `%s` on %s -- %s' % (zid, desc, cfg.get('host_name') or 'the host',
-                                                     'ok' if res['ok'] else 'exit %s' % res['code']))
+        announce(cfg, '%s`%s` ran `%s` on %s -- %s' % (said, zid, desc, host,
+                                                       'ok' if res['ok'] else 'exit %s' % res['code']))
+        return res
+
+    left = state.window_left(zid)
+    if left:
+        log('%s ran %s (approval window, %ds left)' % (zid, desc, left))
+        res = _execute(what)
+        announce(cfg, '**%s** ran as root on %s, inside your approval window (%d min left):\n'
+                      '%s```\n%s\n```\n%s' % (zid, host, (left + 59) // 60, said, desc,
+                                             'ok' if res['ok'] else 'exit %s' % res['code']))
         return res
 
     with state.lock:
         rid = state.next_id
         state.next_id += 1
         state.pending[rid] = {'zipper': zid, 'what': what, 'desc': desc, 'at': time.time()}
-    log('%s requested #%d: %s' % (zid, rid, desc))
-    posted = announce(cfg, '**%s** asks to run as root on %s (request #%d):\n```\n%s\n```\n'
-                      'Tell the zipper `approve %d <code from your app>`. '
-                      'Expires in %d minutes.' % (zid, cfg.get('host_name') or 'the host', rid,
-                                                 desc, rid, PENDING_TTL // 60))
+    log('%s requested #%d: %s -- %s' % (zid, rid, why, desc))
+    mins = cfg.get('window_minutes', 0) or 0
+    posted = announce(cfg, '**%s** asks to run as root on %s (request #%d):\n**%s**\n```\n%s\n```\n'
+                      'Tell the zipper `approve %d <code from your app>`. Expires in %d minutes.%s'
+                      % (zid, host, rid, why or '(no reason given)', desc, rid, PENDING_TTL // 60,
+                         (' Approving also lets its next requests run without a code for %d '
+                          'minutes.' % mins) if mins > 0 else ''))
     return {'ok': True, 'pending': rid, 'posted': posted,
             'output': 'request #%d is waiting for approval%s' %
                       (rid, '' if posted else ' (NOT posted: hostd has no webhook)')}
@@ -269,6 +312,7 @@ def _approve(state, zid, args):
             return {'ok': False, 'error': 'wrong or reused code'}
         state.last_counter = c
         state.pending.pop(rid)
+        state.open_window(zid)
     log('%s: #%d approved, running: %s' % (zid, rid, req['desc']))
     res = _execute(req['what'])
     log('#%d exit %s' % (rid, res.get('code')))

@@ -275,8 +275,11 @@ then `zipper run` — or the systemd units in `deploy/`.
 
 `zipper hostd` is a small root daemon on the host that zippers reach through a socket
 mounted into their container: status and logs freely, restarts of their own services,
-anything else only on a code from the operator's authenticator app, posted with the exact
-command through a webhook the containers cannot see. `zipper hostd init`, then `install`.
+anything else only on a code from the operator's authenticator app, posted with a
+plain-English reason and the exact command through a webhook the containers cannot see.
+An approved code opens a window (`window_minutes`, 15 by default) in which that zipper's
+next requests run without one, each still announced; commands listed exactly in
+`routine_commands` never need one. `zipper hostd init`, then `install`.
 
 ### Deployment (systemd)
 
