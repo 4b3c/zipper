@@ -13,21 +13,11 @@ its course's note. Storage and cross-offs live in `zipper.canvas`.
 """
 import argparse, datetime, glob, os
 
-from .. import canvas as lib, core, ics
-from . import OWNER, as_list, blob_fetched, event_row, read_calendar
+from zipper import canvas as lib, core, ics
+from zipper.plugins import OWNER, as_list, blob_fetched, event_row, read_calendar
 
 name = 'canvas'
-SETUP_TITLE = 'Canvas'
-SETUP_ABOUT = 'assignments and due dates; submission status comes from the browser extension'
 
-
-def setup(w):
-    w.setting('inputs.canvas.host', 'Your Canvas address, e.g. https://canvas.example.edu')
-    w.say('Canvas -> Calendar -> "Calendar Feed" gives a private URL.')
-    url = w.ask('Canvas calendar feed URL (blank to add later)')
-    if url:
-        w.run(['ingest-ics', url, '--label', 'canvas'])
-    w.say('For submitted/not-submitted, install the extension in extension/ -- see its README.')
 CALENDARS = ('canvas',)
 ICS_FILE = os.path.join(core.INBOX, 'calendar-canvas.json')
 
@@ -127,7 +117,7 @@ def snapshot():
 
 
 def events(before, after):
-    from . import calendar
+    from plugins import calendar
     out = []
     was_items, items = before.get('items', {}), after.get('items', {})
     for title, done in sorted(items.items()):

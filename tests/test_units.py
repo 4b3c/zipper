@@ -18,8 +18,9 @@ os.environ.update(ZIPPER_SETTINGS=os.path.join(TMP, 'settings.json'),
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from zipper import backup, hostd, settings, supervise, setup, runqueue   # noqa: E402
-from zipper.inputs import peers, upstream                         # noqa: E402
+from zipper import plugins, settings, supervise, setup, runqueue   # noqa: E402
+from plugins import backup, peers, upstream                        # noqa: E402
+from plugins.host import hostd                                     # noqa: E402
 
 
 def tearDownModule():
@@ -77,23 +78,29 @@ class HostTiers(unittest.TestCase):
 
 
 class Schedule(unittest.TestCase):
-    S = {'fetch_minutes': 60, 'pass': ['09:00', '21:00'], 'digest': '19:00'}
+    JOBS = [('pass', '09:00'), ('pass', '21:00'), ('digest', '19:00')]
+
+    def due(self, now, st, pulls=True, jobs=None):
+        return supervise.due(now, st, 60, pulls, self.JOBS if jobs is None else jobs)
 
     def test_catches_up_once(self):
         now = datetime.datetime(2026, 9, 29, 9, 1)
-        self.assertEqual(supervise.due(now, {}, self.S),
-                         [('fetch', 'fetch'), ('pass', 'pass@09:00')])
+        self.assertEqual(self.due(now, {}), [('fetch', 'fetch'), ('pass', 'pass@09:00')])
         ran = {'fetch': '2026-09-29T08:30:00', 'pass@09:00': '2026-09-29T09:00:30'}
-        self.assertEqual(supervise.due(now, ran, self.S), [])
+        self.assertEqual(self.due(now, ran), [])
 
     def test_missed_slot_is_skipped(self):
         now = datetime.datetime(2026, 9, 29, 12, 0)
-        self.assertEqual(supervise.due(now, {'fetch': '2026-09-29T11:30:00'}, self.S), [])
+        self.assertEqual(self.due(now, {'fetch': '2026-09-29T11:30:00'}), [])
 
     def test_update_rides_the_fetch_clock(self):
         now = datetime.datetime(2026, 9, 29, 12, 0)
-        jobs = supervise.due(now, {'fetch': '2026-09-29T11:30:00'}, self.S, auto_update=True)
+        jobs = self.due(now, {'fetch': '2026-09-29T11:30:00'}, jobs=[('update', 'every')])
         self.assertIn(('update', 'update'), jobs)
+
+    def test_nothing_to_fetch_without_a_pulling_plugin(self):
+        now = datetime.datetime(2026, 9, 29, 12, 0)
+        self.assertEqual(self.due(now, {}, pulls=False, jobs=[]), [])
 
 
 class Settings(unittest.TestCase):
@@ -103,17 +110,36 @@ class Settings(unittest.TestCase):
 
     def test_defaults_and_env(self):
         settings.put('ports.web', 9100)
-        settings.put('inputs.hours.enabled', True)
+        settings.put('plugins.hours.sheet', 'abc')
+        settings.put('plugins.github.orgs', ['one', 'two'])
         env = settings.env()
         self.assertEqual(env['ZIPPER_URL'], 'http://127.0.0.1:9100')
-        self.assertIn('hours', env['ZIPPER_INPUTS'].split(','))
+        self.assertEqual(env['ZIPPER_SHEET_ID'], 'abc')
+        self.assertEqual(env['ZIPPER_GH_ORGS'], 'one,two')
         self.assertEqual(settings.get('ports.bot'), 4200)
 
     def test_check_flags_mistakes(self):
-        settings.save({'ports': {'web': 'eighty'}, 'colour': 'blue', 'inputs': {'slak': {}}})
+        settings.save({'ports': {'web': 'eighty'}, 'colour': 'blue', 'plugins': {'slak': {}}})
         probs = ' '.join(settings.check())
-        for word in ('ports.web', 'colour', 'inputs.slak'):
+        for word in ('ports.web', 'colour', 'plugins.slak'):
             self.assertIn(word, probs)
+
+    def test_old_layout_is_translated(self):
+        settings.save({'inputs': {'github': {'enabled': True, 'user': 'sam'}},
+                       'peers': {'zipper-1': 'http://z1:8898'}, 'host': {'socket': '/s'},
+                       'code': {'repo': 'a/b', 'auto_update': False},
+                       'schedule': {'fetch_minutes': 30, 'pass': ['08:00'], 'digest': '18:00'}})
+        self.assertTrue(settings.get('plugins.github.enabled'))
+        self.assertEqual(settings.get('plugins.github.user'), 'sam')
+        self.assertEqual(settings.get('plugins.peers.zippers'), {'zipper-1': 'http://z1:8898'})
+        self.assertEqual(settings.get('plugins.passes.times'), ['08:00'])
+        self.assertIs(settings.get('plugins.upstream.auto_update'), False)
+        self.assertEqual(settings.get('code.repo'), 'a/b')
+        self.assertIn('old layout', ' '.join(settings.check()))
+        settings.migrate(os.path.join(TMP, 'no-such-env'))
+        self.assertEqual(settings.check(), [])
+        self.assertNotIn('inputs', settings.raw())
+        self.assertEqual(settings.get('plugins.github.user'), 'sam')
 
     def test_environment_outranks_settings(self):
         settings.put('owner', 'Settings')
@@ -123,6 +149,61 @@ class Settings(unittest.TestCase):
             self.assertEqual(os.environ['ZIPPER_OWNER'], 'Env')
         finally:
             del os.environ['ZIPPER_OWNER']
+
+
+class Plugins(unittest.TestCase):
+    def setUp(self):
+        if os.path.exists(settings.PATH):
+            os.remove(settings.PATH)
+
+    def test_every_manifest_is_valid_and_every_plugin_imports(self):
+        ms = plugins.manifests()
+        self.assertIn('dashboard', ms)
+        for name, m in ms.items():
+            for key in ('name', 'title', 'about', 'defaults', 'secrets', 'env'):
+                self.assertIn(key, m, '%s: %s' % (name, key))
+            self.assertEqual(m['name'], name)
+            mod = plugins.load(name)
+            self.assertEqual(mod.name, name)
+            for var, key in m['env'].items():
+                self.assertIn(key, m['defaults'], '%s: env %s -> %s' % (name, var, key))
+
+    def test_only_the_dashboard_is_on_by_default(self):
+        self.assertEqual(plugins.names(), ['dashboard'])
+
+    def test_enable_and_disable(self):
+        cmd = plugins.cmd_plugin
+
+        class A:
+            action, name = 'enable', 'github'
+        cmd(A)
+        self.assertTrue(plugins.is_enabled('github'))
+        self.assertIn('github', plugins.names())
+        A.action = 'disable'
+        cmd(A)
+        self.assertFalse(plugins.is_enabled('github'))
+        A.name = 'dashboard'
+        cmd(A)
+        self.assertEqual(plugins.names(), [])
+
+    def test_a_disabled_plugin_is_absent(self):
+        self.assertIsNone(plugins.get('github'))
+        self.assertIn('plugin enable github', plugins.require('github'))
+
+
+class Relay(unittest.TestCase):
+    def test_without_the_dashboard_only_the_relay_answers(self):
+        from zipper.web import http
+        http.SRV['dashboard'] = False
+        try:
+            self.assertFalse(http._relay_only_refuses('POST', '/discord'))
+            self.assertFalse(http._relay_only_refuses('POST', '/api/inputs/canvas'))
+            self.assertFalse(http._relay_only_refuses('POST', '/api/msg'))
+            self.assertTrue(http._relay_only_refuses('GET', '/'))
+            self.assertTrue(http._relay_only_refuses('POST', '/api/session'))
+        finally:
+            http.SRV['dashboard'] = True
+        self.assertFalse(http._relay_only_refuses('GET', '/'))
 
 
 class InitVault(unittest.TestCase):

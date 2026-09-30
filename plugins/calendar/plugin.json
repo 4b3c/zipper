@@ -1,0 +1,8 @@
+{
+  "title": "Calendars",
+  "about": "any ICS feed -- Google Calendar, Outlook, a class schedule -- into the agenda and the queue",
+  "defaults": {},
+  "secrets": [],
+  "env": {},
+  "name": "calendar"
+}

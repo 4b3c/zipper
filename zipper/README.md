@@ -14,47 +14,41 @@ unset environment variable from the settings file when the package is imported, 
 before a key was added still sees it. **Anything reading config at call time goes through
 `cfg`.** `zipper settings show|get|set|check|migrate`.
 
-## Inputs
+## Plugins
 
-Everything Zipper reads about the world comes through an **input**: one module in
-`zipper/inputs/` per subject. `inputs.<name>.enabled` in settings picks which run.
+The core is the Discord relay, the Claude conversations, the vault and its queue, lint
+and commit. Everything else is a plugin: a folder in `plugins/` at the top of the
+repository.
 
-| Input | Pulled | Pushed to it | Provides |
-|---|---|---|---|
-| `github` | GitHub API | — | queue rows (pushes), facts (`last_push`, commit counts, `last_touched`) |
-| `calendar` | every ICS feed not owned by another input | — | queue rows, timeline |
-| `canvas` | its ICS feed (label `canvas`) | the extension's reading, `/api/canvas` | queue rows, timeline, work items, cross-offs |
-| `hours` | the Google Sheet | the sheet panel, `/api/hours` | freshness only; the ledger has its own commands |
-| `upstream` | the code checkout's origin | — | a `merged` queue row per upstream commit not yet pulled |
-| `peers` | — | another zipper, `/api/msg` | a `message` queue row, `who` = the sender |
+    plugins/<name>/plugin.json    manifest: name, title, about, default settings,
+                                  secrets it needs, env variables its settings stand for
+    plugins/<name>/__init__.py    the code, imported only when the plugin is enabled
 
-An input provides some of these; only `name` and `fetched` are required:
+**On means `plugins.<name>.enabled` in settings** (a manifest's `default_on` covers an
+absent key; only the dashboard has it). `zipper plugin list|info|enable|disable`.
+Commands that belong to a plugin refuse, with the line that turns it on, while it is
+off. With the dashboard off, the web process still runs: it is where the bot hands in
+Discord messages, and it serves only that relay and plugin posts.
 
-| Function | Used by |
-|---|---|
-| `pull()` | `fetch`, the refresh button |
-| `receive(body)` | `POST /api/inputs/<name>` (`/api/canvas`, `/api/hours` are aliases) |
-| `fetched()` | the freshness chips |
-| `snapshot()`, `events(before, after)` | the queue: rows are the diff between two snapshots |
-| `target(row, notes)` | which note a queue row lands on |
-| `timeline(first, last)` | **event rows**: the Today grid, the agenda, the digest's schedule |
-| `work()`, `toggle(key)` | **work items**: the Canvas and Projects panels, the panel inside Canvas, the digest |
-| `facts()` | `zipper/writer.py`, the only thing that writes input facts into frontmatter |
+A plugin provides whichever hooks it has data for (the full list is in
+`zipper/plugins.py`): `pull`, `receive` (`POST /api/inputs/<name>`), `fetched`,
+`snapshot` + `events` (queue rows), `target`, `timeline` (event rows), `work` (work
+items), `facts` (through `zipper/writer.py`, the only thing that writes plugin facts
+into frontmatter), `toggle`, `CALENDARS`, `flags`, `on_commit`, `jobs` (scheduled runs
+under `zipper run`).
 
-The row shapes are listed in `zipper/inputs/__init__.py`. **Callers go through the
-registry** (`inputs.timeline`, `inputs.work`, `inputs.toggle`), never an input's files:
-each dashboard card once read `canvas.json` itself, and a cross-off made in one place
-came back in the others.
+**Callers go through the registry** (`plugins.timeline`, `plugins.work`,
+`plugins.toggle`), never a plugin's files: each dashboard card once read `canvas.json`
+itself, and a cross-off made in one place came back in the others.
 
 **The writer** applies only `last_push`, `commits_recent`, `commits_mine` and
 `last_touched`, moves `last_touched` only forward, and refuses (and logs) anything else —
-an input can never set `status`.
+a plugin can never set `status`.
 
-**Adding an input:** a module in `zipper/inputs/` with `name` and `fetched()`, plus
-whichever functions it has data for, and `SETUP_TITLE`/`SETUP_ABOUT`/`setup(w)` so the
-wizard offers it; add its name to `KNOWN` and a default to `settings.DEFAULTS['inputs']`.
-An input that owns some ICS feeds lists them in `CALENDARS`, and the calendar input
-skips them. A newly enabled input's first snapshot is a baseline and emits no rows.
+**Adding a plugin:** a folder with `plugin.json` and `__init__.py` (with `name`). Its
+settings default in the manifest and appear under `plugins.<name>`; any the rest of the
+code reads as environment variables go in the manifest's `env` map. A newly enabled
+plugin's first snapshot is a baseline and emits no rows.
 
 ## Feeds
 

@@ -10,31 +10,17 @@ another zipper is text from another person's life and another person's inbox,
 which is exactly where a prompt injection would come from; the vault's CLAUDE.md
 says to treat it like an email.
 
-Accepted only with the shared token and from an id listed in settings `peers`,
+Accepted only with the shared token and from an id listed in settings `plugins.peers.zippers`,
 at most 30 an hour from each. Stored in Inbox/messages.json, the last 200.
 """
 import datetime, hmac, json, os, threading
 
-from .. import core, settings
+from zipper import core, settings
 
 name = 'peers'
-SETUP_TITLE = 'Other zippers'
-SETUP_ABOUT = 'messages from zippers on this host, as queue rows'
 STORE = os.path.join(core.INBOX, 'messages.json')
 KEEP, PER_HOUR, MAX_TEXT = 200, 30, 2000
 _LOCK = threading.Lock()
-
-
-def setup(w):
-    w.say('Peers are other zippers: id -> URL of their message port, e.g.')
-    w.say('  zipper-1 -> http://zipper-1:8898  (same Docker network)')
-    while True:
-        pid = w.ask('A peer id (blank when done)')
-        if not pid:
-            break
-        url = w.ask('Its message URL', default='http://%s:8898' % pid)
-        settings.put('peers.%s' % pid, url)
-    w.secret('ZIPPER_COMMS_TOKEN', 'The token the zippers on this host share')
 
 
 def _load():
@@ -49,7 +35,7 @@ def receive(body):
     if not token or not hmac.compare_digest(str(body.get('token', '')), token):
         raise ValueError('bad or missing token')
     sender = str(body.get('from', ''))
-    if sender not in (settings.get('peers') or {}):
+    if sender not in (settings.get('plugins.peers.zippers') or {}):
         raise ValueError('unknown sender %r' % sender)
     text = str(body.get('text', '')).strip()[:MAX_TEXT]
     if not text:
@@ -69,7 +55,7 @@ def receive(body):
             json.dump(blob, fh, indent=1)
         os.replace(tmp, STORE)
     try:
-        from .. import chat
+        from zipper import chat
         chat.discord_send('**%s** says: %s' % (sender, text[:500]),
                           thread_id=core.cfg('ZIPPER_NOTIFY_CHANNEL') or None)
     except Exception:
@@ -97,10 +83,10 @@ def events(before, after):
 
 def send(peer, text):
     import urllib.request
-    url = (settings.get('peers') or {}).get(peer)
+    url = (settings.get('plugins.peers.zippers') or {}).get(peer)
     if not url:
         raise RuntimeError('no peer %r in settings (peers: %s)'
-                           % (peer, ', '.join(settings.get('peers') or {}) or 'none'))
+                           % (peer, ', '.join(settings.get('plugins.peers.zippers') or {}) or 'none'))
     body = json.dumps({'from': settings.zipper_id(), 'text': text,
                        'token': core.cfg('ZIPPER_COMMS_TOKEN')}).encode()
     req = urllib.request.Request(url.rstrip('/') + '/api/msg', data=body, method='POST',

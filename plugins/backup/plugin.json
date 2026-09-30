@@ -1,0 +1,8 @@
+{
+  "title": "Vault backup",
+  "about": "every commit pushed to a second copy of the vault, and a flag when it falls behind",
+  "defaults": {},
+  "secrets": [],
+  "env": {},
+  "name": "backup"
+}

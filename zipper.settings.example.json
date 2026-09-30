@@ -1,38 +1,14 @@
 {
   "id": "zipper-0",
   "owner": "Sam",
-  "vault": "/vault",
+  "vault": "/zipper/vault",
   "timezone": "America/Denver",
-  "inputs": {
-    "github": {
-      "enabled": true,
-      "user": "your-login",
-      "orgs": []
-    },
-    "calendar": {
-      "enabled": true
-    },
-    "canvas": {
-      "enabled": true,
-      "host": "https://canvas.example.edu"
-    },
-    "hours": {
-      "enabled": false,
-      "sheet": "",
-      "metric": "hours_worked"
-    }
-  },
   "discord": {
     "channel": "",
     "notify_channel": ""
   },
   "schedule": {
-    "fetch_minutes": 60,
-    "pass": [
-      "09:00",
-      "21:00"
-    ],
-    "digest": "19:00"
+    "fetch_minutes": 60
   },
   "ports": {
     "web": 8800,
@@ -56,17 +32,55 @@
     "uid": "",
     "key": "zipper-app.pem"
   },
-  "google": {
-    "account": "",
-    "client_id": ""
-  },
-  "extension": {
-    "base": ""
-  },
-  "peers": {
-    "zipper-1": "http://zipper-1:8800"
-  },
-  "host": {
-    "socket": ""
+  "plugins": {
+    "backup": {
+      "enabled": true
+    },
+    "calendar": {
+      "enabled": false
+    },
+    "canvas": {
+      "enabled": false,
+      "host": "",
+      "extension_base": ""
+    },
+    "dashboard": {
+      "enabled": true
+    },
+    "digest": {
+      "enabled": false,
+      "time": "19:00"
+    },
+    "github": {
+      "enabled": true,
+      "user": "your-login",
+      "orgs": []
+    },
+    "host": {
+      "enabled": false,
+      "socket": ""
+    },
+    "hours": {
+      "enabled": false,
+      "sheet": "",
+      "metric": "hours_worked",
+      "google_account": "",
+      "google_client_id": ""
+    },
+    "passes": {
+      "enabled": false,
+      "times": [
+        "09:00",
+        "21:00"
+      ]
+    },
+    "peers": {
+      "enabled": false,
+      "zippers": {}
+    },
+    "upstream": {
+      "enabled": false,
+      "auto_update": true
+    }
   }
 }

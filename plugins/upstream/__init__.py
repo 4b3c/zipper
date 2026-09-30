@@ -3,24 +3,20 @@
 Each fetch looks at the checkout's origin. A commit on the upstream branch that
 this checkout does not have yet is a queue row -- "merged: <subject>" -- in
 every zipper, which is how a feature one person asked for reaches the others.
-Applying it is `zipper update`, run by the scheduler when `code.auto_update` is
+Applying it is `zipper update`, run by the scheduler when `plugins.upstream.auto_update` is
 on; the row says what arrived, not whether it is running yet.
 """
 import os, subprocess
 
-from .. import code, settings
+from zipper import code, settings
 
 name = 'upstream'
-SETUP_TITLE = 'Code updates'
-SETUP_ABOUT = 'a queue row when a change to the shared code is merged'
 
 
-def setup(w):
-    w.setting('code.repo', 'Upstream repository (owner/name)', default='4b3c/Zipper')
-    w.setting('code.auto_update', 'Apply merged changes automatically when idle? (true/false)',
-              default='true')
-    v = settings.get('code.auto_update')
-    settings.put('code.auto_update', str(v).lower() in ('true', '1', 'yes', 'y'))
+def jobs(conf):
+    """Take merged changes on the fetch clock, if asked to. `zipper update` waits
+    while a conversation is live, so an hourly try is what "when idle" means."""
+    return [('update', 'every')] if conf.get('auto_update') else []
 
 
 def _git(*args):

@@ -1,0 +1,12 @@
+{
+  "title": "Host access",
+  "about": "reach the machine outside the container through hostd: status and logs freely, anything risky only on your authenticator code",
+  "defaults": {
+    "socket": ""
+  },
+  "secrets": [],
+  "env": {
+    "ZIPPER_HOST_SOCKET": "socket"
+  },
+  "name": "host"
+}

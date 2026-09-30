@@ -1,0 +1,21 @@
+{
+  "title": "Timesheet",
+  "about": "log hours by message; a Google Sheet stays the record",
+  "defaults": {
+    "sheet": "",
+    "metric": "hours_worked",
+    "google_account": "",
+    "google_client_id": ""
+  },
+  "secrets": [
+    "ZIPPER_GOOGLE_CLIENT_SECRET",
+    "ZIPPER_GOOGLE_REFRESH_TOKEN"
+  ],
+  "env": {
+    "ZIPPER_SHEET_ID": "sheet",
+    "ZIPPER_HOURS_METRIC": "metric",
+    "ZIPPER_GOOGLE_ACCOUNT": "google_account",
+    "ZIPPER_GOOGLE_CLIENT_ID": "google_client_id"
+  },
+  "name": "hours"
+}

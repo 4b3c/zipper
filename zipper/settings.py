@@ -1,55 +1,92 @@
 """zipper.settings
 
-`zipper.settings.json`: what this zipper is and does -- its id, whose it is, which
-inputs run, when it wakes, its ports, its peers. Structure only. **Secrets stay in
-`.env`**, so an agent can read and edit this file freely without a token ever
-entering a transcript.
+`zipper.settings.json`: what this zipper is and does -- its id, whose it is, its
+ports, and which plugins are on. Structure only. **Secrets stay in `.env`**, so an
+agent can read and edit this file freely without a token entering a transcript.
 
 Where it is: `$ZIPPER_SETTINGS`, else `zipper.settings.json` beside `.env` in the
-checkout. Both are gitignored; `zipper.settings.example.json` is the documented
-shape.
+checkout.
 
-**How the code sees it.** Most of the code reads environment variables, and has
-for a long time. Rather than rewrite every reader, `apply()` runs once at import
-and fills in any variable the environment has not already set, from the file. So
-the order is: the real environment, then `.env` (through `core.cfg`), then this
-file. A value set in more than one place is resolved the same way by every
-component -- which matters, because two components answering one question
-differently is the classic bug here.
+    {
+      "id": "zipper-0", "owner": "Sam", "vault": "/zipper/vault",
+      "discord": {"channel": "...", "notify_channel": ""},
+      "plugins": {
+        "github":    {"enabled": true, "user": "sam", "orgs": []},
+        "dashboard": {"enabled": false}
+      }
+    }
+
+**Plugin settings live under `plugins.<name>`**, and their defaults come from each
+plugin's own `plugins/<name>/plugin.json` -- so a new plugin needs no edit here.
+
+**How the code sees it.** Most readers use environment variables. `apply()` runs once
+at import and fills in any variable not already set, from the core keys below and from
+each manifest's `env` map. Order everywhere: the real environment, then `.env`
+(through `core.cfg`), then this file.
+
+**An older file** -- plugin settings under `inputs`, `peers`, `host`, `google`,
+`extension`, `schedule.pass` -- is translated on read, and `zipper settings migrate`
+rewrites it in the current shape.
 """
-import json, os, tempfile
+import copy, json, os, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PATH = os.environ.get('ZIPPER_SETTINGS') or os.path.join(ROOT, 'zipper.settings.json')
+PLUGIN_DIR = os.path.join(ROOT, 'plugins')
 
-# The shape, with defaults. Anything absent from the file falls back to these; a
-# key in the file that is absent here is reported by `zipper settings --check`.
+# The core's shape, with defaults. Plugins add theirs from their manifests.
 DEFAULTS = {
     'id': 'zipper-0',
     'owner': '',
     'vault': '',
     'timezone': '',
-    'inputs': {
-        'github':   {'enabled': True, 'user': '', 'orgs': []},
-        'calendar': {'enabled': True},
-        'canvas':   {'enabled': False, 'host': ''},
-        'hours':    {'enabled': False, 'sheet': '', 'metric': 'hours_worked'},
-        'upstream': {'enabled': True},
-        'peers':    {'enabled': True},
-    },
     'discord': {'channel': '', 'notify_channel': ''},
-    'schedule': {'fetch_minutes': 60, 'pass': ['09:00', '21:00'], 'digest': '19:00'},
+    'schedule': {'fetch_minutes': 60},
     'ports': {'web': 8800, 'bot': 4200, 'ttyd_base': 8810},
     'terminal': {'host': ''},
     'claude': {'permission_mode': 'auto'},
-    'code': {'repo': '', 'branch': 'main', 'auto_update': True},
+    'code': {'repo': '', 'branch': 'main'},
     'github_app': {'app_id': '', 'install_id': '', 'slug': '', 'uid': '', 'key': ''},
-    'google': {'account': '', 'client_id': ''},
-    'extension': {'base': ''},
-    'peers': {},
-    'host': {'socket': ''},
 }
 
+CORE_ENV = {
+    'ZIPPER_ID': 'id', 'ZIPPER_OWNER': 'owner', 'ZIPPER_VAULT': 'vault', 'TZ': 'timezone',
+    'DISCORD_CHANNEL_ID': 'discord.channel', 'ZIPPER_NOTIFY_CHANNEL': 'discord.notify_channel',
+    'ZIPPER_TTYD_BASE': 'ports.ttyd_base', 'ZIPPER_TERM_HOST': 'terminal.host',
+    'ZIPPER_PERMISSION_MODE': 'claude.permission_mode',
+    'ZIPPER_CODE_REPO': 'code.repo', 'ZIPPER_CODE_BRANCH': 'code.branch',
+    'ZIPPER_GH_APP_ID': 'github_app.app_id', 'ZIPPER_GH_APP_INSTALL_ID': 'github_app.install_id',
+    'ZIPPER_GH_APP_SLUG': 'github_app.slug', 'ZIPPER_GH_APP_UID': 'github_app.uid',
+}
+
+
+# ---------------------------------------------------------------- manifests
+
+def manifests():
+    """Read here rather than through zipper.plugins: this module runs at import,
+    before anything else in the package, and must not import it."""
+    out = {}
+    try:
+        names = sorted(os.listdir(PLUGIN_DIR))
+    except FileNotFoundError:
+        return out
+    for n in names:
+        try:
+            with open(os.path.join(PLUGIN_DIR, n, 'plugin.json'), encoding='utf-8') as fh:
+                out[n] = json.load(fh)
+        except (OSError, ValueError):     # not a plugin folder (__init__.py, caches)
+            continue
+    return out
+
+
+def defaults():
+    d = copy.deepcopy(DEFAULTS)
+    d['plugins'] = {n: dict({'enabled': bool(m.get('default_on'))}, **(m.get('defaults') or {}))
+                    for n, m in manifests().items()}
+    return d
+
+
+# ---------------------------------------------------------------- reading
 
 def _merge(base, over):
     out = dict(base)
@@ -67,14 +104,60 @@ def raw():
         return {}
 
 
+LEGACY_KEYS = ('inputs', 'peers', 'host', 'google', 'extension')
+
+
+def _legacy(data):
+    """Translate the pre-plugin shape. Returns a new dict; never writes."""
+    data = copy.deepcopy(data)
+    p = data.setdefault('plugins', {})
+
+    def put_p(name, key, value):
+        p.setdefault(name, {})
+        p[name].setdefault(key, value)
+    for name, conf in (data.pop('inputs', None) or {}).items():
+        for k, v in (conf or {}).items():
+            put_p(name, k, v)
+    if 'peers' in data:
+        put_p('peers', 'zippers', data.pop('peers') or {})
+    if 'host' in data:
+        put_p('host', 'socket', (data.pop('host') or {}).get('socket', ''))
+    g = data.pop('google', None) or {}
+    if g.get('account'):
+        put_p('hours', 'google_account', g['account'])
+    if g.get('client_id'):
+        put_p('hours', 'google_client_id', g['client_id'])
+    ext = data.pop('extension', None) or {}
+    if ext.get('base'):
+        put_p('canvas', 'extension_base', ext['base'])
+    code = data.get('code') or {}
+    if 'auto_update' in code:
+        put_p('upstream', 'auto_update', code.pop('auto_update'))
+    sched = data.get('schedule') or {}
+    if 'pass' in sched:
+        put_p('passes', 'times', sched.pop('pass'))
+    if 'digest' in sched:
+        t = sched.pop('digest')
+        put_p('digest', 'time', t)
+    if not p:
+        data.pop('plugins')
+    return data
+
+
+def is_legacy(data=None):
+    data = raw() if data is None else data
+    return any(k in data for k in LEGACY_KEYS) or \
+        'auto_update' in (data.get('code') or {}) or \
+        any(k in (data.get('schedule') or {}) for k in ('pass', 'digest'))
+
+
 def load():
-    """The file merged over the defaults. Re-read on every call: it is small, and a
-    long-running server should see an edit without a restart where it can."""
-    return _merge(DEFAULTS, raw())
+    """The file (translated if old) merged over the defaults. Re-read on every call."""
+    return _merge(defaults(), _legacy(raw()))
 
 
 def get(path, default=None):
-    """A dotted path: `get('inputs.hours.sheet')`."""
+    """A dotted path: `get('plugins.hours.sheet')`."""
     cur = load()
     for part in path.split('.'):
         if not isinstance(cur, dict) or part not in cur:
@@ -91,10 +174,13 @@ def _parse(value):
         return value
 
 
+# ---------------------------------------------------------------- writing
+
 def put(path, value):
-    """Write one dotted key and save atomically -- a half-written settings file
-    would take every component down at its next start."""
-    data = raw()
+    """Write one dotted key and save atomically. An old-shape file is migrated in the
+    same write, so a key is never written into a layout that is then translated
+    around it."""
+    data = _legacy(raw()) if is_legacy() else raw()
     cur = data
     parts = path.split('.')
     for part in parts[:-1]:
@@ -107,6 +193,7 @@ def put(path, value):
 
 def save(data):
     d = os.path.dirname(os.path.abspath(PATH))
+    os.makedirs(d, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=d, prefix='.settings-')
     with os.fdopen(fd, 'w', encoding='utf-8') as fh:
         json.dump(data, fh, indent=2)
@@ -115,78 +202,70 @@ def save(data):
 
 
 def check():
-    """Problems with the file: unknown keys, wrong types. [] when clean."""
+    """Problems with the file: unknown keys, wrong types, unknown plugins. [] when clean."""
     out = []
+    try:
+        data = raw()
+    except ValueError as e:
+        return ['unreadable: %s' % e]
+    if is_legacy(data):
+        out.append('old layout (plugin settings outside "plugins") -- `zipper settings migrate`')
+    base = defaults()
 
-    def walk(base, over, where):
+    def walk(ref, over, where):
         for k, v in over.items():
             here = '%s.%s' % (where, k) if where else k
-            if where in ('peers', 'inputs') and k not in base:
-                if where == 'inputs':
-                    out.append('%s: unknown input' % here)
+            if where == 'plugins' and k not in ref:
+                out.append('%s: no such plugin' % here)
                 continue
-            if k not in base:
+            if where.startswith('plugins.') and where.count('.') == 1 and k == 'zippers':
+                continue                    # peers' map: any ids
+            if k not in ref:
                 out.append('%s: unknown key' % here)
-            elif isinstance(base[k], dict):
+            elif isinstance(ref[k], dict):
                 if not isinstance(v, dict):
                     out.append('%s: should be an object' % here)
                 else:
-                    walk(base[k], v, here)
-            elif base[k] is not None and not isinstance(v, type(base[k])) \
-                    and not (isinstance(base[k], int) and isinstance(v, int)):
-                out.append('%s: should be %s' % (here, type(base[k]).__name__))
-    try:
-        walk(DEFAULTS, raw(), '')
-    except ValueError as e:
-        out.append('unreadable: %s' % e)
+                    walk(ref[k], v, here)
+            elif ref[k] is not None and not isinstance(v, type(ref[k])) \
+                    and not (isinstance(ref[k], int) and isinstance(v, int)):
+                out.append('%s: should be %s' % (here, type(ref[k]).__name__))
+    walk(base, _legacy(data), '')
     return out
+
+
+# ---------------------------------------------------------------- the environment
+
+def _flat(v):
+    return ','.join(str(x) for x in v) if isinstance(v, list) else ('' if v is None else str(v))
 
 
 def env():
     """The environment variables this file stands for."""
     s = load()
-    ins = s['inputs']
-    out = {
-        'ZIPPER_ID': s['id'],
-        'ZIPPER_OWNER': s['owner'],
-        'ZIPPER_VAULT': s['vault'],
-        'TZ': s['timezone'],
-        'ZIPPER_INPUTS': ','.join(n for n, v in ins.items() if v.get('enabled')),
-        'ZIPPER_GH_USER': ins.get('github', {}).get('user', ''),
-        'ZIPPER_GH_ORGS': ','.join(ins.get('github', {}).get('orgs', [])),
-        'CANVAS_HOST': ins.get('canvas', {}).get('host', ''),
-        'ZIPPER_SHEET_ID': ins.get('hours', {}).get('sheet', ''),
-        'ZIPPER_HOURS_METRIC': ins.get('hours', {}).get('metric', ''),
-        'DISCORD_CHANNEL_ID': str(s['discord']['channel'] or ''),
-        'ZIPPER_NOTIFY_CHANNEL': str(s['discord']['notify_channel'] or ''),
-        'ZIPPER_PORT': str(s['ports']['web']),
-        'ZIPPER_URL': 'http://127.0.0.1:%s' % s['ports']['web'],
-        'BOT_PORT': str(s['ports']['bot']),
-        'BOT_URL': 'http://127.0.0.1:%s' % s['ports']['bot'],
-        'ZIPPER_TTYD_BASE': str(s['ports']['ttyd_base']),
-        'ZIPPER_TERM_HOST': s['terminal']['host'],
-        'ZIPPER_PERMISSION_MODE': s['claude']['permission_mode'],
-        'ZIPPER_CODE_REPO': s['code']['repo'],
-        'ZIPPER_CODE_BRANCH': s['code']['branch'],
-        'ZIPPER_GH_APP_ID': str(s['github_app']['app_id']),
-        'ZIPPER_GH_APP_INSTALL_ID': str(s['github_app']['install_id']),
-        'ZIPPER_GH_APP_SLUG': s['github_app']['slug'],
-        'ZIPPER_GH_APP_UID': str(s['github_app']['uid']),
-        'ZIPPER_GH_APP_KEY': (os.path.join(ROOT, s['github_app']['key'])
-                              if s['github_app']['key'] else ''),
-        'ZIPPER_GOOGLE_ACCOUNT': s['google']['account'],
-        'ZIPPER_GOOGLE_CLIENT_ID': s['google']['client_id'],
-        'ZIPPER_EXT_BASE': s['extension']['base'],
-        'ZIPPER_HOST_SOCKET': s['host']['socket'],
-    }
+    out = {}
+    for var, path in CORE_ENV.items():
+        cur = s
+        for part in path.split('.'):
+            cur = cur.get(part, '') if isinstance(cur, dict) else ''
+        out[var] = _flat(cur)
+    out['ZIPPER_PORT'] = str(s['ports']['web'])
+    out['ZIPPER_URL'] = 'http://127.0.0.1:%s' % s['ports']['web']
+    out['BOT_PORT'] = str(s['ports']['bot'])
+    out['BOT_URL'] = 'http://127.0.0.1:%s' % s['ports']['bot']
+    key = s['github_app']['key']
+    out['ZIPPER_GH_APP_KEY'] = os.path.join(ROOT, key) if key else ''
+    for name, m in manifests().items():
+        conf = s['plugins'].get(name, {})
+        for var, k in (m.get('env') or {}).items():
+            out[var] = _flat(conf.get(k))
     return {k: v for k, v in out.items() if v not in ('', None)}
 
 
 def apply():
-    """Fill unset environment variables from the file. Never overrides: the real
-    environment and `.env` both outrank it. An unreadable file is reported and
-    ignored rather than raised, because this runs at import and a typo must not
-    stop `zipper settings` itself from starting to fix it."""
+    """Fill unset environment variables from the file. Never overrides. An unreadable
+    file is reported and ignored: this runs at import, and a typo must not stop
+    `zipper settings` itself from starting to fix it."""
     try:
         values = env()
     except ValueError as e:
@@ -197,30 +276,26 @@ def apply():
         os.environ.setdefault(k, v)
 
 
-# Where each non-secret variable lives in the file, for `migrate`. Derived
-# variables (ZIPPER_URL, BOT_URL, ZIPPER_INPUTS) are handled by hand below.
-FROM_ENV = {
-    'ZIPPER_ID': 'id', 'ZIPPER_OWNER': 'owner', 'ZIPPER_VAULT': 'vault', 'TZ': 'timezone',
-    'ZIPPER_GH_USER': 'inputs.github.user', 'CANVAS_HOST': 'inputs.canvas.host',
-    'ZIPPER_SHEET_ID': 'inputs.hours.sheet', 'ZIPPER_HOURS_METRIC': 'inputs.hours.metric',
-    'DISCORD_CHANNEL_ID': 'discord.channel', 'ZIPPER_NOTIFY_CHANNEL': 'discord.notify_channel',
-    'ZIPPER_TTYD_BASE': 'ports.ttyd_base', 'ZIPPER_TERM_HOST': 'terminal.host',
-    'ZIPPER_PERMISSION_MODE': 'claude.permission_mode',
-    'ZIPPER_GH_APP_ID': 'github_app.app_id', 'ZIPPER_GH_APP_INSTALL_ID': 'github_app.install_id',
-    'ZIPPER_GH_APP_SLUG': 'github_app.slug', 'ZIPPER_GH_APP_UID': 'github_app.uid',
-    'ZIPPER_GOOGLE_ACCOUNT': 'google.account', 'ZIPPER_GOOGLE_CLIENT_ID': 'google.client_id',
-    'ZIPPER_EXT_BASE': 'extension.base',
-}
+# ---------------------------------------------------------------- migrating
+
+def _env_to_path():
+    """Every non-secret variable -> where it lives in the file."""
+    out = dict(CORE_ENV)
+    for name, m in manifests().items():
+        for var, k in (m.get('env') or {}).items():
+            out[var] = 'plugins.%s.%s' % (name, k)
+    return out
 
 
 def migrate(envfile):
-    """Copy the non-secret keys of an existing `.env` into the settings file.
-    Returns the keys moved. `.env` is left alone: the operator deletes the moved
-    lines once they have looked, because an edit to a file of secrets is theirs."""
+    """Rewrite an old-shape file in the current shape, and copy the non-secret keys
+    of a `.env` in. `.env` itself is left alone: the operator deletes the moved
+    lines, because an edit to a file of secrets is theirs. Returns what moved."""
     from .core import _env_file
     e = _env_file() if envfile is None else _read_env(envfile)
-    data = raw()
-    moved = []
+    data = _legacy(raw())
+    moved = ['(rewrote the old layout)'] if is_legacy() else []
+    lists = {'plugins.github.orgs'}
 
     def put_in(path, value):
         cur = data
@@ -229,19 +304,21 @@ def migrate(envfile):
             cur = cur.setdefault(p, {})
         cur[parts[-1]] = value
         moved.append(path)
-    for k, path in FROM_ENV.items():
-        if e.get(k):
-            v = e[k]
-            put_in(path, int(v) if path.startswith('ports.') and v.isdigit() else v)
-    if e.get('ZIPPER_GH_ORGS'):
-        put_in('inputs.github.orgs', [o.strip() for o in e['ZIPPER_GH_ORGS'].split(',') if o.strip()])
+    for var, path in _env_to_path().items():
+        if var == 'ZIPPER_GH_APP_KEY' or not e.get(var):
+            continue
+        v = e[var]
+        if path in lists:
+            v = [x.strip() for x in v.split(',') if x.strip()]
+        elif path.startswith('ports.') and v.isdigit():
+            v = int(v)
+        put_in(path, v)
     if e.get('ZIPPER_GH_APP_KEY'):
         k = e['ZIPPER_GH_APP_KEY']
         put_in('github_app.key', os.path.relpath(k, ROOT) if k.startswith(ROOT) else k)
     if e.get('ZIPPER_INPUTS'):
-        on = [n.strip() for n in e['ZIPPER_INPUTS'].split(',') if n.strip()]
-        for n in DEFAULTS['inputs']:
-            put_in('inputs.%s.enabled' % n, n in on)
+        for n in (x.strip() for x in e['ZIPPER_INPUTS'].split(',') if x.strip()):
+            put_in('plugins.%s.enabled' % n, True)
     for key, name in (('ZIPPER_URL', 'web'), ('BOT_URL', 'bot')):
         port = e.get(key, '').rsplit(':', 1)[-1].strip('/')
         if port.isdigit():
@@ -252,6 +329,8 @@ def migrate(envfile):
 
 def _read_env(path):
     out = {}
+    if not os.path.exists(path):
+        return out
     with open(path) as fh:
         for ln in fh:
             ln = ln.strip()
@@ -280,17 +359,16 @@ def cmd_settings(a):
     if action == 'set':
         put(a.key, _parse(a.value))
         print('%s = %s' % (a.key, json.dumps(get(a.key))))
-        probs = check()
-        for p in probs:
+        for p in check():
             print('  warning: %s' % p)
         print('restart the services for long-running components to see it')
         return 0
     if action == 'migrate':
         moved = migrate(getattr(a, 'env', None))
-        print('moved %d value(s) into %s:' % (len(moved), PATH))
+        print('%d change(s) to %s:' % (len(moved), PATH))
         for m in moved:
             print('  %s' % m)
-        print('Now delete those lines from .env; it should hold only secrets.')
+        print('Now delete moved lines from .env; it should hold only secrets.')
         return 0
     if action == 'check':
         probs = check()

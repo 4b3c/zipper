@@ -8,7 +8,7 @@ lines, which meant no part of it could be read without loading all of it.
 """
 from .base import *
 from .base import core, conversations, events, metrics, usage
-from .. import inputs
+from .. import plugins as inputs
 from .data import flags
 
 

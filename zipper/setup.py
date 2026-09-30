@@ -1,24 +1,14 @@
 """zipper.setup
 
-Standing up a zipper from nothing: `zipper init` makes a vault, `zipper setup` asks
-everything else.
+Standing up a zipper from nothing: `zipper init` makes a vault, and `zipper setup`
+points Claude Code's Stop hook at this checkout. Everything else is configured by
+talking to Claude in the new vault.
 
-    zipper init <path> [--owner NAME] [--id ID]
-    zipper setup [--section S]
+    zipper init <path> [--owner NAME] [--id ID] [--backup PATH] [--starter]
 
-**Every question writes one of two places.** Structure goes to zipper.settings.json;
-a secret goes to `.env` and is never echoed back -- the wizard shows only whether it
-is set. That is the same split the agent lives by: it may read settings, and it
-never opens `.env`.
-
-**Inputs describe their own setup.** The checklist is the registry: each module in
-`zipper/inputs/` offers `SETUP_TITLE`, `SETUP_ABOUT` and `setup(w)`, so a new input
-appears here by existing. Nothing below names one.
-
-Plain `input()` rather than a curses UI: it works over `docker exec`, a pipe, and a
-phone's SSH client alike, and a test can drive it by writing lines to stdin.
+Secrets go to `.env`; everything else to zipper.settings.json.
 """
-import getpass, importlib, json, os, re, shutil, subprocess, sys
+import json, os, re, subprocess
 
 from . import settings
 
@@ -79,8 +69,10 @@ def init_vault(path, owner='', zid='', git_name='', git_email='', backup='', sta
     subprocess.run(['git', '-C', path, 'add', '-A'], check=True)
     subprocess.run(['git', '-C', path, 'commit', '-q', '-m', 'A new vault'], check=False)
     if backup:
-        from . import backup as _backup
+        from . import plugins as _plugins           # puts `plugins` on sys.path
+        from plugins import backup as _backup
         _backup.attach(backup, vault=path)
+        _plugins.settings.put('plugins.backup.enabled', True)
     return written
 
 
@@ -166,176 +158,10 @@ def install_hook(settings_path=None):
     return p
 
 
-# ---------------------------------------------------------------- the wizard
-
-class Wizard:
-    """What an input's `setup(w)` is handed. Reads stdin, writes settings or .env."""
-
-    def __init__(self, inp=input, out=print):
-        self.inp, self.out = inp, out
-
-    def say(self, text):
-        self.out('  ' + text)
-
-    def ask(self, prompt, default=''):
-        d = ' [%s]' % default if default not in ('', None) else ''
-        try:
-            v = self.inp('  %s%s: ' % (prompt, d)).strip()
-        except EOFError:
-            v = ''
-        return v or (default if default is not None else '')
-
-    def yes(self, prompt, default=True):
-        v = self.ask(prompt + (' (Y/n)' if default else ' (y/N)')).lower()
-        return default if not v else v.startswith('y')
-
-    def setting(self, key, prompt, default=None, kind=str):
-        cur = settings.get(key)
-        shown = ', '.join(cur) if isinstance(cur, list) else cur
-        v = self.ask(prompt, default=shown if shown not in ('', None, []) else (default or ''))
-        if kind is list:
-            val = [x.strip() for x in str(v).split(',') if x.strip()]
-        elif kind is int:
-            val = int(v) if str(v).strip().isdigit() else (cur if isinstance(cur, int) else 0)
-        else:
-            val = v
-        settings.put(key, val)
-        return val
-
-    def secret(self, env, prompt):
-        have = bool(env_get(env))
-        tag = ' (set -- Enter keeps it)' if have else ''
-        try:
-            if sys.stdin.isatty():
-                v = getpass.getpass('  %s%s: ' % (prompt, tag)).strip()
-            else:
-                v = self.inp('  %s%s: ' % (prompt, tag)).strip()
-        except EOFError:
-            v = ''
-        if v:
-            env_set(env, v)
-        return bool(v) or have
-
-    def run(self, argv):
-        r = subprocess.run([sys.executable, '-m', 'zipper'] + argv, cwd=ROOT)
-        if r.returncode:
-            self.say('(that step failed -- run `zipper %s` again later)' % ' '.join(argv[:1]))
-
-
-def _inputs():
-    from . import inputs
-    return [importlib.import_module('zipper.inputs.' + n) for n in inputs.KNOWN]
-
-
-def _checklist(w, mods):
-    """A toggle list. Numbers flip boxes; Enter accepts."""
-    on = {m.name: bool(settings.get('inputs.%s.enabled' % m.name)) for m in mods}
-    while True:
-        w.out('')
-        for i, m in enumerate(mods, 1):
-            w.out('  %d. [%s] %-28s %s' % (i, 'x' if on[m.name] else ' ',
-                                          getattr(m, 'SETUP_TITLE', m.name),
-                                          getattr(m, 'SETUP_ABOUT', '')))
-        v = w.ask('Numbers to toggle, Enter to continue')
-        if not v:
-            return on
-        for tok in re.split(r'[\s,]+', v):
-            if tok.isdigit() and 1 <= int(tok) <= len(mods):
-                n = mods[int(tok) - 1].name
-                on[n] = not on[n]
-
-
-SECTIONS = ('identity', 'vault', 'inputs', 'discord', 'schedule', 'claude')
-
-
-def wizard(w, only=None):
-    def want(s):
-        return only is None or s == only
-
-    if want('identity'):
-        w.out('\n== Who this zipper is ==')
-        w.setting('id', 'Id (unique among the zippers on this host)', default='zipper-0')
-        w.setting('owner', 'Whose it is -- a first name')
-        w.setting('timezone', 'Timezone (e.g. America/Denver)', default=_host_tz())
-
-    if want('vault'):
-        w.out('\n== The vault ==')
-        path = w.setting('vault', 'Where the notes live (absolute path)',
-                         default=os.environ.get('ZIPPER_VAULT_DEFAULT')
-                         or os.path.expanduser('~/vault'))
-        if path and not os.path.exists(os.path.join(path, 'CLAUDE.md')):
-            if w.yes('No vault at %s. Create one from the template?' % path):
-                bk = w.ask('Backup: a git repo to push every commit to, outside the vault '
-                           '(blank for none)', default=_backup_default()
-                           or os.path.join(os.path.dirname(path.rstrip('/')), 'vault-backup.git'))
-                try:
-                    start = w.yes('Add the starter layout (Projects/, Tasks/, a schema, '
-                                  'Obsidian pages)? It is only a suggestion', default=False)
-                    init_vault(path, owner=settings.get('owner'), zid=settings.get('id'),
-                               backup=bk, starter=start)
-                    w.say('created %s%s' % (path, ', backed up to %s' % bk if bk else ''))
-                except RuntimeError as e:
-                    w.say(str(e))
-
-    if want('inputs'):
-        w.out('\n== Inputs: what this zipper reads ==')
-        mods = _inputs()
-        on = _checklist(w, mods)
-        for m in mods:
-            settings.put('inputs.%s.enabled' % m.name, on[m.name])
-        for m in mods:
-            if on[m.name] and hasattr(m, 'setup'):
-                w.out('\n-- %s --' % getattr(m, 'SETUP_TITLE', m.name))
-                m.setup(w)
-
-    if want('discord'):
-        w.out('\n== Discord: the door on your phone ==')
-        if w.yes('Connect a Discord bot?', default=bool(settings.get('discord.channel'))):
-            w.say('discord.com/developers -> New Application -> Bot. Enable the Message')
-            w.say('Content intent, invite it to your server, copy the token.')
-            w.secret('DISCORD_TOKEN', 'Bot token')
-            w.setting('discord.channel', 'Channel id it listens in (Developer Mode -> Copy ID)')
-            w.setting('discord.notify_channel', 'Channel id for scheduled messages (blank: same)')
-            p = install_hook()
-            w.say('replies are forwarded by the Stop hook in %s' % p)
-
-    if want('schedule'):
-        w.out('\n== When it wakes ==')
-        w.setting('schedule.fetch_minutes', 'Fetch every N minutes', kind=int)
-        w.setting('schedule.pass', 'Bookkeeping passes at (comma-separated HH:MM)', kind=list)
-        w.setting('schedule.digest', 'Evening digest at HH:MM (blank for none)')
-
-    if want('claude'):
-        w.out('\n== Claude ==')
-        claude = shutil.which('claude') or os.path.expanduser('~/.local/bin/claude')
-        if not os.path.exists(claude):
-            w.say('`claude` is not installed: npm install -g @anthropic-ai/claude-code')
-        logged = os.path.exists(os.path.expanduser('~/.claude/.credentials.json'))
-        w.say('claude.ai login: %s' % ('found' if logged else 'none -- run `claude` once and /login'))
-        if not logged:
-            w.secret('ANTHROPIC_API_KEY', 'Or an API key (blank to log in instead)')
-        w.setting('claude.permission_mode', 'Permission mode for unattended sessions', default='auto')
-
-    probs = settings.check()
-    w.out('\n== Done ==')
-    w.out('  settings: %s' % settings.PATH)
-    for p in probs:
-        w.out('  warning: %s' % p)
-    w.out('  next: `zipper fetch`, then `zipper run` (or `docker compose up -d`)')
-    return 0
-
-
 def _backup_default():
     """In a container, /zipper/backup is a volume of its own; elsewhere, ask."""
     d = os.environ.get('ZIPPER_BACKUP_DEFAULT', '')
     return os.path.join(d, 'vault.git') if d and os.path.isdir(d) else ''
-
-
-def _host_tz():
-    try:
-        return os.path.realpath('/etc/localtime').split('zoneinfo/', 1)[1]
-    except (IndexError, OSError):
-        return ''
 
 
 # ---------------------------------------------------------------- commands
@@ -358,6 +184,5 @@ def cmd_init(a):
 
 
 def cmd_setup(a):
-    if getattr(a, 'hook', False):
-        print('Stop hook -> %s' % install_hook()); return 0
-    return wizard(Wizard(), only=getattr(a, 'section', None))
+    print('Stop hook -> %s' % install_hook())
+    return 0
