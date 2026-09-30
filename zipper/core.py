@@ -26,9 +26,13 @@ import os, sys, re, csv, json, argparse, datetime, urllib.request, glob, uuid
 import subprocess, hashlib
 
 HERE    = os.path.dirname(os.path.abspath(__file__))
-# The code does not live inside the data: ZIPPER_VAULT points at the notes. The
-# parent-dir fallback is for running out of a checkout sitting beside the vault.
+# The code does not live inside the data: ZIPPER_VAULT points at the notes.
 VAULT   = os.environ.get('ZIPPER_VAULT') or os.path.dirname(HERE)
+if not os.environ.get('ZIPPER_VAULT'):
+    # The fallback is the code checkout itself, which is never a vault: lint reads
+    # the repo's docs as notes, and a write lands in the code. Say so, loudly.
+    sys.stderr.write('zipper: ZIPPER_VAULT is not set -- using %s, which is the code, '
+                     'not a vault. Set ZIPPER_VAULT.\n' % VAULT)
 LOGDIR  = os.path.join(VAULT, 'Log')
 METDIR  = os.path.join(VAULT, 'Metrics')
 DECDIR  = os.path.join(VAULT, 'Decisions')
