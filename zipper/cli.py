@@ -15,11 +15,16 @@ def _pass_cmd(a):
     return scheduled.cmd_pass(a)
 
 
-def _setup(name):
+def _mod(module, name):
+    """Import on use: `run` and `setup` pull in more than a quick `lint` needs."""
     def run(a):
-        from . import setup
-        return getattr(setup, name)(a)
+        import importlib
+        return getattr(importlib.import_module('zipper.' + module), name)(a)
     return run
+
+
+def _setup(name):
+    return _mod('setup', name)
 
 
 def _github_cmd(a):
@@ -160,6 +165,12 @@ def main():
                                          'schedule', 'claude'])
     s.add_argument('--hook', action='store_true', help='only install the Stop hook')
     s.set_defaults(fn=_setup('cmd_setup'))
+
+    s = sub.add_parser('run', help='supervise the dashboard, bot and schedule (containers)')
+    s.add_argument('--no-schedule', action='store_true', help='run the services only')
+    s.set_defaults(fn=_mod('supervise', 'cmd_run'))
+    s = sub.add_parser('restart', help='reload this zipper\'s code; conversations survive')
+    s.set_defaults(fn=_mod('supervise', 'cmd_restart'))
 
     s = sub.add_parser('settings', help='show or change zipper.settings.json (never secrets)')
     ss = s.add_subparsers(dest='action')

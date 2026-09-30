@@ -1,0 +1,8 @@
+.env
+*.pem
+data/
+zipper.settings.json
+zippers/
+__pycache__/
+extension/web-ext-artifacts/
+.git

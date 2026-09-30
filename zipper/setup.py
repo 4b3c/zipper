@@ -236,7 +236,8 @@ def wizard(w, only=None):
     if want('vault'):
         w.out('\n== The vault ==')
         path = w.setting('vault', 'Where the notes live (absolute path)',
-                         default=os.path.expanduser('~/vault'))
+                         default=os.environ.get('ZIPPER_VAULT_DEFAULT')
+                         or os.path.expanduser('~/vault'))
         if path and not os.path.exists(os.path.join(path, 'CLAUDE.md')):
             if w.yes('No vault at %s. Create one from the template?' % path):
                 try:

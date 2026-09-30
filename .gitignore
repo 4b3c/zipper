@@ -217,3 +217,7 @@ extension/.amo-upload-uuid
 
 # One zipper's settings (structure; secrets stay in .env)
 zipper.settings.json
+
+# Local container layout (compose.example.yml)
+compose.yml
+zippers/
