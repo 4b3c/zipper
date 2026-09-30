@@ -39,11 +39,10 @@ def init_vault(path, owner='', zid='', git_name='', git_email=''):
     that is not already a vault: overwriting someone's notes is the one mistake
     here that cannot be undone. Returns the list of files written."""
     path = os.path.abspath(os.path.expanduser(path))
-    if os.path.isdir(path) and os.listdir(path):
-        if os.path.exists(os.path.join(path, 'CLAUDE.md')):
-            raise RuntimeError('%s already holds a vault -- leaving it alone' % path)
-        if set(os.listdir(path)) - {'.git'}:
-            raise RuntimeError('%s is not empty and is not a vault' % path)
+    if os.path.exists(os.path.join(path, 'CLAUDE.md')):
+        raise RuntimeError('%s already holds a vault -- leaving it alone' % path)
+    if os.path.isdir(path) and _has_notes(path):
+        raise RuntimeError('%s is not empty and is not a vault' % path)
     os.makedirs(path, exist_ok=True)
     for d in DIRS:
         os.makedirs(os.path.join(path, d), exist_ok=True)
@@ -76,6 +75,25 @@ def init_vault(path, owner='', zid='', git_name='', git_email=''):
     subprocess.run(['git', '-C', path, 'add', '-A'], check=True)
     subprocess.run(['git', '-C', path, 'commit', '-q', '-m', 'A new vault'], check=False)
     return written
+
+
+def _has_notes(path):
+    """Anything in `path` that someone wrote. The engine's own output does not
+    count: a dashboard started before `init` has already made Inbox/, Metrics/
+    and the generated Meta/ views, and refusing over those would make the order
+    of two commands matter for no reason."""
+    engine = {'Inbox', 'Log', 'Metrics', '.git'}
+    generated = {'Queue.md', 'Status.md', 'Agenda.md', 'Repos.md'}
+    for base, dirs, files in os.walk(path):
+        rel = os.path.relpath(base, path)
+        top = rel.split(os.sep)[0]
+        if top in engine:
+            dirs[:] = []
+            continue
+        for f in files:
+            if not (top == 'Meta' and f in generated):
+                return True
+    return False
 
 
 # ---------------------------------------------------------------- .env, secrets
