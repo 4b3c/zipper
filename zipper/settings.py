@@ -313,6 +313,17 @@ def apply():
         return
     for k, v in values.items():
         os.environ.setdefault(k, v)
+    # An older settings file -- outside the vault, from before settings.json moved
+    # in -- may be the only place the vault is named. Honour it until migrated:
+    # without this, a zipper whose environment never set ZIPPER_VAULT fell back to
+    # its own code checkout and treated that as the vault.
+    if not os.environ.get('ZIPPER_VAULT'):
+        try:
+            old = raw().get('vault')
+        except ValueError:
+            old = None
+        if old:
+            os.environ['ZIPPER_VAULT'] = old
 
 
 # ---------------------------------------------------------------- migrating

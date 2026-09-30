@@ -145,6 +145,16 @@ class Settings(unittest.TestCase):
         self.assertNotIn('inputs', settings.raw())
         self.assertEqual(settings.get('plugins.github.user'), 'sam')
 
+    def test_an_old_files_vault_key_still_locates_the_vault(self):
+        settings.save({'vault': '/some/old/vault'})
+        saved = os.environ.pop('ZIPPER_VAULT')
+        try:
+            settings.apply()
+            self.assertEqual(os.environ.get('ZIPPER_VAULT'), '/some/old/vault')
+        finally:
+            os.environ['ZIPPER_VAULT'] = saved
+        settings.save({})
+
     def test_environment_outranks_settings(self):
         settings.put('owner', 'Settings')
         os.environ['ZIPPER_OWNER'] = 'Env'
