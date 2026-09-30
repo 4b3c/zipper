@@ -1,7 +1,9 @@
 {
   "title": "Calendars",
   "about": "any ICS feed -- Google Calendar, Outlook, a class schedule -- into the agenda and the queue",
-  "defaults": {},
+  "defaults": {
+    "poll_minutes": 60
+  },
   "secrets": [],
   "env": {},
   "name": "calendar"

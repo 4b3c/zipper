@@ -363,7 +363,7 @@ def sheet_id():
     sid = google._cfg('ZIPPER_SHEET_ID')
     if not sid:
         raise RuntimeError('no timesheet configured: set inputs.hours.sheet in '
-                           'zipper.settings.json (or ZIPPER_SHEET_ID)')
+                           'settings.json (or ZIPPER_SHEET_ID)')
     return sid
 
 

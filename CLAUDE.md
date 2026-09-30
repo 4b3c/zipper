@@ -35,6 +35,8 @@ Dependencies are allowed where they earn their place; `requirements.txt` lists t
 | `zipper/chat.py` | The Discord CLI |
 | `zipper/conversations.py` | Front door over `convcore.py` (identity, registry), `convhead.py` (headless Discord conversations), `ttyd.py` (a ttyd per pane), `convstate.py` (liveness, reaper) |
 | `zipper/serve.py` + `zipper/web/` | The dashboard. `serve.py` is the entry point |
+| `zipper/web/cards.py` | The card framework: resolving `dashboard:`/`<plugin>:`/`vault:` cards, isolation, actions, the `ui` kit |
+| `plugins/dashboard/cards/`, `plugins/<name>/cards/` | Built-in cards, and cards a plugin brings |
 | `zipper/web/home.py` | `/`, the dashboard, including the Claude card |
 | `zipper/web/render.py` | The `/views`, `/tasks` and `/canvas` pages, and helpers `home.py` shares |
 | `zipper/web/js.py` `css.py` | `TERM_JS`/`TERM_CSS` drive the Claude card; the rest styles the list pages |
@@ -163,7 +165,7 @@ that posts mid-turn, read the streaming entry in `HISTORY.md`.**
 
 ## 7. Configuration
 
-**Structure in `zipper.settings.json`, secrets in `.env`** (both gitignored; see
+**Structure in the vault's `settings.json`, secrets in `.env`** (outside the vault; see
 `zipper.settings.example.json` and `.env.example`). `zipper/settings.py` fills unset
 environment variables from the settings file at import, so the order everywhere is: real
 environment, `.env`, settings. **Never open `.env`** -- read and change structure with

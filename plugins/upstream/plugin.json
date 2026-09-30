@@ -2,6 +2,7 @@
   "title": "Code updates",
   "about": "a queue row when a change to the shared Zipper code is merged, and (optionally) taking it automatically",
   "defaults": {
+    "poll_minutes": 60,
     "auto_update": true
   },
   "secrets": [],

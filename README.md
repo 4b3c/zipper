@@ -123,7 +123,7 @@ python3 -m zipper <command>          # --help lists everything
 
 | Command | Does |
 |---|---|
-| `fetch` | Starts a pass: github → calendars → canvas → sync → agenda → status → views → queue → brief. Idempotent |
+| `pull [plugin…] [--due]` | Pull plugins — named, due by their own timers, or all — then sync, agenda, status, views and the brief. Each plugin also pulls on its own `poll_minutes` |
 | `brief` | Re-render the brief without pulling |
 | `commit "<msg>" [--force]` | Ends a pass: ticks the queue, commits the notes, fails if the tree is dirty after |
 | `github [--full]` | Repos + commits → `last_push`, `commits_*`, `last_touched`, `Meta/Repos.md` |
@@ -195,14 +195,27 @@ could inflate them:
 python3 -m zipper.serve --port 8800 [--host ADDR] [--daemon] [--open]
 ```
 
-One page. Top row: **Week**, **Today** (a real time grid), **Canvas** (this week's
-coursework) and **Projects** (tasks by project). Under it, **Claude**: every conversation,
-each in its own terminal. Then the **Queue** (read-only, flags on top) beside **Zipper**
-(execution metrics, plan usage, the box), then **Next actions** and **Ventures**, then how
-old each input is.
+The dashboard is rows of cards, listed in the vault's `settings.json` under
+`plugins.dashboard.rows`. A card comes from one of three places:
+
+- **Built in** (`dashboard:<name>`): the queue, Claude (every conversation in its own
+  terminal), the week and the day as a time grid, the Zipper panel (metrics, plan usage,
+  the machine), sources (how old each plugin's data is, with a refresh button each), and a
+  to-do card for the checkboxes in any markdown file.
+- **Brought by a plugin** (`<plugin>:<name>`), while it is on — e.g. `canvas:week`, with
+  its own refresh button.
+- **Written in the vault** (`vault:<name>`): `Dashboard/<name>/backend.py`, and optionally
+  `frontend.py`. This is where a card built on one person's notes lives, never in this
+  repository.
+
+A card's backend has `data(ctx)`; its frontend `render(data, ctx, ui)` draws with the same
+pieces as everything else. Buttons are read-write: `ui.button(action, ...)` calls the
+backend's `act_<action>(args, ctx)`. **A broken card only breaks itself**: an error is drawn
+in its frame, and a card slower than four seconds is skipped for a minute. See
+`template/vault/Dashboard/README.md` and the `recent` example a new vault starts with.
 
 **It owns no data** — every panel reads what the engine wrote. **It never fetches on
-launch** — a timer does, hourly — and sources publish over SSE as they land. **Looking is
+launch** — each plugin pulls on its own timer — and sources publish over SSE as they land. **Looking is
 free**: no Claude session starts until you press a button. Details: `zipper/README.md`.
 
 ## Discord
@@ -243,7 +256,8 @@ cd ~/zipper/vault && claude         # and say "set me up"
   Claude walks through it with you — your name, the Discord bot, how the zipper's own Claude
   logs in, then each plugin: what it does, whether you want it, and its settings — and
   removes each section as it is done, until only the everyday rules are left.
-- `config/` — `zipper.settings.json` (structure) and `.env` (secrets, never in the vault).
+- `vault/settings.json` — the one settings file: plugins, their timers, the dashboard's cards.
+- `config/` — `.env`: secrets only, never in the vault.
 - `backup/` — a second copy of the vault, pushed on every commit.
 - `compose.yml`, and `./zipper`: this zipper's command on this machine.
 
@@ -276,7 +290,7 @@ command through a webhook the containers cannot see. `zipper hostd init`, then `
 ```
 zipper-web.service       dashboard, views, POST /discord
 zipper-discord.service   the gateway connection (run with python3 -u)
-zipper-fetch.timer       hourly fetch
+zipper-fetch.timer       every 5 minutes: `zipper pull --due`
 zipper-pass.timer        09:00 and 21:00 bookkeeping pass
 zipper-digest.timer      19:00 digest
 ```

@@ -2,6 +2,7 @@
   "title": "Canvas",
   "about": "assignments and due dates from Canvas; whether each is submitted comes from the browser collector",
   "defaults": {
+    "poll_minutes": 60,
     "host": "",
     "extension_base": ""
   },

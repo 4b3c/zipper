@@ -122,30 +122,103 @@ def require(name):
 
 # ---------------------------------------------------------------- the pipeline
 
-def pull_all(log=print):
-    """Pull every plugin that pulls. One failing never stops the rest: a GitHub
-    outage or a revoked token degrades the brief, it does not prevent it."""
-    errors = []
-    for i in enabled():
-        if not hasattr(i, 'pull'):
+PULLS = os.path.join(core.INBOX, 'pulls.json')
+
+
+def _pulls():
+    try:
+        with open(PULLS, encoding='utf-8') as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def poll_minutes(name, s=None):
+    """How often a plugin pulls on its own, or 0 for never (only by hand)."""
+    s = s if s is not None else settings.load()
+    return int(((s.get('plugins') or {}).get(name) or {}).get('poll_minutes') or 0)
+
+
+def pullers():
+    """Enabled plugins that fetch from outside."""
+    return [i for i in enabled() if hasattr(i, 'pull')]
+
+
+def due(now=None):
+    """Names of pulling plugins whose own timer has run out."""
+    now = now or datetime.datetime.now()
+    s, last = settings.load(), _pulls()
+    out = []
+    for i in pullers():
+        every = poll_minutes(i.name, s)
+        if not every:
             continue
-        log('== %s ==' % i.name)
+        t = last.get(i.name)
+        if not t or (now - datetime.datetime.fromisoformat(t)).total_seconds() >= every * 60:
+            out.append(i.name)
+    return out
+
+
+def pull(name, log=print):
+    """Pull one plugin and turn what changed into queue rows.
+
+    **Each plugin is its own fetch.** It is snapshotted, pulled and snapshotted
+    again, and the difference becomes rows -- so a plugin on a 15-minute timer and
+    one on an hour never wait for each other, and a card's refresh button pulls
+    only its own plugin. Rows go through `publish`, whose file lock makes this
+    safe from any process. Facts are applied by the one writer. A failure is
+    reported and recorded, never raised: one outage must not stop the rest.
+    Returns (rows added, error or '').
+    """
+    i = get(name)
+    if not i or not hasattr(i, 'pull'):
+        return 0, 'no enabled plugin %r that pulls' % name
+    from . import serve, writer
+    before = {name: i.snapshot()} if hasattr(i, 'snapshot') else {}
+    err = ''
+    try:
+        i.pull()
+    except Exception as e:
+        err = str(e)
+        log('%s: pull failed: %s' % (name, e))
+    n = 0
+    if hasattr(i, 'snapshot') and hasattr(i, 'events'):
         try:
-            i.pull()
+            for row in i.events(before.get(name), i.snapshot()) if name in before else []:
+                serve.publish('diff', row.pop('text'), **row)
+                n += 1
         except Exception as e:
-            log('%s step skipped: %s' % (i.name, e))
-            errors.append('%s: %s' % (i.name, e))
-        log('')
-    from . import writer
-    log('== facts ==')
-    writer.apply_all()
-    log('')
+            serve.publish('diff', 'error       %s events: %s' % (name, e),
+                          system='error', action='edit')
+    if hasattr(i, 'facts'):
+        try:
+            writer.apply(i.facts(), source=name)
+        except Exception as e:
+            log('%s: facts failed: %s' % (name, e))
+    last = _pulls()
+    last[name] = datetime.datetime.now().isoformat(timespec='seconds')
+    if err:
+        last[name + ':error'] = err
+    else:
+        last.pop(name + ':error', None)
+    os.makedirs(core.INBOX, exist_ok=True)
+    tmp = PULLS + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as fh:
+        json.dump(last, fh, indent=1)
+    os.replace(tmp, PULLS)
+    return n, err
+
+
+def pull_all(log=print):
+    """Pull every enabled plugin that pulls. Kept for a whole refresh by hand."""
+    errors = []
+    for i in pullers():
+        log('== %s ==' % i.name)
+        n, err = pull(i.name, log=log)
+        log('%s: %d new row(s)%s' % (i.name, n, ' -- ' + err if err else ''))
+        if err:
+            errors.append('%s: %s' % (i.name, err))
     return errors
-
-
-def pulls():
-    """Does any enabled plugin fetch? If not, there is nothing to schedule."""
-    return any(hasattr(i, 'pull') for i in enabled())
 
 
 def freshness():

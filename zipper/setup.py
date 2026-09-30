@@ -6,7 +6,7 @@ talking to Claude in the new vault.
 
     zipper init <path> [--owner NAME] [--id ID] [--backup PATH] [--starter]
 
-Secrets go to `.env`; everything else to zipper.settings.json.
+Secrets go to `.env`; everything else to the vault's settings.json.
 """
 import json, os, re, subprocess
 
@@ -27,7 +27,7 @@ STARTER_DIRS = ('Projects', 'Areas', 'Topics', 'People', 'Tasks', 'Decisions', '
 # ---------------------------------------------------------------- the vault
 
 def init_vault(path, owner='', zid='', git_name='', git_email='', backup='', starter=False,
-               guide='', record_backup=True):
+               guide='', record_backup=True, settings_json=None):
     """Make `path` a vault: a git repository with a CLAUDE.md and a .gitignore.
 
     That is all a vault needs. `starter` adds a suggested layout (folders, a
@@ -67,6 +67,15 @@ def init_vault(path, owner='', zid='', git_name='', git_email='', backup='', sta
     ident = (git_name or zid or 'zipper', git_email or '%s@zipper.local' % (zid or 'zipper'))
     subprocess.run(['git', '-C', path, 'config', 'user.name', ident[0]], check=True)
     subprocess.run(['git', '-C', path, 'config', 'user.email', ident[1]], check=True)
+    # The one settings file lives in the vault, beside the notes and the
+    # dashboard's cards: everything personal except secrets.
+    sj = os.path.join(path, 'settings.json')
+    if not os.path.exists(sj):
+        with open(sj, 'w', encoding='utf-8') as fh:
+            json.dump(settings_json or {'id': zid or settings.zipper_id(), 'owner': owner}, fh,
+                      indent=2)
+            fh.write('\n')
+        written.append('settings.json')
     if guide:
         # The setup guide goes on top of the rules, between markers, and removes
         # itself section by section (`zipper setup done`).
@@ -237,19 +246,12 @@ def init_home(home, owner='', zid='zipper-0', starter=False):
     CLAUDE.md), its config, a backup, a compose file, and a `zipper` command for this
     machine. Returns what it made."""
     home = os.path.abspath(os.path.expanduser(home))
-    if os.path.exists(os.path.join(home, 'config', 'zipper.settings.json')):
+    if os.path.exists(os.path.join(home, 'vault', 'settings.json')):
         raise RuntimeError('%s already holds a zipper -- leaving it alone' % home)
     subs = {'{{HOME}}': home, '{{ID}}': zid, '{{CODE}}': ROOT,
             '{{OWNER}}': owner or 'the operator'}
     os.makedirs(os.path.join(home, 'config'), exist_ok=True)
     os.makedirs(os.path.join(home, 'backup'), exist_ok=True)
-    cfg = os.path.join(home, 'config', 'zipper.settings.json')
-    with open(cfg, 'w', encoding='utf-8') as fh:
-        # The vault path is the container's; `home/zipper` points at the real one here.
-        json.dump({'id': zid, 'owner': owner, 'vault': '/zipper/vault',
-                   'code': {'repo': '4b3c/Zipper', 'branch': 'main'},
-                   'plugins': {'backup': {'enabled': True}}}, fh, indent=2)
-        fh.write('\n')
     envf = os.path.join(home, 'config', '.env')
     if not os.path.exists(envf):
         fd = os.open(envf, os.O_WRONLY | os.O_CREAT, 0o600)
@@ -265,9 +267,13 @@ def init_home(home, owner='', zid='zipper-0', starter=False):
             fh.write(t)
         if f == 'zipper':
             os.chmod(dst, 0o755)
-    init_vault(os.path.join(home, 'vault'), owner=owner, zid=zid, starter=starter,
+    vault = os.path.join(home, 'vault')
+    init_vault(vault, owner=owner, zid=zid, starter=starter,
                backup=os.path.join(home, 'backup', 'vault.git'), guide=guide(subs),
-               record_backup=False)
+               record_backup=False, settings_json={
+                   'id': zid, 'owner': owner,
+                   'code': {'repo': '4b3c/Zipper', 'branch': 'main'},
+                   'plugins': {'backup': {'enabled': True}}})
     return home
 
 
@@ -300,9 +306,6 @@ def cmd_init_vault(a):
     b = a.backup or _backup_default()
     print('backup: %s' % (b or 'NONE -- a lost directory takes its history with it; '
                                 'add one with --backup <path>'))
-    if not settings.get('vault'):
-        settings.put('vault', os.path.abspath(a.path))
-        print('settings: vault = %s' % os.path.abspath(a.path))
     return 0
 
 

@@ -111,7 +111,11 @@ def main():
     # A bookkeeping pass is fetch -> reasoning -> commit. Only the ends are
     # commands; the middle is an agent reading the brief against the vault, so
     # there is deliberately no `bookkeep` subcommand to imply otherwise.
-    s = sub.add_parser('fetch', help='start a pass: pull every input, write the brief')
+    s = sub.add_parser('pull', help='pull plugins (named, --due, or all), then write the brief')
+    s.add_argument('names', nargs='*'); s.add_argument('--due', action='store_true',
+                   help='only plugins whose own timer has run out')
+    s.add_argument('--days', type=int, default=14); s.set_defaults(fn=runqueue.cmd_pull)
+    s = sub.add_parser('fetch', help='(old) every pulling plugin, then the brief')
     s.add_argument('--days', type=int, default=14); s.set_defaults(fn=runqueue.cmd_fetch)
     s = sub.add_parser('brief', help='rewrite the brief without pulling anything')
     s.add_argument('--days', type=int, default=14); s.set_defaults(fn=runqueue.cmd_brief)
@@ -242,7 +246,7 @@ def main():
         s.add_argument(x)
     s.set_defaults(fn=_mod('secret', 'cmd_secret_page'))
 
-    s = sub.add_parser('settings', help='show or change zipper.settings.json (never secrets)')
+    s = sub.add_parser('settings', help="show or change the vault's settings.json (never secrets)")
     ss = s.add_subparsers(dest='action')
     ss.add_parser('show'); ss.add_parser('path'); ss.add_parser('check')
     g = ss.add_parser('migrate', help='move the non-secret keys of .env into the file')

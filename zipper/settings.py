@@ -1,11 +1,14 @@
 """zipper.settings
 
-`zipper.settings.json`: what this zipper is and does -- its id, whose it is, its
-ports, and which plugins are on. Structure only. **Secrets stay in `.env`**, so an
-agent can read and edit this file freely without a token entering a transcript.
+`settings.json`, in the vault: what this zipper is and does -- its id, whose it is,
+its ports, which plugins are on, how often each pulls, and (under
+`plugins.dashboard.rows`) the dashboard's cards. Structure only. **Secrets stay in
+`.env`**, outside the vault, so an agent can read and edit this file freely without
+a token entering a transcript.
 
-Where it is: `$ZIPPER_SETTINGS`, else `zipper.settings.json` beside `.env` in the
-checkout.
+Where it is: `$ZIPPER_SETTINGS`, else `$ZIPPER_VAULT/settings.json` (the vault is found
+through the environment or `.env`, never through this file). An old checkout-level
+`zipper.settings.json` is still read until `zipper settings migrate` moves it.
 
     {
       "id": "zipper-0", "owner": "Sam", "vault": "/zipper/vault",
@@ -31,17 +34,49 @@ rewrites it in the current shape.
 import copy, json, os, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PATH = os.environ.get('ZIPPER_SETTINGS') or os.path.join(ROOT, 'zipper.settings.json')
 PLUGIN_DIR = os.path.join(ROOT, 'plugins')
+LEGACY_PATH = os.path.join(ROOT, 'zipper.settings.json')
+
+
+def _vault_from_env():
+    """The vault is what locates the settings, so it cannot come from them: the
+    environment, or failing that the `.env` file (which a shell does not load)."""
+    v = os.environ.get('ZIPPER_VAULT', '')
+    if v:
+        return v
+    envf = os.environ.get('ZIPPER_ENV_FILE') or os.path.join(ROOT, '.env')
+    try:
+        with open(envf) as fh:
+            for ln in fh:
+                if ln.strip().startswith('ZIPPER_VAULT='):
+                    return ln.split('=', 1)[1].strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return ''
+
+
+def _path():
+    """`settings.json` in the vault. `$ZIPPER_SETTINGS` overrides; a checkout that
+    still has the old `zipper.settings.json` and no vault file keeps reading it
+    until `zipper settings migrate` moves it."""
+    if os.environ.get('ZIPPER_SETTINGS'):
+        return os.environ['ZIPPER_SETTINGS']
+    vault = _vault_from_env()
+    if vault:
+        p = os.path.join(vault, 'settings.json')
+        if os.path.exists(p) or not os.path.exists(LEGACY_PATH):
+            return p
+    return LEGACY_PATH
+
+
+PATH = _path()
 
 # The core's shape, with defaults. Plugins add theirs from their manifests.
 DEFAULTS = {
     'id': 'zipper-0',
     'owner': '',
-    'vault': '',
     'timezone': '',
     'discord': {'channel': '', 'notify_channel': ''},
-    'schedule': {'fetch_minutes': 60},
     'ports': {'web': 8800, 'bot': 4200, 'ttyd_base': 8810},
     'terminal': {'host': ''},
     'claude': {'permission_mode': 'auto'},
@@ -50,7 +85,7 @@ DEFAULTS = {
 }
 
 CORE_ENV = {
-    'ZIPPER_ID': 'id', 'ZIPPER_OWNER': 'owner', 'ZIPPER_VAULT': 'vault', 'TZ': 'timezone',
+    'ZIPPER_ID': 'id', 'ZIPPER_OWNER': 'owner', 'TZ': 'timezone',
     'DISCORD_CHANNEL_ID': 'discord.channel', 'ZIPPER_NOTIFY_CHANNEL': 'discord.notify_channel',
     'ZIPPER_TTYD_BASE': 'ports.ttyd_base', 'ZIPPER_TERM_HOST': 'terminal.host',
     'ZIPPER_PERMISSION_MODE': 'claude.permission_mode',
@@ -104,12 +139,13 @@ def raw():
         return {}
 
 
-LEGACY_KEYS = ('inputs', 'peers', 'host', 'google', 'extension')
+LEGACY_KEYS = ('inputs', 'peers', 'host', 'google', 'extension', 'vault')
 
 
 def _legacy(data):
     """Translate the pre-plugin shape. Returns a new dict; never writes."""
     data = copy.deepcopy(data)
+    data.pop('vault', None)             # located by ZIPPER_VAULT, never by this file
     p = data.setdefault('plugins', {})
 
     def put_p(name, key, value):
@@ -133,7 +169,10 @@ def _legacy(data):
     code = data.get('code') or {}
     if 'auto_update' in code:
         put_p('upstream', 'auto_update', code.pop('auto_update'))
-    sched = data.get('schedule') or {}
+    sched = data.pop('schedule', None) or {}
+    if sched.get('fetch_minutes') and int(sched['fetch_minutes']) != 60:
+        for n in ('github', 'calendar', 'canvas', 'hours', 'upstream'):
+            put_p(n, 'poll_minutes', int(sched['fetch_minutes']))
     if 'pass' in sched:
         put_p('passes', 'times', sched.pop('pass'))
     if 'digest' in sched:
@@ -148,7 +187,7 @@ def is_legacy(data=None):
     data = raw() if data is None else data
     return any(k in data for k in LEGACY_KEYS) or \
         'auto_update' in (data.get('code') or {}) or \
-        any(k in (data.get('schedule') or {}) for k in ('pass', 'digest'))
+        'schedule' in data
 
 
 def load():
@@ -323,7 +362,18 @@ def migrate(envfile):
         port = e.get(key, '').rsplit(':', 1)[-1].strip('/')
         if port.isdigit():
             put_in('ports.' + name, int(port))
-    save(data)
+    data.pop('vault', None)             # the environment locates the vault now
+    global PATH
+    vault = _vault_from_env()
+    if PATH == LEGACY_PATH and vault and os.path.isdir(vault):
+        # One file, in the vault: move it there. The old one is renamed rather
+        # than deleted, so a rollback to older code still finds something.
+        PATH = os.path.join(vault, 'settings.json')
+        moved.append('(moved to %s)' % PATH)
+        save(data)
+        os.replace(LEGACY_PATH, LEGACY_PATH + '.moved')
+    else:
+        save(data)
     return moved
 
 

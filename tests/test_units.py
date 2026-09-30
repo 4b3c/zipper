@@ -80,27 +80,31 @@ class HostTiers(unittest.TestCase):
 class Schedule(unittest.TestCase):
     JOBS = [('pass', '09:00'), ('pass', '21:00'), ('digest', '19:00')]
 
-    def due(self, now, st, pulls=True, jobs=None):
-        return supervise.due(now, st, 60, pulls, self.JOBS if jobs is None else jobs)
+    def due(self, now, st, pulls=False, jobs=None):
+        return supervise.due(now, st, self.JOBS if jobs is None else jobs, pulls_due=pulls)
 
     def test_catches_up_once(self):
         now = datetime.datetime(2026, 9, 29, 9, 1)
-        self.assertEqual(self.due(now, {}), [('fetch', 'fetch'), ('pass', 'pass@09:00')])
-        ran = {'fetch': '2026-09-29T08:30:00', 'pass@09:00': '2026-09-29T09:00:30'}
+        self.assertEqual(self.due(now, {}, pulls=True),
+                         [('pull --due', 'pull'), ('pass', 'pass@09:00')])
+        ran = {'pass@09:00': '2026-09-29T09:00:30'}
         self.assertEqual(self.due(now, ran), [])
 
     def test_missed_slot_is_skipped(self):
         now = datetime.datetime(2026, 9, 29, 12, 0)
-        self.assertEqual(self.due(now, {'fetch': '2026-09-29T11:30:00'}), [])
+        self.assertEqual(self.due(now, {}), [])
 
-    def test_update_rides_the_fetch_clock(self):
+    def test_every_n_minutes(self):
         now = datetime.datetime(2026, 9, 29, 12, 0)
-        jobs = self.due(now, {'fetch': '2026-09-29T11:30:00'}, jobs=[('update', 'every')])
-        self.assertIn(('update', 'update'), jobs)
+        jobs = [('update', 'every:30')]
+        self.assertEqual(self.due(now, {}, jobs=jobs), [('update', 'update')])
+        self.assertEqual(self.due(now, {'update': '2026-09-29T11:45:00'}, jobs=jobs), [])
+        self.assertEqual(self.due(now, {'update': '2026-09-29T11:15:00'}, jobs=jobs),
+                         [('update', 'update')])
 
-    def test_nothing_to_fetch_without_a_pulling_plugin(self):
+    def test_nothing_to_do_without_due_pulls_or_jobs(self):
         now = datetime.datetime(2026, 9, 29, 12, 0)
-        self.assertEqual(self.due(now, {}, pulls=False, jobs=[]), [])
+        self.assertEqual(self.due(now, {}, jobs=[]), [])
 
 
 class Settings(unittest.TestCase):
@@ -218,10 +222,11 @@ class InitVault(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             setup.init_vault(path)
 
-    def test_a_vault_is_just_git_and_claude_md(self):
+    def test_a_vault_is_git_claude_md_settings_and_its_cards(self):
         path = os.path.join(TMP, 'v3')
         setup.init_vault(path)
-        self.assertEqual(sorted(os.listdir(path)), ['.git', '.gitignore', 'CLAUDE.md'])
+        self.assertEqual(sorted(os.listdir(path)),
+                         ['.git', '.gitignore', 'CLAUDE.md', 'Dashboard', 'settings.json'])
 
     def test_starter_is_optional_extra(self):
         path = os.path.join(TMP, 'v4')
@@ -302,16 +307,17 @@ class Setup(unittest.TestCase):
     def test_init_home_makes_a_whole_zipper(self):
         home = os.path.join(TMP, 'home1')
         setup.init_home(home, owner='Sam', zid='zipper-9')
-        for rel in ('vault/CLAUDE.md', 'config/zipper.settings.json', 'config/.env',
-                    'backup/vault.git/HEAD', 'compose.yml', 'zipper'):
+        for rel in ('vault/CLAUDE.md', 'vault/settings.json', 'vault/Dashboard/setup.md',
+                    'config/.env', 'backup/vault.git/HEAD', 'compose.yml', 'zipper'):
             self.assertTrue(os.path.exists(os.path.join(home, rel)), rel)
         self.assertEqual(oct(os.stat(os.path.join(home, 'config/.env')).st_mode & 0o777), '0o600')
         self.assertTrue(os.access(os.path.join(home, 'zipper'), os.X_OK))
         with open(os.path.join(home, 'vault/CLAUDE.md'), encoding='utf-8') as fh:
             self.assertIn('<!-- setup:discord -->', fh.read())
-        with open(os.path.join(home, 'config/zipper.settings.json'), encoding='utf-8') as fh:
+        with open(os.path.join(home, 'vault/settings.json'), encoding='utf-8') as fh:
             cfg = json.load(fh)
-        self.assertEqual((cfg['id'], cfg['vault']), ('zipper-9', '/zipper/vault'))
+        self.assertEqual(cfg['id'], 'zipper-9')
+        self.assertTrue(cfg['plugins']['backup']['enabled'])
         with self.assertRaises(RuntimeError):
             setup.init_home(home)
 

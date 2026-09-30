@@ -10,4 +10,4 @@ status: living
 - [[Status]] — the generated snapshot · [[Dashboard]] — live queries
 - [[Schema]] — how the vault is structured · [[About Me]] — who this is about
 
-`Status`, `Queue` and `Agenda` appear after the first `zipper fetch`.
+`Status`, `Queue` and `Agenda` appear after the first `zipper pull`.

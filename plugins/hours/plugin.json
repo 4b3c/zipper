@@ -2,6 +2,7 @@
   "title": "Timesheet",
   "about": "log hours by message; a Google Sheet stays the record",
   "defaults": {
+    "poll_minutes": 60,
     "sheet": "",
     "metric": "hours_worked",
     "google_account": "",

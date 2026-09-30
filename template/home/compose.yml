@@ -1,7 +1,7 @@
 # {{ID}}: one zipper. From this folder: docker compose up -d --build
 #
-#   vault/    the notes -- a git repository; the only thing that is really yours
-#   config/   zipper.settings.json and .env (secrets; never in the vault)
+#   vault/    the notes, settings.json and the dashboard's cards -- a git repository
+#   config/   .env: secrets only, never in the vault
 #   backup/   the vault's second copy, pushed on every commit (backup plugin)
 services:
   zipper:

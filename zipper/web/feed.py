@@ -44,6 +44,29 @@ def _feed_transient(text):
     """
     return text.startswith('terminal ')
 
+import contextlib, fcntl
+
+
+@contextlib.contextmanager
+def feed_txn():
+    """One read-modify-write of the queue, safe across processes.
+
+    Every plugin pulls on its own timer and a card's refresh button pulls from
+    inside this server, so two processes can add rows at the same moment. An
+    in-process lock cannot see the other one, and whichever saved last would
+    silently drop the other's rows. So: take a file lock, re-read the file, change
+    it, save it, release."""
+    with FEED_LOCK:
+        os.makedirs(os.path.dirname(FEED_JSON), exist_ok=True)
+        with open(FEED_JSON + '.lock', 'a') as lk:
+            fcntl.flock(lk, fcntl.LOCK_EX)
+            try:
+                feed_load()
+                yield
+            finally:
+                fcntl.flock(lk, fcntl.LOCK_UN)
+
+
 def feed_rows():
     with FEED_LOCK:
         return [dict(r) for r in FEED]
@@ -96,7 +119,7 @@ def feed_save():
 def feed_mark(key, done=None):
     """Cross a queue item off (or back on). Accepts a unique key prefix so it is
     typeable from the terminal."""
-    with FEED_LOCK:
+    with feed_txn():
         hits = [r for r in FEED if r['key'] == key] or \
                [r for r in FEED if r['key'].startswith(key)]
         if not hits:
@@ -114,7 +137,7 @@ def feed_mark_all():
     clearing a whole run used to be a shell loop over --queue -- ten separate saves,
     ten watcher pushes. This is one save and one push. It only ever crosses off:
     nothing here restores a row, so it cannot undo a deliberate un-tick."""
-    with FEED_LOCK:
+    with feed_txn():
         now = datetime.datetime.now().isoformat(timespec='seconds')
         hits = [r for r in FEED if not r.get('done')]
         for r in hits:
@@ -151,7 +174,7 @@ def publish(kind, text='', **extra):
     ev = {'kind': kind, 'text': text, 'at': datetime.datetime.now().strftime('%H:%M:%S')}
     ev.update(extra)
     if kind == 'diff' and not _feed_transient(text):
-        with FEED_LOCK:
+        with feed_txn():
             key = _feed_key(text)
             if any(r['key'] == key for r in FEED):
                 return                      # same fact twice is not two queue items
@@ -232,7 +255,7 @@ def emit_diff(before, after):
     # because it re-fires on the next run, and worse, it reads as handled while
     # the project it names goes on stalling. They surface on Signals, which
     # renders whatever is true right now. See zipper/runqueue.py.
-    with FEED_LOCK:
+    with feed_txn():
         try:
             blob = json.load(open(FEED_JSON, encoding='utf-8'))
         except Exception:
@@ -247,39 +270,28 @@ def emit_diff(before, after):
             pass
     return len(evs)
 
-def do_refresh():
-    """Runs ONCE per launch, never on a page reload. Each source publishes as it
-    lands, so the page fills in live instead of waiting for the slowest one."""
+def do_refresh(names=None):
+    """Pull plugins from inside the server: one (a card's refresh button) or every
+    one that pulls. Each goes through `plugins.pull`, the same path as its timer,
+    so rows land the same way whoever asked. They run concurrently: a Canvas feed
+    alone can take seconds, and GitHub has no reason to queue behind it."""
     with LOCK:
         if STATE['refreshing']:
             return
         STATE['refreshing'] = True
     publish('status', 'fetching\u2026')
-    before = snapshot_data()
-    err, total = [], 0
+    err = []
     try:
         core.TODAY = datetime.date.today()
-        # Every input that pulls. A pushed input (Canvas) has nothing to re-pull,
-        # and a button that appeared to refresh it would lie. They run
-        # concurrently: a Canvas ICS feed alone can take ~6s to generate, and
-        # GitHub has no reason to queue behind it.
-        steps = [(i.name, i.pull) for i in inputs.enabled() if hasattr(i, 'pull')]
-        dlock = threading.Lock()
+        todo = names or [i.name for i in inputs.pullers()]
 
-        def run(label, fn):
-            nonlocal before, total
-            try:
-                fn()
-            except Exception as e:
-                err.append('%s: %s' % (label, e))
-                publish('diff', 'error       %s: %s' % (label, e))
-            with dlock:                 # snapshot/diff is shared state
-                after = snapshot_data()
-                total += emit_diff(before, after)
-                before = after
-            publish('source', label)
+        def run(name):
+            n, e = inputs.pull(name)
+            if e:
+                err.append('%s: %s' % (name, e))
+            publish('source', name)
 
-        threads = [threading.Thread(target=run, args=st, daemon=True) for st in steps]
+        threads = [threading.Thread(target=run, args=(n,), daemon=True) for n in todo]
         for t in threads:
             t.start()
         for t in threads:
@@ -290,9 +302,7 @@ def do_refresh():
             STATE['generation'] += 1
             STATE['last_error'] = '; '.join(err)
             STATE['last_refresh'] = datetime.datetime.now().isoformat(timespec='seconds')
-        # Nothing is not an event. A "no changes" row was a queue item that
-        # said no work had arrived, which is the one thing a queue of work
-        # should never contain -- it read as something to deal with and could
-        # be ticked off. Silence says it better.
+        # Nothing is not an event: a "no changes" row would be a queue item saying
+        # no work arrived, which is the one thing a queue of work must not contain.
         publish('notes', rows=note_rows())
         publish('done', '')

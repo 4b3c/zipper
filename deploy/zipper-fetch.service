@@ -1,5 +1,5 @@
 [Unit]
-Description=Zipper — hourly fetch of every input (also keeps the Canvas cookie warm)
+Description=Zipper — pull each plugin whose own timer is due
 After=network-online.target
 Wants=network-online.target
 
@@ -22,7 +22,7 @@ Type=oneshot
 # the operator's own browser rotates the session by re-authenticating through
 # SSO. The journal for this unit is the evidence: the age at which a cookie
 # dies, while being polled, tells the three apart.
-ExecStart=/usr/bin/python3 -m zipper fetch
+ExecStart=/usr/bin/python3 -m zipper pull --due
 WorkingDirectory=/opt/zipper
 EnvironmentFile=/opt/zipper/.env
 Environment=HOME=/root

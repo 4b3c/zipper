@@ -16,7 +16,7 @@ name = 'upstream'
 def jobs(conf):
     """Take merged changes on the fetch clock, if asked to. `zipper update` waits
     while a conversation is live, so an hourly try is what "when idle" means."""
-    return [('update', 'every')] if conf.get('auto_update') else []
+    return [('update', 'every:%d' % (conf.get('poll_minutes') or 60))] if conf.get('auto_update') else []
 
 
 def _git(*args):

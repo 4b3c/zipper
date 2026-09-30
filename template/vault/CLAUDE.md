@@ -49,7 +49,7 @@ worth keeping into the vault; never put a `/tmp` path in a note.
 ## 2. A pass
 
 ```bash
-zipper fetch                   # pull every input, write the brief
+zipper pull --due              # anything not pulled lately, then write the brief
 cat Meta/Queue.md              # the brief: what happened, what changed, what disagrees
                                # then: work each item into the notes it affects
 zipper lint                    # must be clean
@@ -57,7 +57,7 @@ zipper commit "what changed"   # ticks the queue, commits, pushes the backup
 ```
 
 The middle step is the whole point and only you can do it: "pushed my-app" is a fact; that
-My App's next step is now out of date is a judgment. Fetch first so the brief is current;
+My App's next step is now out of date is a judgment. Pull first so the brief is current (each plugin also pulls on its own timer);
 commit last so the next pass's diff means "since last pass". `commit` refuses while another
 conversation is live, because it would sweep up their half-finished edits.
 
@@ -129,6 +129,18 @@ to `zipper metric`, a decision to `zipper decide`. A log line saying what the ti
 is right as well, never instead.
 
 ---
+
+## 5a. Settings and the dashboard
+
+`settings.json`, in this vault, is the zipper's one settings file: which plugins are
+on, how often each one pulls (`plugins.<name>.poll_minutes`), their options, and —
+if the dashboard is on — its cards (`plugins.dashboard.rows`). Change it with
+`zipper settings set` or `zipper plugin enable|disable`; secrets never go in it
+(`zipper secret NAME`).
+
+`Dashboard/` holds this vault's own cards. When they ask to see something on the
+dashboard, add a built-in or plugin card to a row, or write a vault card there;
+`Dashboard/README.md` explains how, and a broken card only ever breaks itself.
 
 ## 6. Code, and other zippers
 

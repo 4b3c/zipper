@@ -30,6 +30,7 @@ from .js import TERM_JS, TICKJS
 from .css import TERM_CSS
 from .conv import _queue_prompt, current_conversation
 from .live import LIVE_JS, live_sig
+from .cards import CARD_CSS, CARD_JS
 from .data import (work_items, flags, monday_of, open_tasks,
                    priority, ranked, today_split, week_canvas)
 from .render import _gcal_link, _join_link, _lanes, _view_html, esc, views_blob
@@ -830,31 +831,32 @@ def del_button(it):
             % esc(it['key']))
 
 
-def page(day=None):
-    """The whole page. `day` selects which day the second panel draws.
-
-    The week is a column down the left rather than a strip across the top, so
-    selecting a day is a vertical gesture right beside the thing it changes.
-    """
+def _day_state(day):
     day = day or core.TODAY.isoformat()
     today_iso = core.TODAY.isoformat()
-    is_today = day == today_iso
-    d = datetime.date(*map(int, day.split('-')))
-    blocks, nowpct = _blocks(day, is_today)
+    return day, today_iso, day == today_iso, datetime.date(*map(int, day.split('-')))
+
+
+def day_label(day):
+    day, _t, is_today, d = _day_state(day)
+    return ('Today' if is_today else
+            'Tomorrow' if d == core.TODAY + datetime.timedelta(days=1) else
+            d.strftime('%A'))
+
+
+def week_panel(day=None):
+    """The week, a column down the left: selecting a day is a vertical gesture right
+    beside the panels it changes."""
+    day, today_iso, _is_today, _d = _day_state(day)
     wk = week_canvas(day)
     days = daystrip_days(day)
-
-    # --- 1. the week ----------------------------------------------------
     wdays = []
     for i, dd in enumerate(days):
         items = [it for it in wk['days'][dd] if not it['done']]
         nmeet = len(today_split(dd)[1])
         dd_d = datetime.date(*map(int, dd.split('-')))
-        # Counts only. The colour bars repeated what the course pills in the
-        # Canvas panel already say, at a size too small to name anything.
-        # Meetings first and on their own line: they are the fixed points of a
-        # day, and stacking them lets the column be narrow enough to stop
-        # competing with the panels it is there to select.
+        # Counts only; meetings first and on their own line -- they are the fixed
+        # points of a day, and stacking them keeps the column narrow.
         sub = []
         if nmeet:
             sub.append('<span>%d mtg</span>' % nmeet)
@@ -865,12 +867,18 @@ def page(day=None):
                      % (' on' if dd == day else '', ' today' if dd == today_iso else '',
                         dd, DOW[i], dd_d.strftime('%d'),
                         ''.join(sub) or '<span>&mdash;</span>'))
+    return ('<div class="panel" data-live="week"><div class="ph">week</div>'
+            '<div class="wk">%s</div></div>' % ''.join(wdays))
 
-    # --- 2. the day -----------------------------------------------------
+
+def day_panel(day=None):
+    """The selected day as a time grid."""
+    day, _t, is_today, _d = _day_state(day)
+    blocks, nowpct = _blocks(day, is_today)
     grid = []
     for m, p in _hours():
-        # Every hour ruled, but only every second hour labelled: at this scale
-        # seventeen labels is a stack of numbers, not an axis.
+        # Every hour ruled, only every second labelled: seventeen labels is a stack
+        # of numbers, not an axis.
         grid.append('<div class="hr%s" %s>%s</div>'
                     % ('' if (m // 60) % 2 == 0 else ' q', _style('top:%.3f%%' % p),
                        '<span>%02d</span>' % (m // 60) if (m // 60) % 2 == 0 else ''))
@@ -878,9 +886,7 @@ def page(day=None):
         grid.append('<div class="nowline" %s></div>' % _style('top:%.3f%%' % nowpct))
     for b in blocks:
         e = b['ev']
-        # A 30-minute block is about 16px tall here. The clock line does not fit
-        # under the title and would only push the title out, so short blocks
-        # carry the title alone and say the rest when opened.
+        # A 30-minute block is ~16px tall: short blocks carry the title alone.
         meta = ('<div class="bm">%s</div>' % b['span']) if b['mins'] >= 45 else ''
         grid.append('<div class="blk%s%s" data-s="%d" data-e="%d" %s><div class="bt">%s</div>%s%s'
                     '<div class="acts">%s</div></div>'
@@ -888,9 +894,7 @@ def page(day=None):
                        b['s'], b['e'],
                        _style('--hue:%d' % b['hue'], 'top:%.3f%%' % b['top'],
                               '--h:%.3f%%' % b['h'], 'height:%.3f%%' % b['h'],
-                              # Lanes tile the area *after* the hour gutter. Taking
-                              # the gutter out of each lane's width instead left a
-                              # 30px hole between two overlapping meetings.
+                              # Lanes tile the area after the hour gutter.
                               'left:calc(28px + (100%% - 32px) * %.5f)'
                               % (float(b['lane']) / b['nlanes']),
                               'width:calc((100%% - 32px) * %.5f - 3px)'
@@ -899,139 +903,91 @@ def page(day=None):
                        _blk_acts(e, b['rec'])))
     if not blocks:
         grid.append('<p class="dayempty">nothing scheduled</p>')
+    return ('<div class="panel day" data-live="day"><div class="ph">%s<span class="n">%d</span></div>'
+            '<div class="pb fit"><div class="day" data-lo="%d" data-span="%d"%s>%s</div></div></div>'
+            % (esc(day_label(day)), len(blocks), DAY_LO, SPAN,
+               ' data-today' if is_today else '', ''.join(grid)))
 
-    # --- 3. Canvas ------------------------------------------------------
-    def day_sections(pred):
-        """Only days that have something. An empty day was carrying a heading
-        and a dash purely to keep the week's shape visible -- but the week panel
-        on the left already draws that shape, with counts, and drawing it twice
-        was most of what made this column feel busy."""
-        out = []
-        for i, dd in enumerate(days):
-            items = [it for it in wk['days'][dd] if pred(it)]
-            if not items:
-                continue
-            dd_d = datetime.date(*map(int, dd.split('-')))
-            out.append('<div class="grp%s"><div class="grph"><span class="nm%s">%s %s</span>'
-                       '<span class="w">%d</span></div><ul>%s</ul></div>'
-                       % (' sel' if dd == day else '',
-                          ' dayhd' + (' on' if dd == today_iso else ''),
-                          DOW[i], dd_d.strftime('%d'), len(items),
-                          ''.join(_row(it, pill=True) for it in items)))
-        return ''.join(out)
 
-    allit = [it for v in wk['days'].values() for it in v]
-    nopen = sum(1 for it in allit if not it['done'])
-    ndone = len(allit) - nopen
-    carry = ''
-    if wk['carried']:
-        carry = ('<div class="carry"><div class="ch">Carried in &middot; %d</div><ul>%s</ul></div>'
-                 % (len(wk['carried']),
-                    ''.join(_row(it, showdue=True, pill=True) for it in wk['carried'])))
+def day_sections(day, wk, pred):
+    """The week's work items by day, only days that have something (the week
+    column already draws the week's shape). Shared by cards that list the week."""
+    day, today_iso, _i, _d = _day_state(day)
+    out = []
+    for i, dd in enumerate(daystrip_days(day)):
+        items = [it for it in wk['days'][dd] if pred(it)]
+        if not items:
+            continue
+        dd_d = datetime.date(*map(int, dd.split('-')))
+        out.append('<div class="grp%s"><div class="grph"><span class="nm%s">%s %s</span>'
+                   '<span class="w">%d</span></div><ul>%s</ul></div>'
+                   % (' sel' if dd == day else '',
+                      ' dayhd' + (' on' if dd == today_iso else ''),
+                      DOW[i], dd_d.strftime('%d'), len(items),
+                      ''.join(_row(it, pill=True) for it in items)))
+    return ''.join(out)
 
-    # --- 4. projects ----------------------------------------------------
-    def project_groups(rows, by_score):
-        """Projects, three todos each, ordered by the project's *best* item --
-        the project holding the most pressing thing belongs at the top even if
-        it holds only that one, and volume should not outrank urgency. Done work
-        has no priority, so that pane falls back to count."""
-        byproj = {}
-        for t in rows:
-            byproj.setdefault(t['tag'] or 'unfiled', []).append(t)
-        if by_score:
-            order = sorted(byproj, key=lambda k: (-max(t['score'] for t in byproj[k]), k))
-        else:
-            order = sorted(byproj, key=lambda k: (-len(byproj[k]), k))
-        out = []
-        for tag in order:
-            items = sorted(byproj[tag], key=lambda t: (-t['score'], t['due'] or '9999',
-                                                       t['title']))
-            shown = ''.join(
-                _row(t, showat=False, showdue=True).replace(
-                    '<li class="row', '<li class="row hid', 1) if n >= 3
-                else _row(t, showat=False, showdue=True)
-                for n, t in enumerate(items))
-            extra = len(items) - 3
-            out.append('<div class="grp"><div class="grph"><span class="nm" %s>%s</span>'
-                       '<span class="w">%s%d</span></div><ul>%s</ul>%s</div>'
-                       % (_style('--hue:%d' % hue(tag)), esc(tag),
-                          'top 3 of ' if extra > 0 else '', len(items), shown,
-                          '<button class="moretog"><span class="lbl"></span> '
-                          '&middot; %d more</button>' % extra if extra > 0 else ''))
-        return ''.join(out)
 
-    tasks = task_rows()
-    donetasks = done_task_rows()
+def project_groups(rows, by_score):
+    """Tasks by project, three each, ordered by each project's most pressing item
+    (volume should not outrank urgency); done work has no priority, so count."""
+    byproj = {}
+    for t in rows:
+        byproj.setdefault(t['tag'] or 'unfiled', []).append(t)
+    if by_score:
+        order = sorted(byproj, key=lambda k: (-max(t['score'] for t in byproj[k]), k))
+    else:
+        order = sorted(byproj, key=lambda k: (-len(byproj[k]), k))
+    out = []
+    for tag in order:
+        items = sorted(byproj[tag], key=lambda t: (-t['score'], t['due'] or '9999', t['title']))
+        shown = ''.join(
+            _row(t, showat=False, showdue=True).replace(
+                '<li class="row', '<li class="row hid', 1) if n >= 3
+            else _row(t, showat=False, showdue=True)
+            for n, t in enumerate(items))
+        extra = len(items) - 3
+        out.append('<div class="grp"><div class="grph"><span class="nm" %s>%s</span>'
+                   '<span class="w">%s%d</span></div><ul>%s</ul>%s</div>'
+                   % (_style('--hue:%d' % hue(tag)), esc(tag),
+                      'top 3 of ' if extra > 0 else '', len(items), shown,
+                      '<button class="moretog"><span class="lbl"></span> '
+                      '&middot; %d more</button>' % extra if extra > 0 else ''))
+    return ''.join(out)
+
+
+def queue_card():
     fl = flags()
     nqueue, nflags, queue_html = queue_panel(fl)
-    label = ('Today' if is_today else
-             'Tomorrow' if d == core.TODAY + datetime.timedelta(days=1) else
-             d.strftime('%A'))
+    return ('<div class="panel" data-live="queue"><div class="ph">queue%s<span class="n">%d</span></div>'
+            '<div class="pb">%s</div></div>'
+            % ((' <span class="warn">&middot; %d flag%s</span>'
+                % (nflags, '' if nflags == 1 else 's')) if nflags else '',
+               nqueue, queue_html))
 
+
+def zipper_card():
+    return ('<div class="panel" data-live="zipper"><div class="ph">zipper</div>'
+            '<div class="pb">%s</div></div>' % (metrics_block() + system_panel()))
+
+
+def page(day=None):
+    """The whole page: the date, then the rows of cards the settings file names."""
+    from . import cards
+    day, _t, is_today, d = _day_state(day)
+    label = day_label(day)
     body = ('<div class="wrap">%s'
             '<div class="head" data-live="head"><h1>%s</h1><span class="meta">%s</span>%s</div>'
-            '<div class="cols">'
-
-            '<div class="panel" data-live="week"><div class="ph">week</div>'
-            '<div class="wk">%s</div></div>'
-
-            '<div class="panel day" data-live="day"><div class="ph">%s<span class="n">%d</span></div>'
-            '<div class="pb fit"><div class="day" data-lo="%d" data-span="%d"%s>%s</div></div></div>'
-
-            '<div class="panel" data-tabs data-live="canvas"><div class="ph">canvas'
-            '<span class="tabs"><button class="tabb on" data-tab="open">open'
-            '<span class="c">%d</span></button>'
-            '<button class="tabb" data-tab="done">done<span class="c">%d</span></button>'
-            '</span></div>'
-            '<div class="pb" data-pane="open">%s%s</div>'
-            '<div class="pb" data-pane="done" hidden>%s</div></div>'
-
-            '<div class="panel tasks" data-tabs data-live="projects"><div class="ph">projects'
-            '<span class="tabs"><button class="tabb on" data-tab="open">open'
-            '<span class="c">%d</span></button>'
-            '<button class="tabb" data-tab="done">done<span class="c">%d</span></button>'
-            '<a class="tabb" href="/tasks" target="_blank" rel="noopener">all</a>'
-            '</span></div>'
-            '<div class="pb" data-pane="open">%s</div>'
-            '<div class="pb" data-pane="done" hidden>%s</div></div>'
-
-            '</div>'
-
-            '%s'
-
-            '<div class="cols2">'
-            '<div class="panel" data-live="queue"><div class="ph">queue%s<span class="n">%d</span></div>'
-            '<div class="pb">%s</div></div>'
-            '<div class="panel" data-live="zipper"><div class="ph">zipper</div>'
-            '<div class="pb">%s</div></div>'
-            '</div>'
-
-            '<div data-live="tail">%s%s</div>'
-
-            '</div>'
+            '%s</div>'
             % (NAV, esc(d.strftime('%A %d %B')), esc(label),
                '' if is_today else '<a class="back" href="/">back to today &rarr;</a>',
-               ''.join(wdays), esc(label), len(blocks), DAY_LO, SPAN,
-               ' data-today' if is_today else '', ''.join(grid),
-               nopen, ndone,
-               carry, day_sections(lambda it: not it['done'])
-               or '<p class="empty">Nothing due this week.</p>',
-               day_sections(lambda it: it['done'])
-               or '<p class="empty">Nothing handed in this week yet.</p>',
-               len(tasks), len(donetasks),
-               project_groups(tasks, True) or '<p class="empty">No open tasks.</p>',
-               project_groups(donetasks, False) or '<p class="empty">Nothing ticked off yet.</p>',
-               claude_panel(),
-               (' <span class="warn">&middot; %d flag%s</span>'
-                % (nflags, '' if nflags == 1 else 's')) if nflags else '',
-               nqueue, queue_html,
-               metrics_block() + system_panel(),
-               views_row(), footer()))
+               cards.body(day)))
     state = ('<script>window.__session=%s;window.__queueready=%s;window.__mounted=false;'
              'window.__sig=%s;</script>' % (json.dumps(bool(current_conversation())),
                                             json.dumps(bool(_queue_prompt())),
-                                            json.dumps(live_sig())))
-    return _page('Zipper', CSS + TERM_CSS, body + state, PAGE_JS + TERM_JS + LIVE_JS)
+                                            json.dumps(live_sig(day))))
+    return _page('Zipper', CSS + TERM_CSS + CARD_CSS, body + state,
+                 PAGE_JS + TERM_JS + LIVE_JS + CARD_JS)
 
 
 def claude_panel():

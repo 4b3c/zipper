@@ -25,7 +25,9 @@ jobs:
       - name: import
         run: python -c "import zipper.cli, zipper.serve, zipper.supervise, zipper.code, zipper.plugins, plugins.host.hostd"
       - name: unit tests
-        run: python -m unittest tests.test_units -v
+        # One process per file: each empties and sets the environment before
+        # importing zipper, and settings reads its path once, at import.
+        run: for f in tests/test_*.py; do python -m unittest "tests.$(basename "$f" .py)" -v || exit 1; done
       - name: a fresh vault, end to end
         run: |
           export ZIPPER_VAULT="$RUNNER_TEMP/vault" ZIPPER_SETTINGS="$RUNNER_TEMP/settings.json" ZIPPER_ENV_FILE="$RUNNER_TEMP/env"
@@ -34,5 +36,5 @@ jobs:
           python -m zipper settings check
           python -m zipper lint
           python -m zipper plugin list
-          python -m zipper fetch
+          python -m zipper pull
           python -m zipper lint

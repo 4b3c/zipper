@@ -38,7 +38,7 @@ METADIR = os.path.join(VAULT, 'Meta')
 METCSV  = os.path.join(METDIR, 'metrics.csv')
 TODAY   = datetime.date.today()
 
-SKIP_DIRS = {'.obsidian', '.git', 'Inbox', 'Log'}
+SKIP_DIRS = {'.obsidian', '.git', 'Inbox', 'Log', 'Dashboard'}  # Dashboard/: cards, not notes
 SKIP_FILES = {'CLAUDE.md', 'README.md'}
 
 ENUMS = {
