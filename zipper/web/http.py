@@ -439,11 +439,12 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200 if res.get('ok') else 503, json.dumps(res),
                        'application/json')
         elif (self.path.startswith('/api/inputs/')
-              or self.path in ('/api/canvas', '/api/hours')):
+              or self.path in ('/api/canvas', '/api/hours', '/api/msg')):
             # A pushed input: the browser read something this machine cannot, and
             # hands it over. `/api/canvas` and `/api/hours` are the paths the
             # extension and bookmarklet already use, kept as aliases.
             name = self.path.rsplit('/', 1)[-1]
+            name = {'msg': 'peers'}.get(name, name)     # /api/msg: another zipper
             inp = inputs.get(name)
             if not inp or not hasattr(inp, 'receive'):
                 self._send(404, json.dumps({'error': 'no input %r takes posts' % name}),

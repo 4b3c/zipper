@@ -191,6 +191,10 @@ def main():
     s.add_argument('--force', action='store_true', help='even with conversations live')
     s.set_defaults(fn=_mod('code', 'cmd_update'))
 
+    s = sub.add_parser('msg', help='send a message to another zipper')
+    s.add_argument('peer'); s.add_argument('text')
+    s.set_defaults(fn=_mod('inputs.peers', 'cmd_msg'))
+
     s = sub.add_parser('settings', help='show or change zipper.settings.json (never secrets)')
     ss = s.add_subparsers(dest='action')
     ss.add_parser('show'); ss.add_parser('path'); ss.add_parser('check')

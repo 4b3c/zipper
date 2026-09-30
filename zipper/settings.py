@@ -35,6 +35,7 @@ DEFAULTS = {
         'canvas':   {'enabled': False, 'host': ''},
         'hours':    {'enabled': False, 'sheet': '', 'metric': 'hours_worked'},
         'upstream': {'enabled': True},
+        'peers':    {'enabled': True},
     },
     'discord': {'channel': '', 'notify_channel': ''},
     'schedule': {'fetch_minutes': 60, 'pass': ['09:00', '21:00'], 'digest': '19:00'},

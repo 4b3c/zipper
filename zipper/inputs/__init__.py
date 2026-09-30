@@ -41,7 +41,7 @@ import datetime, importlib, json, os
 
 from .. import core
 
-KNOWN = ('github', 'calendar', 'canvas', 'hours', 'upstream')
+KNOWN = ('github', 'calendar', 'canvas', 'hours', 'upstream', 'peers')
 
 # Who "you" are in a queue row's `who`. Configuration, because this repository is
 # public and a real name compiled in is a bug.
