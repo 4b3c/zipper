@@ -57,25 +57,32 @@ it quietly.
 
 ---
 
-## The data model
+## The vault
 
-Every note is markdown with YAML frontmatter. `type` and `status` are required; the rest is
-per type. `zipper lint` is the authority; enums are in `zipper/core.py`.
+**A vault is a folder of markdown files in a git repository.** That is the whole
+requirement. `zipper init <path>` makes one: a `.git`, a `.gitignore`, and a `CLAUDE.md` that
+tells the agent how to work in it.
 
-| Directory | Holds |
-|---|---|
-| `Projects/` | One note per project. The core |
-| `Areas/` | Ongoing involvements — school, work, money, career |
-| `Topics/` | Domains, skills, tooling, tensions |
-| `People/` | Relationship context |
-| `Classes/` | Current coursework |
-| `Tasks/` | Checkbox lists with `[project:: [[Note]]]` |
-| `Decisions/` | Dated, each with *what would change my mind* |
-| `Events/` | Calendar events that exist for a reason, debriefed afterwards |
-| `Log/` | Daily notes. Evidence, not structure |
-| `Metrics/` | `metrics.csv`, append-only |
-| `Meta/` | Schema, and the generated and query views |
-| `Inbox/` | Machine state. Regenerable, gitignored |
+**Git is load-bearing.** The engine is pointed at the folder, and every edit since the last
+commit becomes a `vault` row in the queue — that is how one conversation's changes reach the
+next. `zipper commit` ends a pass and pushes the vault's backup remote. Whatever the engine
+regenerates is gitignored, so it never looks like an edit.
+
+**There are no required folders.** The engine owns four things and makes them on first use:
+`Inbox/` (machine state, gitignored), the generated views in `Meta/` (gitignored), `Log/`
+(daily notes, whose `[[links]]` count as evidence of work) and `Metrics/metrics.csv`. A few
+commands write to conventional places — `Decisions/`, `Events/`, `Tasks/` — which appear when
+used. Everything else is the owner's to arrange. `zipper init --starter` adds one suggested
+layout (Projects, Areas, Topics, People, Tasks, a schema, a few query pages); it is a
+starting point, not a contract.
+
+**Viewing and syncing are optional and outside the system.** Any editor reads markdown.
+Obsidian is a good viewer, and the starter's query pages use its Dataview plugin. Getting the
+folder onto other devices — CouchDB with LiveSync, iCloud, Syncthing — is up to the owner;
+nothing here depends on it.
+
+Every note has YAML frontmatter with at least `type` and `status`. `zipper lint` is the
+authority; the allowed values are in `zipper/core.py`.
 
 A project note:
 
