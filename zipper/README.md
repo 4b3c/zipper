@@ -83,7 +83,7 @@ on course + normalized title *or* `plannable_id`, so it survives renames and the
 wholesale rewrites. `zipper canvas` lists the cross-offs, since they rest on the operator's
 word rather than Canvas.
 
-**The join lives in the Canvas input.** An ICS row learns whether its assignment is done
+**The join lives in the Canvas plugin.** An ICS row learns whether its assignment is done
 there (matching on date and normalized title, accepting the next day too, since Canvas
 files a 23:59 deadline on its own day and the feed often on the next).
 
@@ -94,10 +94,16 @@ files a 23:59 deadline on its own day and the feed often on the next).
 `--daemon` keeps it up with no tabs open; without it the last tab closing (after a 4s grace
 for reloads) stops the server. The service always runs `--daemon`.
 
-**No fetch at launch.** Each plugin pulls on its own timer (`zipper pull --due`), and every pass pulls what is due first;
-**refresh** forces one. Sources publish over SSE as they land. Each source shows its age
-across the top, amber past its threshold — every data bug so far was stale data shown as
-current.
+**No fetch at launch.** Each plugin pulls on its own timer (`zipper pull --due`), and every
+pass pulls what is due first; a plugin's card can pull just that plugin (`POST
+/api/pull/<plugin>`). The `sources` card shows each plugin's age — every data bug so far was
+stale data shown as current.
+
+**The page is rows of cards** (`plugins.dashboard.rows` in the vault's settings). The
+contract, the three sources and the isolation rules are in `zipper/web/cards.py`; the ones a
+new vault is given, and how to write one, are in `template/vault/Dashboard/README.md`. A card
+button posts to `/api/card/<id>/<action>`, which calls the card's `act_<action>(args, ctx)`.
+With the dashboard plugin off, the web process serves only the Discord relay and plugin posts.
 
 ### Today
 
@@ -289,9 +295,13 @@ project in two threads at once; if that becomes a problem, the lock belongs in `
 
 ## Timers
 
+`zipper-fetch.timer` runs `zipper pull --due` every five minutes; under `zipper run` the
+supervisor does the same, plus each plugin's `jobs()`.
+
 ### The scheduled pass
 
-`zipper pass` runs at 09:00 and 21:00 (`zipper-pass.timer`). It fetches; if the brief is
+`zipper pass` runs at 09:00 and 21:00 (`zipper-pass.timer`, or the passes plugin under
+`zipper run`). It pulls what is due; if the brief is
 empty it stops. Otherwise a headless `claude -p` does the middle step of a pass and commits,
 and its final message starts `NOTIFY: yes` or `NOTIFY: no`. Only *yes* reaches Discord: a new
 thread in the main channel, attached to the pass's session (`session_fixed` on the registry

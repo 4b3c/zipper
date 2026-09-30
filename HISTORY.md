@@ -9,6 +9,48 @@ tense.
 
 ---
 
+## 2026-09-29 — one night: the core, plugins, cards, and setup by conversation
+
+Replaced, all through PRs #1–#9:
+
+- **`zipper/inputs/` and `ZIPPER_INPUTS`** became `plugins/<name>/` with manifests, loaded
+  only when the settings file turns them on. The dashboard, passes, digest, backup and host
+  access became plugins too.
+- **The global `zipper fetch` and its hourly timer** became a timer per plugin
+  (`poll_minutes`) and `zipper pull --due` every five minutes. `fetch` survives as an alias.
+- **`zipper.settings.json` in the checkout** became one `settings.json` in the vault, found
+  through `ZIPPER_VAULT`. Settings had moved out of `.env` only that morning.
+- **The interactive `zipper setup` wizard** (a numbered checklist on stdin, each input's
+  `setup(w)`) became a setup guide in a new vault's `CLAUDE.md`, walked through by Claude and
+  deleted section by section, with `zipper secret` for tokens.
+- **The hand-written dashboard page** (`page()` laying out ten panels in one function) became
+  rows of cards from settings; his personal panels moved into his vault.
+- **The 900-second limit on a Discord turn** was removed outright.
+
+What it cost to learn:
+
+- **A killed turn loses its reply.** The 900s cap killed a fifteen-minute build over Discord
+  mid-push; the Stop hook runs inside the process, so the answer died with it and nothing was
+  logged. The next message resumed the session and Claude filled the gap with "No response
+  requested."
+- **A message queued behind a long turn was reported failed and then answered into the void.**
+  Its echo wait timed out at 120s, the delivery fingerprint was cleared, and when it finally
+  ran, its reply was not forwarded.
+- **A sandbox that inherits a conversation's environment is production.** A test supervisor
+  logged a second Discord bot in with the live token and ran a fetch against the live vault.
+- **`.gitignore` hid a template.** A root rule for `compose.yml` also matched
+  `template/home/compose.yml`; every local test found it on disk, and a fresh clone's init
+  made no compose file. CI caught it. Tests now also run from a clean clone.
+- **The vault backup had not been pushed for 12 days** (116 commits): `zipper commit`
+  committed and stopped. Commit pushes now, and the brief flags a backup a day behind.
+- **A new vault crashed on its first commit** and wrote generated views into a `Meta/` that
+  did not exist yet.
+- **One slow card made the page 8.7s**, waited on once to draw and again to fingerprint, and
+  every ten-second poll would have waited again.
+- **After #8, zipper-1 read its code folder as its vault**: its image never set
+  `ZIPPER_VAULT`, and #8 stopped reading the old settings file's `vault` key. `update`'s check
+  passed only because the process running it still had the old value in its environment.
+
 ## 2026-09-28 — the Reddit watcher, removed
 
 `zipper reddit` searched Reddit hourly for threads matching a watch list, asked `claude -p`

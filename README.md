@@ -1,55 +1,44 @@
 # Zipper
 
-Zipper is a personal assistant that runs on your own server. It keeps a folder of markdown
-notes about your projects, classes and plans, and updates them from wherever it can read
-your activity — right now that's your calendar, Canvas, GitHub and a work timesheet, and more
-can be added. You can ask it things over Discord or a web dashboard.
+Zipper is a personal assistant that keeps a folder of notes about your life true. You talk to
+it on Discord; Claude reads and edits your notes, answers from them, and tells you when what
+you wrote down and what actually happened disagree.
+
+**At its core it is small:** a Discord bot handing each message to a Claude conversation that
+works in your **vault** — a folder of markdown files in git. That's the whole requirement: a
+Discord server with a bot, a Claude account, and a folder. It runs in a container.
+
+**Everything else is a plugin** you switch on: reading GitHub, calendars, Canvas or a
+timesheet; a dashboard; twice-daily bookkeeping passes; an evening digest; backups; messages
+between zippers. Several people can each run their own zipper on one machine, all on the same
+code, and every change to that code is a pull request a person approves.
 
 ## What it does
 
-- Shows everything that's due in one list: assignments, meetings and your own tasks. You see
-  it on the dashboard, in a Discord message every evening, and in place of Canvas's to-do list.
-- Updates your notes when something changes. If you push code, submit an assignment or a
-  meeting moves, the notes that mention it get updated.
-- Tells you when a note is wrong. If a project says it's active but nothing has happened in
-  45 days, you hear about it. Same if you did work and never wrote it down.
-- Answers questions from your notes, like "what did I decide about X?" or "what am I behind
-  on?"
-- Handles small admin. Text it "worked 1:30 to 9:30" and it adds the row to your timesheet.
-- Works from anywhere: Discord on your phone, or a terminal in the browser. You can have
-  several conversations going at once.
-- Stays on your server. This repository is only the code; your notes stay on your machine.
-
-The core is a Discord bot handing messages to Claude conversations that edit a vault.
-Everything else — GitHub, calendars, Canvas, the timesheet, the dashboard, backups,
-scheduled passes — is a **plugin**: a folder in `plugins/`, switched on with
-`zipper plugin enable <name>`. Only the dashboard is on by default. Claude Code
-does the thinking; the Python engine just fetches data and writes it into the notes.
+- **Keeps notes current.** Push code, submit an assignment, move a meeting, and the notes that
+  mention it get updated. Plugins bring the news; Claude decides what it means.
+- **Tells you when a note is wrong.** A project called active that nobody has touched in 45
+  days, work you did but never wrote down, a review date that passed.
+- **Answers from your notes.** "What did I decide about X?", "what am I behind on?"
+- **Handles small admin.** "Worked 1:30 to 9:30" becomes a timesheet row.
+- **Shows your day** on a dashboard of cards you choose — built in, from a plugin, or written
+  in your own vault.
+- **Stays yours.** This repository is only code; your notes and everything personal stay in
+  your vault, and secrets stay out of both.
 
 ---
 
 ## How the pieces fit
 
 ```
-   GitHub · calendars · bank CSV              the vault (markdown, git)
-          │                                   Projects/ Areas/ Topics/ Tasks/ ...
-          │ fetch                                          ▲
-          ▼                                                │ facts only
-   ┌──────────────┐                                        │
-   │    zipper    │────────────────────────────────────────┘
-   │ (the engine) │──► Inbox/*.json, generated views, the queue
-   └──────────────┘
-          ▲ reads
-   ┌──────────────┐  ttyd+tmux  ┌────────────────────┐
-   │ zipper.serve │◀───────────▶│ Claude Code panes  │  judgment: the notes,
-   │  dashboard,  │             └────────────────────┘  the arguments, the prose
-   │ POST /discord│◀──┐         ┌────────────────────┐
-   └──────▲───────┘   └────────▶│ headless claude -p │  one per Discord thread
-          │ /api/canvas         └────────────────────┘
-   ┌──────┴───────┐             ┌────────────────────┐
-   │  extension/  │             │  bot/ (Discord)    │
-   │  (browser)   │             └────────────────────┘
-   └──────────────┘
+  Discord ── bot/ ──► zipper.serve (relay) ──► a Claude conversation per thread
+                           │                          │ reads, argues, edits
+                           │                          ▼
+  plugins/, each on its    ├─ the queue ◀── git ── the vault (markdown in git)
+  own timer: GitHub,       │   (Inbox/feed.json,       notes · settings.json
+  calendars, Canvas,  ─────┘    Meta/Queue.md)         Dashboard/ (your cards)
+  hours, passes, digest…   │
+                           └─ the dashboard plugin: rows of cards (owns no data)
 ```
 
 **The division of labour is the design.** The engine writes what's verifiable: a push date,
@@ -137,18 +126,24 @@ python3 -m zipper <command>          # --help lists everything
 | `decide "<title>"` / `event "<summary>"` / `events` | Scaffold a decision / an event note / list event notes |
 | `status` / `agenda` / `views` | Regenerate the snapshot / the agenda / the saved queries |
 | `hours …` | A timesheet ledger, pushed to Google Sheets |
-| `pass` | Fetch, and if anything's in the brief, have Claude do the pass; Discord only if something needs you |
+| `pass` | Pull what is due, and if anything's in the brief, have Claude do the pass; Discord only if something needs you |
 | `digest` | Evening what's-due message |
 | `discord send\|read\|status` | Talk through the relay |
 | `conversations` | List live Claude conversations |
 | `ghapp` / `ext` | The bot's GitHub identity / build and sign the extension |
 | `lint` | Validate all frontmatter. **Run before finishing** |
+| `init <path>` / `setup done\|remaining` | Make a whole zipper (vault with a setup guide, config, backup, compose) / work through the guide |
+| `plugin list\|info\|enable\|disable` | Which plugins are on |
+| `settings get\|set\|check\|migrate` / `secret NAME` | The vault's `settings.json` / put a secret in `.env` through a one-time page |
+| `run` / `restart [--when-idle]` | Supervise the relay, bot, dashboard and timers (containers) / reload the code without cutting a turn off |
+| `code start\|propose\|prs` / `update` | Propose a change to the shared code as a PR / take merged changes, rolling back if they break |
+| `msg <zipper> "text"` / `host <verb>` | Message another zipper (peers plugin) / ask the host daemon (host plugin) |
 
 ---
 
-## A pass: fetch → reasoning → commit
+## A pass: pull → reasoning → commit
 
-Only the two ends are code. `fetch` writes `Meta/Queue.md`, the brief, in three parts:
+Only the two ends are code. `pull` (what is due) writes `Meta/Queue.md`, the brief, in three parts:
 
 1. **The queue** — `Inbox/feed.json`: events from outside the vault (a push, a submission, a
    calendar change), each with a `target` note. Cleared by `--mark` or `commit`.
