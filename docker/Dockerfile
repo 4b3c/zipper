@@ -29,7 +29,8 @@ ENV HOME=/zipper/home \
     ZIPPER_SETTINGS=/zipper/config/zipper.settings.json \
     ZIPPER_ENV_FILE=/zipper/config/.env \
     ZIPPER_NGINX=1 \
-    ZIPPER_VAULT_DEFAULT=/zipper/vault
+    ZIPPER_VAULT_DEFAULT=/zipper/vault \
+    ZIPPER_BACKUP_DEFAULT=/zipper/backup
 
 WORKDIR /zipper/code
 # 8899: the dashboard and its terminals, behind basic auth.

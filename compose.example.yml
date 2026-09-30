@@ -1,5 +1,5 @@
 # Two zippers on one host. Copy to compose.yml, then for each:
-#   mkdir -p zippers/<id>/{config,vault}
+#   mkdir -p zippers/<id>/{config,vault,backup}
 #   docker compose run --rm <id> setup      # the wizard; writes zippers/<id>/config
 #   docker compose up -d
 #   docker compose exec -it <id> claude     # once, then /login (or ANTHROPIC_API_KEY)
@@ -22,6 +22,7 @@ services:
     volumes:
       - ./zippers/zipper-0/config:/zipper/config
       - ./zippers/zipper-0/vault:/zipper/vault
+      - ./zippers/zipper-0/backup:/zipper/backup   # the vault's git remote
       - zipper-0-code:/zipper/code
       - zipper-0-home:/zipper/home
       # Host access (zipper.hostd). Mount only this zipper's own directory, and
@@ -36,6 +37,7 @@ services:
     volumes:
       - ./zippers/zipper-1/config:/zipper/config
       - ./zippers/zipper-1/vault:/zipper/vault
+      - ./zippers/zipper-1/backup:/zipper/backup   # the vault's git remote
       - zipper-1-code:/zipper/code
       - zipper-1-home:/zipper/home
     ports: ["127.0.0.1:8901:8899"]
