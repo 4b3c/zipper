@@ -409,6 +409,7 @@ def _write_brief(q):
           'Work each row to the note it affected, read the diff, then close the pass '
           'with `python3 -m zipper commit "<message>"`.', '',
           'Related: [[Status]] · [[Now]] · [[Review]] · [[Home]]', '']
+    os.makedirs(METADIR, exist_ok=True)     # a new vault has no Meta/ until now
     open(os.path.join(METADIR, 'Queue.md'), 'w', encoding='utf-8').write('\n'.join(L))
 
 def live_others():
@@ -513,8 +514,14 @@ def cmd_commit(a):
     # Prune here rather than on every write. The end of a pass is the one
     # moment the queue is known to be reconciled, so it is the only safe place
     # to throw history away -- and only ticked rows are ever dropped.
-    with open(serve.FEED_JSON, encoding='utf-8') as fh:
-        blob = json.load(fh)
+    # A vault that has never fetched has no queue file yet -- a new vault's first
+    # commit is exactly that case.
+    try:
+        with open(serve.FEED_JSON, encoding='utf-8') as fh:
+            blob = json.load(fh)
+    except FileNotFoundError:
+        blob = {'rows': []}
+    os.makedirs(os.path.dirname(serve.FEED_JSON), exist_ok=True)
     kept = serve.feed_prune(blob.get('rows', []), serve.FEED_MAX)
     dropped = len(blob.get('rows', [])) - len(kept)
     blob['rows'] = kept

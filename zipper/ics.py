@@ -445,6 +445,7 @@ def cmd_agenda(a):
                      ' · ' + loc if loc else '', '  ✓ submitted' if mark else '',
                      prep))
     lines += ['', 'Related: [[Status]] · [[Home]]', '']
+    os.makedirs(METADIR, exist_ok=True)     # a new vault has no Meta/ until now
     open(os.path.join(METADIR, 'Agenda.md'), 'w', encoding='utf-8').write('\n'.join(lines))
     print('agenda: %d event(s) in the next %d days -> Meta/Agenda.md' % (len(rows), a.days))
     return 0

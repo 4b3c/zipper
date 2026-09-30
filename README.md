@@ -228,28 +228,39 @@ renders; it never concludes.** See `extension/README.md`.
 
 ## Running it
 
-### In a container (several people, one machine)
+You need three things: **Docker**, **Claude Code** (`claude`), and a **Discord server with a
+bot** (the setup explains how to make one). Then:
 
 ```bash
-cp compose.example.yml compose.yml          # one service per person
-mkdir -p zippers/zipper-0/{config,vault}
-docker compose run --rm zipper-0 plugin list   # then `plugin enable <name>` for each you want
-docker compose up -d
-docker compose exec -it zipper-0 claude     # once: /login (or ANTHROPIC_API_KEY in .env)
+git clone https://github.com/4b3c/Zipper && cd Zipper
+./bin/zipper init ~/zipper          # the vault, its config and backup, a compose file
+cd ~/zipper/vault && claude         # and say "set me up"
 ```
 
-Each container has its own vault, settings, secrets, Claude login and Discord bot. The
-dashboard is on 8899 behind basic auth (`ZIPPER_TERM_CRED`); publish it on loopback or a
-tailnet address only. Zippers on the same network message each other on 8898, which
-serves `/api/msg` and nothing else.
+`init` makes one folder per zipper:
 
-### On a machine of your own
+- `vault/` — the notes (a git repository). Its first `CLAUDE.md` is a **setup guide**:
+  Claude walks through it with you — your name, the Discord bot, how the zipper's own Claude
+  logs in, then each plugin: what it does, whether you want it, and its settings — and
+  removes each section as it is done, until only the everyday rules are left.
+- `config/` — `zipper.settings.json` (structure) and `.env` (secrets, never in the vault).
+- `backup/` — a second copy of the vault, pushed on every commit.
+- `compose.yml`, and `./zipper`: this zipper's command on this machine.
 
-```bash
-pip install -r requirements.txt             # plus git, tmux, ttyd, and the claude CLI
-python3 -m zipper plugin list               # `plugin enable <name>`; `settings set` for the rest
-python3 -m zipper run                       # or the systemd units in deploy/
-```
+**Secrets never go through the chat.** `zipper secret NAME` prints a one-time link to a
+page with a single password field; the value goes straight into `.env` and Claude only
+learns that it was saved (`--tty` asks in a terminal instead).
+
+The last step of the guide starts it (`docker compose up -d --build`) and has you send a
+first message on Discord. Plugins can be changed any time after: ask the zipper, or
+`zipper plugin enable|disable <name>`.
+
+**Several people on one machine:** one `init` per person, each with its own `--id`, or
+`compose.example.yml` for all of them in one file. Zippers on a shared Docker network can
+message each other through the peers plugin (port 8898, `/api/msg` only).
+
+**Without Docker:** `pip install -r requirements.txt` (plus git, tmux, ttyd and `claude`),
+then `zipper run` — or the systemd units in `deploy/`.
 
 ### The host
 

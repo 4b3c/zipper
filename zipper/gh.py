@@ -156,6 +156,7 @@ def cmd_github(a):
                      (r['key'], r['url'], ' 🔒' if r['private'] else '',
                       r['language'] or '—', r['pushed_at'][:10], r['description'][:60]))
     L += ['', 'Related: [[Queue]] · [[Status]] · [[Workflow]] · [[Home]]', '']
+    os.makedirs(METADIR, exist_ok=True)     # a new vault has no Meta/ until now
     open(os.path.join(METADIR, 'Repos.md'), 'w', encoding='utf-8').write('\n'.join(L))
     print('-> Meta/Repos.md')
     return 0

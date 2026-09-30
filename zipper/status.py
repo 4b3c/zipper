@@ -108,6 +108,7 @@ def cmd_status(a):
         L += ['- [[%s]]' % t for t in ignored] or ['- none']
 
     L += ['', 'Related: [[Dashboard]] · [[Agenda]] · [[Review]] · [[Home]]', '']
+    os.makedirs(METADIR, exist_ok=True)     # a new vault has no Meta/ until now
     open(os.path.join(METADIR, 'Status.md'), 'w', encoding='utf-8').write('\n'.join(L))
     print('status -> Meta/Status.md  (%d ventures, %d drifting, %d stale, %d blocked)'
           % (len(rev), len(drift), len(stale), len(blocked)))
