@@ -34,7 +34,7 @@ journalctl -u zipper-discord -f
 ```
 
 Unit: `deploy/zipper-discord.service` (runs `python3 -u`, or nothing reaches the journal).
-Environment from `/opt/zipper/.env`. Listens on `127.0.0.1:4200`.
+Environment from the checkout's `.env`. Listens on `127.0.0.1:4200`.
 
 ```
 DISCORD_TOKEN=                     # the bot token

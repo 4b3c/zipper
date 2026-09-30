@@ -11,7 +11,7 @@ endpoint, which is what Claude Code's own `/usage` reads.
 That means a token, and the token is Claude Code's. It is read out of
 `~/.claude/.credentials.json` at call time and **never stored, logged or
 written anywhere** -- `Inbox/usage.json` holds the percentages and nothing
-else. Same rule as `/opt/zipper/.env`: credentials stay where they are.
+else. Same rule as `.env`: credentials stay where they are.
 
 The response shape is not a contract we control, so `_pct` hunts for the number
 rather than indexing a path. A shape change should show up as a blank meter,

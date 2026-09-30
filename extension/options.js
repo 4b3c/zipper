@@ -4,7 +4,7 @@
  * tailnet host has no business in a manifest that lives in a public repo, and
  * asking for every-https-host up front would be a far broader grant than the
  * one host actually needed. So the manifest declares it optional and this asks
- * for exactly the origin he typed, at the moment he types it.
+ * for exactly the origin they typed, at the moment they type it.
  *
  * (The wildcard pattern is spelled out in manifest.json, not here: a literal
  * star-slash inside a block comment ends the comment. It did, once.)

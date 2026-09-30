@@ -39,7 +39,7 @@ def close(thread_id, reason='idle', force=False):
     A **bound** thread is refused unless forced. Its tmux session is not ours --
     it is a terminal the operator is sitting in front of, adopted by a thread so
     it could be reached from a phone. Closing it kills that conversation
-    outright, and the next thing he types starts a stranger with no context.
+    outright, and the next thing they type starts a stranger with no context.
     That happened once, 2026-09-06, from a cleanup command that meant to tidy a
     test: `--close` on the bound row ran `kill-session -t zipper` and took the
     dashboard's own pane with it. The transcript survived and could be resumed,
@@ -435,8 +435,8 @@ def reap(notify=None):
     """Warn a conversation before its prompt cache expires, then close it.
 
     Two moments, not one. At `IDLE_NOTICE` the cache is still warm, so a reply
-    still lands at the cache rate -- that is the only point where telling him is
-    something he can act on, and it is the entire reason this exists. At
+    still lands at the cache rate -- that is the only point where telling them is
+    something they can act on, and it is the entire reason this exists. At
     `IDLE_EXPIRY` the entry is gone and the row is closed.
 
     None of this is a token saving: an idle instance costs nothing to leave
@@ -464,9 +464,9 @@ def reap(notify=None):
             continue
         tid, idle = row['thread_id'], row['idle_for']
         if idle >= IDLE_EXPIRY:
-            # Closed without a notice. Either he was warned at IDLE_NOTICE and
-            # let it lapse, or the row predates the warning -- and telling him
-            # about an expiry that has already happened gives him nothing to do
+            # Closed without a notice. Either they were warned at IDLE_NOTICE and
+            # let it lapse, or the row predates the warning -- and telling them
+            # about an expiry that has already happened gives them nothing to do
             # about it. The warning was the message; this is just bookkeeping.
             close(tid, reason='idle')
             closed.append(tid)

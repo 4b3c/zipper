@@ -207,7 +207,7 @@ def _read(force):
 
 # ------------------------------------------------------------------ history
 #
-# A single reading answers "is it fine now"; the question he actually asks of a
+# A single reading answers "is it fine now"; the question they actually ask of a
 # server is "is this going somewhere". That needs a series, and nothing on this
 # box kept one -- so the dashboard keeps it: one sample a minute, a day deep,
 # written by the web process because that is the one thing always running.

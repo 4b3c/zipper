@@ -7,6 +7,10 @@ reader and the handful of helpers everything shares.
 value: the server is long-running and re-reads it at midnight, and a `from core
 import TODAY` would pin a stale date that only misbehaves after a rollover.
 """
+from . import settings
+# Before `core`: it reads ZIPPER_VAULT at import, and the settings file may be
+# the only place the vault is named.
+settings.apply()
 from . import core
 from .core import (VAULT, INBOX, METADIR, LOGDIR, METDIR, DECDIR, EVTDIR,
                    METCSV, ENUMS, iter_notes, read_note, write_note, parse_fm,

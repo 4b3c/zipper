@@ -8,6 +8,14 @@ from .. import core, gh
 from . import OWNER, blob_fetched, as_list
 
 name = 'github'
+SETUP_TITLE = 'GitHub'
+SETUP_ABOUT = 'pushes and commit counts from your repos, as evidence a project is alive'
+
+
+def setup(w):
+    w.setting('inputs.github.user', 'Your GitHub login')
+    w.setting('inputs.github.orgs', 'Orgs to include, comma-separated (blank for none)', kind=list)
+    w.secret('GITHUB_TOKEN', 'A GitHub token -- read access is enough; blank sees public repos only')
 
 
 def pull():

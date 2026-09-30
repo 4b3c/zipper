@@ -60,8 +60,8 @@ def cmd_github(a):
     except Exception as e:
         print('github fetch failed: %s' % e)
         return 1
-    # Org repos are under NDA. He can see all of them because he's an owner, but the
-    # vault must never hold any repo he hasn't explicitly claimed. Only repos already
+    # Org repos may be under NDA. Membership makes all of them visible, but the
+    # vault must never hold any repo the operator hasn't explicitly claimed. Only repos already
     # named in a note's `repos:` field survive this filter -- names, descriptions and
     # commits of everything else are dropped before they can be written anywhere.
     _allow = set(note_repo_map())
@@ -82,8 +82,8 @@ def cmd_github(a):
               'owner': (r.get('owner') or {}).get('login') or GH_USER,
               'pushed_at': _utc_local(r.get('pushed_at'))} for r in repos]
     for r in repos:
-        # his own repos keep bare names (back-compat with existing `repos:` fields);
-        # org repos are addressed as org/name so they can never collide with his
+        # their own repos keep bare names (back-compat with existing `repos:` fields);
+        # org repos are addressed as org/name so they can never collide with their
         r['key'] = r['name'] if r['owner'] == GH_USER else '%s/%s' % (r['owner'], r['name'])
         r['is_org'] = r['owner'] != GH_USER
     repos.sort(key=lambda r: r['pushed_at'], reverse=True)
@@ -145,7 +145,7 @@ def cmd_github(a):
             L.append('| [%s](%s)%s | [[%s]] | %s | %s | %s |' %
                      (r['key'], r['url'], ' 🔒' if r['private'] else '', r['note'],
                       r['language'] or '—', r['pushed_at'][:10],
-                      ('%d (%d his)' % (len(r['commits']), nmine)) if r.get('is_org')
+                      ('%d (%d yours)' % (len(r['commits']), nmine)) if r.get('is_org')
                       else str(len(r['commits']))))
     L += ['', '## Unassigned', '',
           'Add the repo name to a note\'s `repos:` field to map it.', '',
@@ -177,8 +177,8 @@ def cmd_inspect(a):
         want = [r for r in repos if not r.get('note')]
         want.sort(key=lambda r: r['pushed_at'], reverse=True)
         want = want[:a.limit]
-    # Never dump org repo contents. They are under NDA -- he can read them because he
-    # owns the org, the vault may not hold them. Mapped-ness is not consent.
+    # Never dump org repo contents. They may be under NDA -- being able to read
+    # them is not permission for the vault to hold them. Mapped-ness is not consent.
     blocked = [r['key'] for r in want if r.get('is_org')]
     if blocked:
         print('refusing %d org repo(s) (NDA, contents stay out of the vault): %s'

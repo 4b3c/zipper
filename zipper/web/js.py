@@ -72,7 +72,7 @@ function drawChats(rows){
            '</button>';
   }).join('');
   // Deliberately no scrollIntoView on the selected row: the page moving under
-  // him on a 6s poll is worse than a selected row sitting out of sight.
+  // them on a 6s poll is worse than a selected row sitting out of sight.
   sideVis();
 }
 // The column carries two things now, so it is on if either has content --
@@ -88,7 +88,7 @@ function sideVis(){
 // local estimate was not good enough. Five minutes is the server's cache TTL,
 // so polling faster would only re-serve the same answer.
 // The stamps are UTC, like every other feed here. Rendered in the box's local
-// time -- a bar that says it resets at 02:50 when he is reading it at 19:50 is
+// time -- a bar that says it resets at 02:50 when they are reading it at 19:50 is
 // worse than saying nothing.
 function resetDate(s){ if(!s) return null; const d=new Date(s); return isNaN(d)?null:d; }
 function resetShort(s){
@@ -138,7 +138,7 @@ function loadChats(){
     .catch(()=>[]);
 }
 // On a reload the page used to show whichever ttyd happened to be serving --
-// usually the dashboard's own terminal, which is rarely the conversation he was
+// usually the dashboard's own terminal, which is rarely the conversation they were
 // last in. `/api/conversations` is already sorted newest-first, so the top live
 // row is the one to land on.
 //
@@ -493,7 +493,7 @@ document.addEventListener('click', async e=>{
 // neither should also toggle the panel underneath. Unlike the Today grid this
 // does *not* close its siblings -- the reason to open two assignments at once is
 // to compare them, which is most of why the descriptions are here at all.
-// Delete a task outright: not doing it, or done but not by him -- the cases a
+// Delete a task outright: not doing it, or done but not by them -- the cases a
 // tick would misstate. It removes the markdown line, so it asks first, and the
 // row only goes once the server says the line is gone.
 document.addEventListener('click', async e=>{

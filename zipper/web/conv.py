@@ -214,8 +214,8 @@ def _sync_thread_name(thread_id, row, name):
     if str(thread_id).startswith('local-') or not name:
         return
     # Only ever rename a thread whose name we wrote. A thread opened from a
-    # message in the channel is named by Discord from what he typed, and a
-    # thread he renames himself is a deliberate act -- overwriting either with
+    # message in the channel is named by Discord from what they typed, and a
+    # thread they rename themselves is a deliberate act -- overwriting either with
     # a generated title would be taking something away, and the titles are not
     # always better than the words a person chose.
     if not row.get('auto_named'):

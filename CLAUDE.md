@@ -37,6 +37,12 @@ Dependencies are allowed where they earn their place; `requirements.txt` lists t
 | `zipper/web/home.py` | `/`, the dashboard, including the Claude card |
 | `zipper/web/render.py` | The `/views`, `/tasks` and `/canvas` pages, and helpers `home.py` shares |
 | `zipper/web/js.py` `css.py` | `TERM_JS`/`TERM_CSS` drive the Claude card; the rest styles the list pages |
+| `zipper/settings.py` `setup.py` | The settings file; `init` and the `setup` wizard |
+| `zipper/supervise.py` | `zipper run`: web, nginx, bot and the schedule where there is no systemd |
+| `zipper/code.py` | `zipper code` (proposing changes) and `zipper update` (taking them) |
+| `zipper/hostd.py` `host.py` | The host daemon (root, on the host) and its client |
+| `docker/` | The image, entrypoint and nginx generator; `compose.example.yml` runs several |
+| `template/vault/` | What `zipper init` copies into a new vault |
 | `zipper/box.py` | The box's vital signs, sampled each minute into `Inbox/box-history.json` |
 | `zipper/usage.py` | Plan usage meters. The OAuth token is read at call time, never stored |
 | `hooks/forward_reply.py` | The `Stop` hook that posts a reply to its Discord thread |
@@ -142,21 +148,41 @@ that posts mid-turn, read the streaming entry in `HISTORY.md`.**
 
 ## 7. Configuration
 
-Environment only — see `.env.example`. `ZIPPER_VAULT` is the seam between this code and
-somebody's life. Every other default is empty or generic. **A default naming a real person,
-school or host is a bug.**
+**Structure in `zipper.settings.json`, secrets in `.env`** (both gitignored; see
+`zipper.settings.example.json` and `.env.example`). `zipper/settings.py` fills unset
+environment variables from the settings file at import, so the order everywhere is: real
+environment, `.env`, settings. **Never open `.env`** -- read and change structure with
+`zipper settings get|set`. `vault` in settings is the seam between this code and somebody's
+life; every other default is empty or generic. **A default naming a real person, school or
+host is a bug.**
 
-### Commits and pushes
+**Test with an empty environment.** A process started from a conversation inherits the live
+service's `.env` -- the real Discord token and vault. A sandbox that doesn't use
+`env -i PATH=... HOME=... ZIPPER_SETTINGS=... ZIPPER_ENV_FILE=...` runs against production:
+one logged a second bot in with the live token.
 
-This repository is written by a GitHub App (since 2026-09-17). The local git identity is
-`<slug>[bot]`, and pushes go through **`python3 -m zipper ghapp --push`**, which mints a
-one-hour installation token. **Never `git push origin`** — it falls back to the operator's
-credentials and lands as them.
+### Changing the code: branches and pull requests
 
-**Push without asking.** The commit is a bot's and the remote is published code; the operator
-has no stake in the timing, and unpushed work is invisible to the next session. The bar is
-low: something works, is verified, is fixed, or is worth not losing. Several small pushes are
-right. If something is knowingly half-built, say so in the message rather than holding it.
+**Every zipper runs this repository, and none edits its running checkout.** A change is a
+branch named `<zipper id>/<slug>` in its own worktree, pushed as the GitHub App and opened
+as a pull request; the operator reviews and merges. Branch protection on `main` (a required
+approving review, which the App cannot give) is what makes that a rule.
+
+```bash
+zipper code start <slug>          # worktree under data/work/<slug>
+zipper code propose "<title>"     # from inside it: push, open the PR, request review
+zipper code prs
+zipper update                     # take merged changes: check, restart, or roll back
+```
+
+Pushes go through the App (`zipper ghapp --push`, which `propose` calls). **Never
+`git push origin`** -- it falls back to the operator's credentials and lands as them.
+
+- The key on disk only mints tokens -- a compromised box gets an hour of `contents` and
+  `pull_requests` write, and cannot merge.
+- The token never reaches `.git/config`, and is scrubbed from a failed push's stderr.
+- **Reading stays on `GITHUB_TOKEN`.** The App isn't installed on orgs, so moving the
+  fetcher onto it would silently lose most of the evidence.
 
 **This applies to this repository only.** The vault is local-only and never pushed anywhere.
 

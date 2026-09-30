@@ -7,12 +7,24 @@ want to know what zipper can do.
 import argparse
 
 from . import (canvas, chat, conversations, decisions, digest, events, ext, gh, ghapp,
-               google, hours, ics, lint, metrics, runqueue, status, sync, views)
+               google, hours, ics, lint, metrics, runqueue, settings, status, sync, views)
 
 
 def _pass_cmd(a):
     from . import scheduled
     return scheduled.cmd_pass(a)
+
+
+def _mod(module, name):
+    """Import on use: `run` and `setup` pull in more than a quick `lint` needs."""
+    def run(a):
+        import importlib
+        return getattr(importlib.import_module('zipper.' + module), name)(a)
+    return run
+
+
+def _setup(name):
+    return _mod('setup', name)
 
 
 def _github_cmd(a):
@@ -51,7 +63,7 @@ def main():
     s.add_argument('--auth', action='store_true', help='print the consent link')
     s.set_defaults(fn=google.cmd_google)
 
-    s = sub.add_parser('hours', help='the Luminosity timesheet ledger')
+    s = sub.add_parser('hours', help='the timesheet ledger')
     hs = s.add_subparsers(dest='action')
     s.set_defaults(fn=hours.cmd_hours)
     a1 = hs.add_parser('add'); a1.add_argument('--date', required=True)
@@ -140,10 +152,63 @@ def main():
 
     s = sub.add_parser('ghapp', help='the bot identity: show it, mint a token, push as it')
     s.add_argument('--push', action='store_true', help='push a repo as the App')
-    s.add_argument('--repo', help='which repo to push (default: /opt/zipper)')
+    s.add_argument('--repo', help='which repo to push (default: this checkout)')
     s.add_argument('--token', dest='print_token', action='store_true',
                    help='print a raw installation token')
     s.set_defaults(fn=ghapp.cmd_ghapp)
+
+    s = sub.add_parser('init', help='create a vault from the template')
+    s.add_argument('path'); s.add_argument('--owner'); s.add_argument('--id')
+    s.set_defaults(fn=_setup('cmd_init'))
+    s = sub.add_parser('setup', help='the wizard: inputs, Discord, schedule, Claude')
+    s.add_argument('--section', choices=['identity', 'vault', 'inputs', 'discord',
+                                         'schedule', 'claude'])
+    s.add_argument('--hook', action='store_true', help='only install the Stop hook')
+    s.set_defaults(fn=_setup('cmd_setup'))
+
+    s = sub.add_parser('run', help='supervise the dashboard, bot and schedule (containers)')
+    s.add_argument('--no-schedule', action='store_true', help='run the services only')
+    s.set_defaults(fn=_mod('supervise', 'cmd_run'))
+    s = sub.add_parser('restart', help='reload this zipper\'s code; conversations survive')
+    s.add_argument('--when-idle', action='store_true',
+                   help='wait until no turn is running (use from inside a conversation)')
+    s.set_defaults(fn=_mod('supervise', 'cmd_restart'))
+    s = sub.add_parser('_when_idle')    # internal: the detached waiter
+    s.add_argument('argv', nargs=argparse.REMAINDER)
+    s.set_defaults(fn=_mod('supervise', 'cmd_when_idle'))
+
+    s = sub.add_parser('host', help='ask the host daemon: status, services, approved root commands')
+    s.add_argument('verb'); s.add_argument('args', nargs=argparse.REMAINDER)
+    s.set_defaults(fn=_mod('host', 'cmd_host'))
+    s = sub.add_parser('hostd', help='the host daemon itself (as root, on the host)')
+    s.add_argument('action', choices=['init', 'install', 'serve'])
+    s.set_defaults(fn=_mod('hostd', 'cmd_hostd'))
+
+    s = sub.add_parser('code', help='propose a change to the shared code as a pull request')
+    cs = s.add_subparsers(dest='action', required=True)
+    g = cs.add_parser('start'); g.add_argument('slug')
+    g = cs.add_parser('propose'); g.add_argument('title'); g.add_argument('--body')
+    g.add_argument('--draft', action='store_true'); g.add_argument('--path')
+    cs.add_parser('prs')
+    s.set_defaults(fn=_mod('code', 'cmd_code'))
+    s = sub.add_parser('update', help='take merged changes: pull, check, restart, or roll back')
+    s.add_argument('--check', action='store_true', help='only say what is new')
+    s.add_argument('--force', action='store_true', help='even with conversations live')
+    s.add_argument('--finish', nargs=2, metavar=('OLD', 'NEW'), help=argparse.SUPPRESS)
+    s.set_defaults(fn=_mod('code', 'cmd_update'))
+
+    s = sub.add_parser('msg', help='send a message to another zipper')
+    s.add_argument('peer'); s.add_argument('text')
+    s.set_defaults(fn=_mod('inputs.peers', 'cmd_msg'))
+
+    s = sub.add_parser('settings', help='show or change zipper.settings.json (never secrets)')
+    ss = s.add_subparsers(dest='action')
+    ss.add_parser('show'); ss.add_parser('path'); ss.add_parser('check')
+    g = ss.add_parser('migrate', help='move the non-secret keys of .env into the file')
+    g.add_argument('--env', help='a .env to read; default: this checkout\'s')
+    g = ss.add_parser('get'); g.add_argument('key')
+    g = ss.add_parser('set'); g.add_argument('key'); g.add_argument('value')
+    s.set_defaults(fn=settings.cmd_settings)
 
     s = sub.add_parser('ext', help='build, sign and publish the browser extension')
     s.add_argument('--build', action='store_true', help='sign a new version')

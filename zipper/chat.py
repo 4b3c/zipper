@@ -71,7 +71,7 @@ def notify_channel():
     Distinct from `default_thread`, and the split is the point: that one answers
     "where does a reply go", this one answers "where does something nobody asked
     for go". The digest arrives on a timer, and in the
-    main channel they bury the messages he actually wrote.
+    main channel they bury the messages they actually wrote.
 
     A message here starts nothing -- the bot opens conversations only for the
     main channel and for threads it already knows -- so it is a one-way board by
@@ -118,9 +118,9 @@ def discord_send(message, file_path=None, thread_id=None):
         # the send, with a comment claiming no code path could reply and leave
         # Discord showing Zipper still typing. It was false in the one case that
         # matters: when the send *raises*, nothing was cleared, so the thread
-        # span forever on an answer that was never coming. On 2026-09-08 he
+        # span forever on an answer that was never coming. On 2026-09-08 they
         # waited in Discord watching the indicator while the reply sat in a
-        # terminal he wasn't reading.
+        # terminal they weren't reading.
         #
         # The indicator is a claim about *thinking*, not about delivery. The turn
         # is over either way, so it stops either way; whether the message
@@ -155,7 +155,7 @@ def cmd_discord(a):
                 print('discord: nothing to read'); return 0
             for m in reversed(msgs):          # oldest first reads like a conversation
                 # Discord stamps UTC. Slicing the raw string shows the wrong
-                # hour by the offset -- the same trap that once put a Phoenix
+                # hour by the offset -- the same trap that once put a UTC-7
                 # evening push on the next day's date.
                 when = core._utc_local(m['timestamp'])[11:16] or m['timestamp'][11:16]
                 print('  %s  %-16s %s' % (when, m['author'][:16],

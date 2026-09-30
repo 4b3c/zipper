@@ -1,0 +1,50 @@
+# Two zippers on one host. Copy to compose.yml, then for each:
+#   mkdir -p zippers/<id>/{config,vault}
+#   docker compose run --rm <id> setup      # the wizard; writes zippers/<id>/config
+#   docker compose up -d
+#   docker compose exec -it <id> claude     # once, then /login (or ANTHROPIC_API_KEY)
+#
+# Each gets its own vault, config, Claude login and Discord bot. They share the
+# image and a network they use only to message each other (port 8898).
+# Publish 8899 on loopback or your tailnet address -- never 0.0.0.0.
+
+x-zipper: &zipper
+  build: { context: ., dockerfile: docker/Dockerfile }
+  image: zipper:local
+  restart: unless-stopped
+  networks: [zippers]
+
+services:
+  zipper-0:
+    <<: *zipper
+    hostname: zipper-0
+    env_file: [{ path: ./zippers/zipper-0/config/.env, required: false }]
+    volumes:
+      - ./zippers/zipper-0/config:/zipper/config
+      - ./zippers/zipper-0/vault:/zipper/vault
+      - zipper-0-code:/zipper/code
+      - zipper-0-home:/zipper/home
+      # Host access (zipper.hostd). Mount only this zipper's own directory, and
+      # set host.socket to /run/zipper-host/hostd.sock in its settings.
+      # - /run/zipper-hostd/zipper-0:/run/zipper-host
+    ports: ["127.0.0.1:8900:8899"]
+
+  zipper-1:
+    <<: *zipper
+    hostname: zipper-1
+    env_file: [{ path: ./zippers/zipper-1/config/.env, required: false }]
+    volumes:
+      - ./zippers/zipper-1/config:/zipper/config
+      - ./zippers/zipper-1/vault:/zipper/vault
+      - zipper-1-code:/zipper/code
+      - zipper-1-home:/zipper/home
+    ports: ["127.0.0.1:8901:8899"]
+
+networks:
+  zippers: {}
+
+volumes:
+  zipper-0-code: {}
+  zipper-0-home: {}
+  zipper-1-code: {}
+  zipper-1-home: {}

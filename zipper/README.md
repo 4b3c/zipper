@@ -1,6 +1,6 @@
 # The engine — operational reference
 
-    cd /opt/zipper
+    cd <your checkout>
     python3 -m zipper --help
 
 `ZIPPER_VAULT` comes from `.env` (see below), so the engine finds the notes from anywhere.
@@ -8,14 +8,16 @@ What was removed, and why, is in `../HISTORY.md`.
 
 ## Configuration
 
-`core.cfg(key)` reads `.env` first, then `os.environ`. Services get `.env` through systemd's
-`EnvironmentFile`; a shell doesn't. So a terminal opened before a key was added reports it
-unset while it sits in the file. **Anything reading config at call time goes through `cfg`.**
+`zipper.settings.json` holds structure; `.env` holds secrets. `zipper/settings.py` fills any
+unset environment variable from the settings file when the package is imported, and
+`core.cfg(key)` then reads `.env` first, then the environment -- so a shell that started
+before a key was added still sees it. **Anything reading config at call time goes through
+`cfg`.** `zipper settings show|get|set|check|migrate`.
 
 ## Inputs
 
 Everything Zipper reads about the world comes through an **input**: one module in
-`zipper/inputs/` per subject. `ZIPPER_INPUTS` in `.env` picks which run (unset: all).
+`zipper/inputs/` per subject. `inputs.<name>.enabled` in settings picks which run.
 
 | Input | Pulled | Pushed to it | Provides |
 |---|---|---|---|
@@ -23,6 +25,8 @@ Everything Zipper reads about the world comes through an **input**: one module i
 | `calendar` | every ICS feed not owned by another input | — | queue rows, timeline |
 | `canvas` | its ICS feed (label `canvas`) | the extension's reading, `/api/canvas` | queue rows, timeline, work items, cross-offs |
 | `hours` | the Google Sheet | the sheet panel, `/api/hours` | freshness only; the ledger has its own commands |
+| `upstream` | the code checkout's origin | — | a `merged` queue row per upstream commit not yet pulled |
+| `peers` | — | another zipper, `/api/msg` | a `message` queue row, `who` = the sender |
 
 An input provides some of these; only `name` and `fetched` are required:
 
@@ -47,7 +51,8 @@ came back in the others.
 an input can never set `status`.
 
 **Adding an input:** a module in `zipper/inputs/` with `name` and `fetched()`, plus
-whichever functions it has data for; add its name to `KNOWN`; enable it in `ZIPPER_INPUTS`.
+whichever functions it has data for, and `SETUP_TITLE`/`SETUP_ABOUT`/`setup(w)` so the
+wizard offers it; add its name to `KNOWN` and a default to `settings.DEFAULTS['inputs']`.
 An input that owns some ICS feeds lists them in `CALENDARS`, and the calendar input
 skips them. A newly enabled input's first snapshot is a baseline and emits no rows.
 

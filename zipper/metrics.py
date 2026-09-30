@@ -176,7 +176,7 @@ def compute_score(window=30):
     out['tasks_dropped'] = sum(1 for t, e in led.items()
                                if t != '__meta__' and e.get('dropped_on', '') >= cut)
 
-    # --- open commitments, and the ones already past a date he set himself
+    # --- open commitments, and the ones already past a date they set themselves
     open_tasks = overdue = 0
     for p in glob.glob(os.path.join(VAULT, 'Tasks', '*.md')):
         for line in defenced(open(p, encoding='utf-8')):

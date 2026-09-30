@@ -37,7 +37,7 @@ async function config() {
 
 /* Fields that change without anything changing.
  *
- * `new_activity` flips the moment he *looks* at an item, which is not news and
+ * `new_activity` flips the moment they *looks* at an item, which is not news and
  * would make every visit to Canvas a fresh POST -- exactly the traffic the hash
  * exists to remove. Anything found to flap on its own belongs here.
  */
@@ -91,7 +91,7 @@ async function markSent(name, hash) {
  *
  * This is the one cross-origin request in the extension, and it has to happen
  * here. A content script's fetch carries the *page's* origin, so posting to the
- * tailnet from inside canvas.asu.edu would be a genuine cross-origin request
+ * tailnet from inside a Canvas host would be a genuine cross-origin request
  * and CORS would refuse it. From the background, host permissions apply
  * instead and the browser does not interpose. It is also why the endpoint is
  * an optional permission granted on the options page: the URL is not known at
@@ -141,7 +141,7 @@ const ALLOWED = {
 
 /* The panel's channel.
  *
- * Same reason as the POST: from inside canvas.asu.edu a request to the tailnet
+ * Same reason as the POST: from inside a Canvas host a request to the tailnet
  * is cross-origin and CORS refuses it, so every byte between the page and
  * Zipper goes through here. The panel therefore still knows nothing about
  * where Zipper lives -- it names an intent, and this file owns the address.

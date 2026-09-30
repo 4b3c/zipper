@@ -290,7 +290,7 @@ def _list_page(kind):
     label = 'Canvas' if kind == 'canvas' else 'Tasks'
     # Detail only here, never on the front card. The card answers "what is most
     # pressing" in one glance and a description would bury the ranking; this page
-    # is where he has already asked about one specific thing.
+    # is where they have already asked about one specific thing.
     body = _side(items, 'Nothing here.', detail=True)
     return """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>%s</title>

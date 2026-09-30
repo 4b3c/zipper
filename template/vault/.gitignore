@@ -1,0 +1,12 @@
+.DS_Store
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+
+# Machine state: regenerable, and calendars.json holds secret iCal URLs.
+Inbox/*
+
+# Generated views -- rewritten by every run, so tracking them is only noise.
+Meta/Queue.md
+Meta/Status.md
+Meta/Agenda.md
+Meta/Repos.md

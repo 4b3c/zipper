@@ -219,16 +219,37 @@ renders; it never concludes.** See `extension/README.md`.
 
 ## Running it
 
-```bash
-cp .env.example .env                    # ZIPPER_VAULT, plus whatever you use
-pip install -r requirements.txt
+### In a container (several people, one machine)
 
-python3 -m zipper fetch
-python3 -m zipper.serve --daemon
-python3 -m bot.discord_bot
+```bash
+cp compose.example.yml compose.yml          # one service per person
+mkdir -p zippers/zipper-0/{config,vault}
+docker compose run --rm zipper-0 setup      # the wizard: inputs, Discord, schedule
+docker compose up -d
+docker compose exec -it zipper-0 claude     # once: /login (or ANTHROPIC_API_KEY in .env)
 ```
 
-### Deployment
+Each container has its own vault, settings, secrets, Claude login and Discord bot. The
+dashboard is on 8899 behind basic auth (`ZIPPER_TERM_CRED`); publish it on loopback or a
+tailnet address only. Zippers on the same network message each other on 8898, which
+serves `/api/msg` and nothing else.
+
+### On a machine of your own
+
+```bash
+pip install -r requirements.txt             # plus git, tmux, ttyd, and the claude CLI
+python3 -m zipper setup                     # writes zipper.settings.json and .env
+python3 -m zipper run                       # or the systemd units in deploy/
+```
+
+### The host
+
+`zipper hostd` is a small root daemon on the host that zippers reach through a socket
+mounted into their container: status and logs freely, restarts of their own services,
+anything else only on a code from the operator's authenticator app, posted with the exact
+command through a webhook the containers cannot see. `zipper hostd init`, then `install`.
+
+### Deployment (systemd)
 
 `deploy/` has systemd units and an nginx vhost.
 
@@ -294,7 +315,8 @@ CLAUDE.md      how an agent works in this repo
 ```
 
 **Not here: the vault.** The code is public; the notes aren't, and that split is the point.
-Anything host-specific lives in the environment, never in the tree.
+Anything host-specific lives in settings or `.env`, never in the tree. A new vault starts
+from `template/vault/` (`zipper init`).
 
 ## Licence
 

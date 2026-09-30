@@ -14,7 +14,7 @@
  * server endpoint it posts to is the one the bookmarklet already talks to.
  *
  * The cost of doing it this way is honest and worth stating: it only runs while
- * he has Canvas open. Nothing here can make the data fresher than his browsing.
+ * they have Canvas open. Nothing here can make the data fresher than their browsing.
  * Zipper is told when the reading was taken so it can say how old it is, rather
  * than implying a currency it does not have.
  */
@@ -136,7 +136,7 @@
                                 reason, payload: { items, assignments } });
     } catch (e) {
       // Never surface anything to the page. A failed read is Zipper's problem to
-      // notice by the data going stale, not an alert over his coursework.
+      // notice by the data going stale, not an alert over their coursework.
       console.debug('[zipper] canvas collector:', e);
     }
   }

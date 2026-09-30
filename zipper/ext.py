@@ -3,7 +3,7 @@
 Building and shipping the browser extension.
 
 The extension is the one part of Zipper that runs somewhere this box cannot
-reach: a browser on his desktop. Everything else is deployed by editing a file
+reach: a browser on their desktop. Everything else is deployed by editing a file
 here and restarting a service. This is the seam, and it needs a real path across
 it or the extension quietly drifts a version behind the engine it talks to.
 
@@ -175,7 +175,7 @@ def _build(a):
     if not (issuer and secret):
         print('AMO_JWT_ISSUER / AMO_JWT_SECRET are unset. Generate a key at\n'
               '  https://addons.mozilla.org/en-US/developers/addon/api/key/\n'
-              'and put both in /opt/zipper/.env', file=sys.stderr)
+              'and put both in .env', file=sys.stderr)
         return 1
 
     version = getattr(a, 'set_version', None)

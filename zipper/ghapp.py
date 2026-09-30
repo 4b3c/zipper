@@ -1,35 +1,32 @@
 #!/usr/bin/env python3
 """
-The GitHub App identity - how Zipper acts on GitHub as itself.
+The GitHub App identity - how a zipper acts on GitHub as itself.
 
-Before this existed, everything Zipper did on GitHub borrowed Abram: his personal
-token in `.env`, reaching all 144 repos including the 65 NDA'd ASU-LL ones, with
-every commit and every push indistinguishable from him at a keyboard. The App is a
-separate actor - a `<slug>[bot]` account with its own profile and its own noreply
-address, and no square on his contribution graph.
+Without it, everything a zipper did on GitHub would borrow the operator: their
+personal token, reaching every repo and org they can see, with every commit and
+push indistinguishable from them at a keyboard. The App is a separate actor - a
+`<slug>[bot]` account with its own noreply address.
 
 Two credentials, and the difference matters:
 
   the private key   long-lived, on disk, and ONLY able to mint tokens
   an install token  what actually touches the API - expires in an hour
 
-So the secret at rest is not a key to the account; it is a key to a one-hour,
-one-permission lease - `contents: write`, and nothing else, on whatever the
-installation covers. `GITHUB_TOKEN` stays in `.env` because `zipper github` reads
-144 repos across an org the App is not installed on; fetching is still his. This
-module is about *writing*.
+So the secret at rest is not a key to the account; it is a key to a one-hour
+lease on whatever permissions the App was granted. `GITHUB_TOKEN` stays separate
+because `zipper github` reads repos (and orgs) the App is not installed on;
+fetching is the operator's. This module is about *writing*.
 
-The installation is deliberately account-wide rather than one repo: Zipper is
-meant to work across his projects, not just its own. That trades the narrowest
-possible blast radius for reach, knowingly. What it does NOT trade away is the
-org: the App is installed on his personal account, so no ASU-LL repo is reachable
-with this token under any circumstance.
+**Several zippers share one App.** Each pushes branches named after its id and
+opens pull requests; none can land on the default branch, because branch
+protection requires a review the App cannot give. That is what makes sharing
+the key safe: the worst a leaked key does is open a PR a human must approve.
 
 RS256 is signed by shelling out to
 `openssl`, which is already on the box, rather than taking a `cryptography`
 dependency for one signature every hour.
 """
-import os, sys, json, time, base64, subprocess, urllib.request, datetime
+import os, sys, json, time, base64, subprocess, urllib.request, urllib.error, datetime
 
 HERE     = os.path.dirname(os.path.abspath(__file__))
 ROOT     = os.path.dirname(HERE)
@@ -88,6 +85,38 @@ def api(path, token, method='GET'):
     r.add_header('User-Agent', 'zipper')
     with urllib.request.urlopen(r, timeout=30) as fh:
         return json.load(fh)
+
+
+def api_json(path, token, method='POST', body=None):
+    """A write to the API. Returns the JSON reply, or {'error': code, 'message': ...}
+    -- a 403 or 422 is an answer the caller wants to show, not a crash."""
+    data = json.dumps(body).encode() if body is not None else None
+    r = urllib.request.Request('https://api.github.com' + path, data=data, method=method)
+    r.add_header('Authorization', 'Bearer ' + token)
+    r.add_header('Accept', 'application/vnd.github+json')
+    r.add_header('User-Agent', 'zipper')
+    try:
+        with urllib.request.urlopen(r, timeout=30) as fh:
+            raw = fh.read()
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as e:
+        try:
+            msg = json.loads(e.read()).get('message', '')
+        except Exception:
+            msg = ''
+        return {'error': e.code, 'message': msg}
+
+
+def repo_slug(repo=ROOT):
+    """owner/name of a checkout's origin, or settings code.repo."""
+    configured = os.environ.get('ZIPPER_CODE_REPO', '')
+    if configured:
+        return configured
+    url = _run(['git', 'remote', 'get-url', 'origin'], repo).stdout.strip()
+    for pre in ('https://github.com/', 'git@github.com:', 'ssh://git@github.com/'):
+        if url.startswith(pre):
+            return url[len(pre):].rstrip('/').removesuffix('.git')
+    return ''
 
 
 def token(force=False):

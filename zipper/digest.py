@@ -21,7 +21,7 @@ from . import core, chat
 # One digest per date. The timer is `Persistent=true` so a box that was asleep
 # at 19:00 still sends when it wakes -- which means a catch-up run and the
 # ordinary run can both fire for the same day, and a reminder delivered twice
-# reads as a bug in the thing reminding him.
+# reads as a bug in the thing reminding them.
 STAMP = lambda: os.path.join(core.INBOX, 'digest-sent.json')
 
 # Discord's message ceiling is 2000. The margin is for the code fence the
@@ -30,7 +30,7 @@ LIMIT = 1900
 
 # How many rows a section prints before it starts counting instead. A digest
 # that lists eighty outstanding assignments is a wall, and a wall is the thing
-# he already scrolls past on Canvas.
+# they already scroll past on Canvas.
 MAX_ROWS = 10
 
 
@@ -54,13 +54,13 @@ def _mark_sent():
 
 
 def _canvas_age():
-    """How old the *submitted* reading is, in his words rather than a timestamp.
+    """How old the *submitted* reading is, in their words rather than a timestamp.
 
-    Freshness here is a fact about his browsing, not a fault: due dates come
+    Freshness here is a fact about their browsing, not a fault: due dates come
     from the ICS feed and are current either way, but whether something is
-    already submitted is only as new as the last time he had Canvas open. The
-    digest says so, because a list that quietly includes work he finished this
-    afternoon is how he got handed back homework he had already done.
+    already submitted is only as new as the last time they had Canvas open. The
+    digest says so, because a list that quietly includes work they finished this
+    afternoon is how they got handed back homework they had already done.
     """
     from . import inputs
     cv = inputs.get('canvas')
@@ -81,7 +81,7 @@ def _canvas_age():
 
 def _row(it):
     """One work item, as a line. Course first: what class it is for is the thing
-    he sorts by in his head, and the title is often twenty words of assignment
+    they sort by in their head, and the title is often twenty words of assignment
     name that says nothing until the course is known."""
     tag = it.get('tag') or ('task' if it['source'] == 'task' else '')
     title = it['title']
@@ -90,7 +90,7 @@ def _row(it):
     line = '  - %s%s' % ((tag + ' · ') if tag else '', title)
     if it.get('elsewhere'):
         # Canvas will never mark these submitted, so they sit outstanding until
-        # he crosses them off. Saying where the work actually lives is the
+        # they cross them off. Saying where the work actually lives is the
         # difference between a stale-looking row and an accurate one.
         line += '  (%s)' % it['elsewhere']
     return line
@@ -130,8 +130,8 @@ def compose(days=7):
 
     # **Coursework and self-set tasks are counted separately, never merged.**
     # They are due the same day but they are not the same kind of obligation:
-    # a task's due date is one he chose and can move, and an assignment's is
-    # not. Ranked together, eight tasks he wrote himself push the homework
+    # a task's due date is one they chose and can move, and an assignment's is
+    # not. Ranked together, eight tasks they wrote themselves push the homework
     # below the truncation line -- which is the exact failure this digest was
     # built to answer.
     hw = [i for i in due_tmw if i['source'] == 'canvas']
@@ -200,8 +200,8 @@ def cmd_digest(a):
 
     # No thread. A timer is not a conversation, so it has none to answer into.
     # It goes to the notifications channel with everything else that arrives
-    # unasked-for; the main channel is the door *he* opens, and a message that
-    # posts itself at 19:00 every day does not belong in front of his own.
+    # unasked-for; the main channel is the door *they* opens, and a message that
+    # posts itself at 19:00 every day does not belong in front of their own.
     r = chat.discord_send(msg, thread_id=a.thread or chat.notify_channel())
     if r.get('error'):
         print('digest: %s' % r['error'])

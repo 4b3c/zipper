@@ -15,7 +15,7 @@ Type=oneshot
 # dashboard's feed watcher picks that file up within a second, so the queue
 # fills in without anyone reloading anything.
 #
-# The Canvas half is still also an experiment. ASU issues no API tokens, so it
+# The Canvas half is still also an experiment. Schools often issue students no API tokens, so it
 # runs on a browser session cookie, and the 2026-09-04 cookie died in under 18
 # hours untouched. Canvas' session timeout is idle-based, so exercising it
 # hourly should hold it open indefinitely -- unless the timeout is absolute, or

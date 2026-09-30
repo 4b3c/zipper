@@ -10,7 +10,7 @@ Type=oneshot
 # the reminder's arrival depend on GitHub being up, and a digest that silently
 # does not arrive is worse than a slightly stale one.
 #
-# The Canvas half is as fresh as the last time he had Canvas open -- the
+# The Canvas half is as fresh as the last time they had Canvas open -- the
 # message says so in its own last line rather than pretending otherwise.
 ExecStart=/usr/bin/python3 -m zipper digest
 WorkingDirectory=/opt/zipper

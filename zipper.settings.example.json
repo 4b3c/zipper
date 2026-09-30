@@ -1,0 +1,72 @@
+{
+  "id": "zipper-0",
+  "owner": "Sam",
+  "vault": "/vault",
+  "timezone": "America/Denver",
+  "inputs": {
+    "github": {
+      "enabled": true,
+      "user": "your-login",
+      "orgs": []
+    },
+    "calendar": {
+      "enabled": true
+    },
+    "canvas": {
+      "enabled": true,
+      "host": "https://canvas.example.edu"
+    },
+    "hours": {
+      "enabled": false,
+      "sheet": "",
+      "metric": "hours_worked"
+    }
+  },
+  "discord": {
+    "channel": "",
+    "notify_channel": ""
+  },
+  "schedule": {
+    "fetch_minutes": 60,
+    "pass": [
+      "09:00",
+      "21:00"
+    ],
+    "digest": "19:00"
+  },
+  "ports": {
+    "web": 8800,
+    "bot": 4200,
+    "ttyd_base": 8810
+  },
+  "terminal": {
+    "host": ""
+  },
+  "claude": {
+    "permission_mode": "auto"
+  },
+  "code": {
+    "repo": "4b3c/Zipper",
+    "branch": "main"
+  },
+  "github_app": {
+    "app_id": "",
+    "install_id": "",
+    "slug": "",
+    "uid": "",
+    "key": "zipper-app.pem"
+  },
+  "google": {
+    "account": "",
+    "client_id": ""
+  },
+  "extension": {
+    "base": ""
+  },
+  "peers": {
+    "zipper-1": "http://zipper-1:8800"
+  },
+  "host": {
+    "socket": ""
+  }
+}
