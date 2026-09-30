@@ -102,6 +102,10 @@ state: regenerable, gitignored, may hold secret URLs, never authoritative.
 
   Also: **overwriting is worse than duplicating** (a duplicate is visible; an overwrite
   destroys silently), and **a freshness check fed by what it checks measures nothing**.
+- **`python3 -m unittest tests.test_units`** before proposing. CI runs it as the `check`
+  job, the required status check on `main`, with `zipper update`'s own checks. A PR that
+  changes `tests/` or `.github/workflows/` is labelled `touches-checks` by the `guard` job
+  and must say why in its description -- weakening a test is how a bad change passes.
 - Finish a session that touched the vault with `lint`, `status`, then `commit`. If lint isn't
   clean, you broke something.
 

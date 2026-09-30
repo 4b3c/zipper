@@ -1,0 +1,37 @@
+# The required status check on main. The same things `zipper update` checks
+# before it will restart onto new code, plus the unit tests -- so a change that
+# would be rolled back on every zipper is refused before anyone merges it.
+name: check
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install -r requirements.txt
+      - name: compile
+        run: python -m compileall -q zipper bot hooks utils tests
+      - name: import
+        run: python -c "import zipper.cli, zipper.serve, zipper.supervise, zipper.code, zipper.hostd"
+      - name: unit tests
+        run: python -m unittest tests.test_units -v
+      - name: a fresh vault, end to end
+        run: |
+          export ZIPPER_VAULT="$RUNNER_TEMP/vault" ZIPPER_SETTINGS="$RUNNER_TEMP/settings.json" ZIPPER_ENV_FILE="$RUNNER_TEMP/env"
+          echo '{"inputs": {"github": {"enabled": false}, "upstream": {"enabled": false}}}' > "$ZIPPER_SETTINGS"
+          python -m zipper init "$ZIPPER_VAULT"
+          python -m zipper settings check
+          python -m zipper lint
+          python -m zipper fetch
+          python -m zipper lint

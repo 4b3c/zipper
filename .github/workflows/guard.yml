@@ -1,0 +1,48 @@
+# Flags a pull request that changes its own checks.
+#
+# A PR's `check` runs the workflow and tests *as the PR has them*, so a PR can make
+# itself pass by weakening them. Deleting the check is caught by the ruleset (a
+# required check that never reports blocks the merge); editing it is not. This job
+# runs on pull_request_target, so its definition is main's and a PR cannot alter
+# it. It reads the PR's file list through the API and never checks out the PR's
+# code, which is what makes pull_request_target safe here.
+#
+# Deliberately NOT a required check: a legitimate test change must stay mergeable.
+# It fails and labels the PR `touches-checks` so the reviewer reads those files first.
+name: guard
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+permissions:
+  pull-requests: write
+  issues: write
+jobs:
+  guard:
+    name: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: does this PR change tests or workflows?
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate --jq '.[].filename')
+          hits=$(printf '%s\n' "$files" | grep -E '^(\.github/workflows/|tests/)' || true)
+          if [ -z "$hits" ]; then
+            gh api -X DELETE "repos/$REPO/issues/$PR/labels/touches-checks" >/dev/null 2>&1 || true
+            echo "No changes to tests or workflows."
+            exit 0
+          fi
+          gh api -X POST "repos/$REPO/issues/$PR/labels" -f 'labels[]=touches-checks' >/dev/null
+          {
+            echo "## This PR changes its own checks"
+            echo
+            printf '%s\n' "$hits" | sed 's/^/- `/; s/$/`/'
+            echo
+            echo "Read these before approving: a PR can make its own tests pass by weakening them."
+          } >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' "$hits" | sed 's/^/::error::changes a check: /'
+          exit 1
