@@ -34,7 +34,7 @@ DIRS = ('Projects', 'Areas', 'Topics', 'Life', 'People', 'Classes', 'Tasks',
 
 # ---------------------------------------------------------------- the vault
 
-def init_vault(path, owner='', zid='', git_name='', git_email=''):
+def init_vault(path, owner='', zid='', git_name='', git_email='', backup=''):
     """Create a vault at `path` from the template. Refuses a non-empty directory
     that is not already a vault: overwriting someone's notes is the one mistake
     here that cannot be undone. Returns the list of files written."""
@@ -74,6 +74,9 @@ def init_vault(path, owner='', zid='', git_name='', git_email=''):
     subprocess.run(['git', '-C', path, 'config', 'user.email', ident[1]], check=True)
     subprocess.run(['git', '-C', path, 'add', '-A'], check=True)
     subprocess.run(['git', '-C', path, 'commit', '-q', '-m', 'A new vault'], check=False)
+    if backup:
+        from . import backup as _backup
+        _backup.attach(backup, vault=path)
     return written
 
 
@@ -258,9 +261,13 @@ def wizard(w, only=None):
                          or os.path.expanduser('~/vault'))
         if path and not os.path.exists(os.path.join(path, 'CLAUDE.md')):
             if w.yes('No vault at %s. Create one from the template?' % path):
+                bk = w.ask('Backup: a git repo to push every commit to, outside the vault '
+                           '(blank for none)', default=_backup_default()
+                           or os.path.join(os.path.dirname(path.rstrip('/')), 'vault-backup.git'))
                 try:
-                    init_vault(path, owner=settings.get('owner'), zid=settings.get('id'))
-                    w.say('created %s' % path)
+                    init_vault(path, owner=settings.get('owner'), zid=settings.get('id'),
+                               backup=bk)
+                    w.say('created %s%s' % (path, ', backed up to %s' % bk if bk else ''))
                 except RuntimeError as e:
                     w.say(str(e))
 
@@ -312,6 +319,12 @@ def wizard(w, only=None):
     return 0
 
 
+def _backup_default():
+    """In a container, /zipper/backup is a volume of its own; elsewhere, ask."""
+    d = os.environ.get('ZIPPER_BACKUP_DEFAULT', '')
+    return os.path.join(d, 'vault.git') if d and os.path.isdir(d) else ''
+
+
 def _host_tz():
     try:
         return os.path.realpath('/etc/localtime').split('zoneinfo/', 1)[1]
@@ -324,10 +337,13 @@ def _host_tz():
 def cmd_init(a):
     try:
         files = init_vault(a.path, owner=a.owner or settings.get('owner'),
-                           zid=a.id or settings.zipper_id())
+                           zid=a.id or settings.zipper_id(), backup=a.backup or _backup_default())
     except RuntimeError as e:
         print('init: %s' % e); return 1
     print('vault: %s (%d files)' % (os.path.abspath(a.path), len(files)))
+    b = a.backup or _backup_default()
+    print('backup: %s' % (b or 'NONE -- a lost directory takes its history with it; '
+                                'add one with --backup <path>'))
     if not settings.get('vault'):
         settings.put('vault', os.path.abspath(a.path))
         print('settings: vault = %s' % os.path.abspath(a.path))

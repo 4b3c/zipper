@@ -18,7 +18,7 @@ os.environ.update(ZIPPER_SETTINGS=os.path.join(TMP, 'settings.json'),
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from zipper import hostd, settings, supervise, setup, runqueue   # noqa: E402
+from zipper import backup, hostd, settings, supervise, setup, runqueue   # noqa: E402
 from zipper.inputs import peers, upstream                         # noqa: E402
 
 
@@ -145,6 +145,44 @@ class InitVault(unittest.TestCase):
         self.assertFalse(setup._has_notes(path))
         open(os.path.join(path, 'Meta', 'Mine.md'), 'w').close()
         self.assertTrue(setup._has_notes(path))
+
+
+class Backup(unittest.TestCase):
+    def git(self, path, *args, **env):
+        return subprocess.run(['git', '-C', path] + list(args), capture_output=True, text=True,
+                              env=dict(os.environ, **env)).stdout.strip()
+
+    def use(self, vault):
+        old = backup.VAULT
+        backup.VAULT = vault
+        self.addCleanup(setattr, backup, 'VAULT', old)
+
+    def test_init_with_backup_pushes(self):
+        vault, bare = os.path.join(TMP, 'b1'), os.path.join(TMP, 'b1.git')
+        setup.init_vault(vault, owner='Sam', backup=bare)
+        self.assertEqual(self.git(vault, 'remote', 'get-url', 'origin'), bare)
+        self.assertEqual(self.git(bare, 'log', '-1', '--format=%s', 'main'), 'A new vault')
+        self.use(vault)
+        self.assertEqual(backup.flags(), [])
+
+    def test_no_remote_is_flagged(self):
+        vault = os.path.join(TMP, 'b2')
+        setup.init_vault(vault)
+        self.use(vault)
+        self.assertIn('no backup remote', ' '.join(backup.flags()))
+
+    def test_push_catches_up_and_stale_is_flagged(self):
+        vault, bare = os.path.join(TMP, 'b3'), os.path.join(TMP, 'b3.git')
+        setup.init_vault(vault, backup=bare)
+        self.use(vault)
+        with open(os.path.join(vault, 'Tasks', 'Main.md'), 'a') as fh:
+            fh.write('\n- [ ] something\n')
+        old = '2026-01-01T00:00:00'
+        self.git(vault, 'commit', '-qam', 'old work', GIT_COMMITTER_DATE=old, GIT_AUTHOR_DATE=old)
+        self.assertIn('1 commit(s) behind', ' '.join(backup.flags()))
+        self.assertEqual(backup.push(), '')
+        self.assertEqual(backup.flags(), [])
+        self.assertEqual(self.git(bare, 'log', '-1', '--format=%s', 'main'), 'old work')
 
 
 class QueueRows(unittest.TestCase):
