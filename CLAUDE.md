@@ -44,6 +44,10 @@ Dependencies are allowed where they earn their place; `requirements.txt` lists t
 | `zipper/hostd.py` `host.py` | The host daemon (root, on the host) and its client |
 | `docker/` | The image, entrypoint and nginx generator; `compose.example.yml` runs several |
 | `template/vault/` `template/starter/` | What every new vault gets; an optional suggested layout |
+| `template/setup/`, `plugins/*/SETUP.md` | The setup guide `zipper init` puts on top of a new vault's CLAUDE.md, one removable section each |
+| `template/home/` | A new zipper's compose file and its `./zipper` command |
+| `zipper/secret.py` | `zipper secret NAME`: a one-time page, so a secret never passes through a chat |
+| `bin/zipper` | Run the CLI from a checkout without installing: `./bin/zipper init ~/zipper` |
 | `zipper/box.py` | The box's vital signs, sampled each minute into `Inbox/box-history.json` |
 | `zipper/usage.py` | Plan usage meters. The OAuth token is read at call time, never stored |
 | `hooks/forward_reply.py` | The `Stop` hook that posts a reply to its Discord thread |

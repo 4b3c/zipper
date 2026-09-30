@@ -174,14 +174,21 @@ def main():
                    help='print a raw installation token')
     s.set_defaults(fn=ghapp.cmd_ghapp)
 
-    s = sub.add_parser('init', help='create a vault from the template')
+    s = sub.add_parser('init', help='stand up a zipper in a folder: vault, config, backup, compose')
     s.add_argument('path'); s.add_argument('--owner'); s.add_argument('--id')
+    s.add_argument('--vault-only', action='store_true',
+                   help='only make a vault at PATH (what a container or a test wants)')
     s.add_argument('--backup', help='a bare git repo, outside the vault, pushed on every commit')
     s.add_argument('--starter', action='store_true',
                    help='add a suggested layout: folders, a schema, Obsidian pages')
     s.set_defaults(fn=_setup('cmd_init'))
-    s = sub.add_parser('setup', help="point Claude Code's Stop hook at this checkout")
+    s = sub.add_parser('setup', help='the setup guide in CLAUDE.md, and the Stop hook')
     s.add_argument('--hook', action='store_true', help='(the default; kept for old scripts)')
+    ss = s.add_subparsers(dest='action')
+    ss.add_parser('hook', help="point Claude Code's Stop hook at this checkout")
+    ss.add_parser('remaining', help='setup sections still in CLAUDE.md')
+    g = ss.add_parser('done', help='remove a finished section; with none left, the guide')
+    g.add_argument('section', nargs='?')
     s.set_defaults(fn=_setup('cmd_setup'))
     s = sub.add_parser('plugin', help='list, describe, enable or disable plugins')
     ps = s.add_subparsers(dest='action')
@@ -224,6 +231,16 @@ def main():
     s = sub.add_parser('msg', help='send a message to another zipper')
     s.add_argument('peer'); s.add_argument('text')
     s.set_defaults(fn=_needs('peers', _mod('plugins.peers', 'cmd_msg')))
+
+    s = sub.add_parser('secret', help='put a secret into .env without it passing through a chat')
+    s.add_argument('name'); s.add_argument('--check', action='store_true', help='say whether it is set')
+    s.add_argument('--tty', action='store_true', help='hidden prompt in this terminal instead of a link')
+    s.add_argument('--host', default='127.0.0.1', help='address the page listens on (default loopback)')
+    s.set_defaults(fn=_mod('secret', 'cmd_secret'))
+    s = sub.add_parser('_secret_page')      # internal: the detached page
+    for x in ('name', 'host', 'port', 'token'):
+        s.add_argument(x)
+    s.set_defaults(fn=_mod('secret', 'cmd_secret_page'))
 
     s = sub.add_parser('settings', help='show or change zipper.settings.json (never secrets)')
     ss = s.add_subparsers(dest='action')

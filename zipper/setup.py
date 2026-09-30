@@ -26,7 +26,8 @@ STARTER_DIRS = ('Projects', 'Areas', 'Topics', 'People', 'Tasks', 'Decisions', '
 
 # ---------------------------------------------------------------- the vault
 
-def init_vault(path, owner='', zid='', git_name='', git_email='', backup='', starter=False):
+def init_vault(path, owner='', zid='', git_name='', git_email='', backup='', starter=False,
+               guide='', record_backup=True):
     """Make `path` a vault: a git repository with a CLAUDE.md and a .gitignore.
 
     That is all a vault needs. `starter` adds a suggested layout (folders, a
@@ -66,13 +67,22 @@ def init_vault(path, owner='', zid='', git_name='', git_email='', backup='', sta
     ident = (git_name or zid or 'zipper', git_email or '%s@zipper.local' % (zid or 'zipper'))
     subprocess.run(['git', '-C', path, 'config', 'user.name', ident[0]], check=True)
     subprocess.run(['git', '-C', path, 'config', 'user.email', ident[1]], check=True)
+    if guide:
+        # The setup guide goes on top of the rules, between markers, and removes
+        # itself section by section (`zipper setup done`).
+        claude = os.path.join(path, 'CLAUDE.md')
+        with open(claude, encoding='utf-8') as fh:
+            rules = fh.read()
+        with open(claude, 'w', encoding='utf-8') as fh:
+            fh.write(guide + rules)
     subprocess.run(['git', '-C', path, 'add', '-A'], check=True)
     subprocess.run(['git', '-C', path, 'commit', '-q', '-m', 'A new vault'], check=False)
     if backup:
         from . import plugins as _plugins           # puts `plugins` on sys.path
         from plugins import backup as _backup
         _backup.attach(backup, vault=path)
-        _plugins.settings.put('plugins.backup.enabled', True)
+        if record_backup:
+            _plugins.settings.put('plugins.backup.enabled', True)
     return written
 
 
@@ -166,7 +176,120 @@ def _backup_default():
 
 # ---------------------------------------------------------------- commands
 
+# ---------------------------------------------------------------- a whole zipper
+
+SETUP_DIR = os.path.join(ROOT, 'template', 'setup')
+HOME_TEMPLATE = os.path.join(ROOT, 'template', 'home')
+# The guide's order. Plugins not named here follow, alphabetically.
+FIRST = ('about', 'discord', 'claude')
+PLUGIN_ORDER = ('dashboard', 'backup', 'github', 'calendar', 'canvas', 'hours', 'passes',
+                'digest', 'upstream', 'peers', 'host')
+LAST = ('start', 'finish')
+GUIDE_OPEN, GUIDE_CLOSE = '<!-- setup -->', '<!-- /setup -->'
+
+
+def _block(name, text):
+    return '<!-- setup:%s -->\n%s\n<!-- /setup:%s -->\n\n' % (name, text.strip(), name)
+
+
+def guide(subs):
+    """The setup guide: the intro, then one removable block per step and per plugin."""
+    def read(p):
+        with open(p, encoding='utf-8') as fh:
+            t = fh.read()
+        for k, v in subs.items():
+            t = t.replace(k, v)
+        return t
+    out = GUIDE_OPEN + '\n' + read(os.path.join(SETUP_DIR, 'intro.md')) + '\n'
+    for n in FIRST:
+        out += _block(n, read(os.path.join(SETUP_DIR, n + '.md')))
+    pdir = os.path.join(ROOT, 'plugins')
+    have = sorted(n for n in os.listdir(pdir) if os.path.exists(os.path.join(pdir, n, 'SETUP.md')))
+    for n in [x for x in PLUGIN_ORDER if x in have] + [x for x in have if x not in PLUGIN_ORDER]:
+        out += _block(n, read(os.path.join(pdir, n, 'SETUP.md')))
+    for n in LAST:
+        out += _block(n, read(os.path.join(SETUP_DIR, n + '.md')))
+    return out + GUIDE_CLOSE + '\n\n'
+
+
+def remaining(text):
+    return re.findall(r'<!-- setup:([a-z0-9_-]+) -->', text)
+
+
+def done(text, name=None):
+    """Remove one section, or -- with none left -- the whole guide. Returns the new text."""
+    if name:
+        n = re.escape(name)
+        pat = re.compile(r'<!-- setup:%s -->.*?<!-- /setup:%s -->\n*' % (n, n), re.S)
+        if not pat.search(text):
+            raise RuntimeError('no setup section %r (left: %s)'
+                               % (name, ', '.join(remaining(text)) or 'none'))
+        return pat.sub('', text, count=1)
+    left = remaining(text)
+    if left:
+        raise RuntimeError('sections still to go: %s' % ', '.join(left))
+    return re.sub(re.escape(GUIDE_OPEN) + r'.*?' + re.escape(GUIDE_CLOSE) + r'\n*', '', text,
+                  count=1, flags=re.S)
+
+
+def init_home(home, owner='', zid='zipper-0', starter=False):
+    """Stand up a whole zipper in `home`: the vault (with the setup guide as its
+    CLAUDE.md), its config, a backup, a compose file, and a `zipper` command for this
+    machine. Returns what it made."""
+    home = os.path.abspath(os.path.expanduser(home))
+    if os.path.exists(os.path.join(home, 'config', 'zipper.settings.json')):
+        raise RuntimeError('%s already holds a zipper -- leaving it alone' % home)
+    subs = {'{{HOME}}': home, '{{ID}}': zid, '{{CODE}}': ROOT,
+            '{{OWNER}}': owner or 'the operator'}
+    os.makedirs(os.path.join(home, 'config'), exist_ok=True)
+    os.makedirs(os.path.join(home, 'backup'), exist_ok=True)
+    cfg = os.path.join(home, 'config', 'zipper.settings.json')
+    with open(cfg, 'w', encoding='utf-8') as fh:
+        # The vault path is the container's; `home/zipper` points at the real one here.
+        json.dump({'id': zid, 'owner': owner, 'vault': '/zipper/vault',
+                   'code': {'repo': '4b3c/Zipper', 'branch': 'main'},
+                   'plugins': {'backup': {'enabled': True}}}, fh, indent=2)
+        fh.write('\n')
+    envf = os.path.join(home, 'config', '.env')
+    if not os.path.exists(envf):
+        fd = os.open(envf, os.O_WRONLY | os.O_CREAT, 0o600)
+        with os.fdopen(fd, 'w') as fh:
+            fh.write('# Secrets only. Written by `zipper secret NAME`; never opened by Claude.\n')
+    for f in os.listdir(HOME_TEMPLATE):
+        with open(os.path.join(HOME_TEMPLATE, f), encoding='utf-8') as fh:
+            t = fh.read()
+        for k, v in subs.items():
+            t = t.replace(k, v)
+        dst = os.path.join(home, f)
+        with open(dst, 'w', encoding='utf-8') as fh:
+            fh.write(t)
+        if f == 'zipper':
+            os.chmod(dst, 0o755)
+    init_vault(os.path.join(home, 'vault'), owner=owner, zid=zid, starter=starter,
+               backup=os.path.join(home, 'backup', 'vault.git'), guide=guide(subs),
+               record_backup=False)
+    return home
+
+
 def cmd_init(a):
+    if not a.vault_only:
+        try:
+            home = init_home(a.path, owner=a.owner or '', zid=a.id or 'zipper-0',
+                             starter=a.starter)
+        except RuntimeError as e:
+            print('init: %s' % e); return 1
+        print('Made a zipper in %s:' % home)
+        print('  vault/    the notes, with a setup guide as its CLAUDE.md')
+        print('  config/   settings and secrets    backup/   the vault\'s second copy')
+        print('  compose.yml, and ./zipper -- this zipper\'s command on this machine')
+        print()
+        print('Next:  cd %s/vault && claude' % home)
+        print('       and say "set me up".')
+        return 0
+    return cmd_init_vault(a)
+
+
+def cmd_init_vault(a):
     try:
         files = init_vault(a.path, owner=a.owner or settings.get('owner'),
                            zid=a.id or settings.zipper_id(), backup=a.backup or _backup_default(),
@@ -184,5 +307,28 @@ def cmd_init(a):
 
 
 def cmd_setup(a):
-    print('Stop hook -> %s' % install_hook())
+    action = getattr(a, 'action', None) or 'hook'
+    if action == 'hook':
+        print('Stop hook -> %s' % install_hook())
+        return 0
+    from . import core
+    p = os.path.join(core.VAULT, 'CLAUDE.md')
+    with open(p, encoding='utf-8') as fh:
+        text = fh.read()
+    if action == 'remaining':
+        left = remaining(text)
+        print('\n'.join(left) if left else ('nothing left -- `zipper setup done` removes the guide'
+                                            if GUIDE_OPEN in text else 'setup is finished'))
+        return 0
+    try:
+        new = done(text, getattr(a, 'section', None))
+    except RuntimeError as e:
+        print('setup: %s' % e); return 1
+    with open(p, 'w', encoding='utf-8') as fh:
+        fh.write(new)
+    left = remaining(new)
+    print('removed %s. %s' % (a.section or 'the setup guide',
+                              ('left: ' + ', '.join(left)) if left else
+                              ('nothing left -- run `zipper setup done` to remove the guide'
+                               if GUIDE_OPEN in new else 'CLAUDE.md is now just the rules.')))
     return 0

@@ -45,7 +45,8 @@ itself, and a cross-off made in one place came back in the others.
 `last_touched`, moves `last_touched` only forward, and refuses (and logs) anything else —
 a plugin can never set `status`.
 
-**Adding a plugin:** a folder with `plugin.json` and `__init__.py` (with `name`). Its
+**Adding a plugin:** a folder with `plugin.json`, `__init__.py` (with `name`) and a
+`SETUP.md` — the section the setup guide shows for it: what it is, and the exact commands. Its
 settings default in the manifest and appear under `plugins.<name>`; any the rest of the
 code reads as environment variables go in the manifest's `env` map. A newly enabled
 plugin's first snapshot is a baseline and emits no rows.

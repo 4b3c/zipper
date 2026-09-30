@@ -278,6 +278,71 @@ class Backup(unittest.TestCase):
         self.assertEqual(self.git(bare, 'log', '-1', '--format=%s', 'main'), 'old work')
 
 
+class Setup(unittest.TestCase):
+    def test_every_plugin_has_a_setup_section_and_the_guide_has_them_all(self):
+        g = setup.guide({'{{HOME}}': '/h', '{{ID}}': 'z', '{{CODE}}': '/c', '{{OWNER}}': 'Sam'})
+        left = setup.remaining(g)
+        for name in plugins.manifests():
+            self.assertIn(name, left)
+        self.assertEqual(left[:3], ['about', 'discord', 'claude'])
+        self.assertEqual(left[-2:], ['start', 'finish'])
+        self.assertNotIn('{{', g)
+
+    def test_sections_come_out_one_at_a_time_then_the_guide(self):
+        g = setup.guide({}) + '# the rules\n'
+        with self.assertRaises(RuntimeError):
+            setup.done(g)                        # not while sections remain
+        for name in setup.remaining(g):
+            g = setup.done(g, name)
+        self.assertEqual(setup.remaining(g), [])
+        self.assertEqual(setup.done(g), '# the rules\n')
+        with self.assertRaises(RuntimeError):
+            setup.done(g, 'discord')
+
+    def test_init_home_makes_a_whole_zipper(self):
+        home = os.path.join(TMP, 'home1')
+        setup.init_home(home, owner='Sam', zid='zipper-9')
+        for rel in ('vault/CLAUDE.md', 'config/zipper.settings.json', 'config/.env',
+                    'backup/vault.git/HEAD', 'compose.yml', 'zipper'):
+            self.assertTrue(os.path.exists(os.path.join(home, rel)), rel)
+        self.assertEqual(oct(os.stat(os.path.join(home, 'config/.env')).st_mode & 0o777), '0o600')
+        self.assertTrue(os.access(os.path.join(home, 'zipper'), os.X_OK))
+        with open(os.path.join(home, 'vault/CLAUDE.md'), encoding='utf-8') as fh:
+            self.assertIn('<!-- setup:discord -->', fh.read())
+        with open(os.path.join(home, 'config/zipper.settings.json'), encoding='utf-8') as fh:
+            cfg = json.load(fh)
+        self.assertEqual((cfg['id'], cfg['vault']), ('zipper-9', '/zipper/vault'))
+        with self.assertRaises(RuntimeError):
+            setup.init_home(home)
+
+
+class Secret(unittest.TestCase):
+    def test_the_page_saves_once_and_closes(self):
+        import threading, urllib.request, urllib.parse
+        from zipper import secret
+        port, token = secret._free_port('127.0.0.1'), 'tok'
+        t = threading.Thread(target=secret.serve,
+                             args=('UNIT_SECRET', '127.0.0.1', port, token, 20), daemon=True)
+        t.start()
+        time.sleep(0.3)
+        base = 'http://127.0.0.1:%d/' % port
+        with self.assertRaises(Exception):
+            urllib.request.urlopen(base + 'wrong', timeout=5)
+        body = urllib.parse.urlencode({'value': 's3cret'}).encode()
+        with urllib.request.urlopen(base + token, data=body, timeout=5) as r:
+            self.assertIn(b'Saved', r.read())
+        t.join(5)
+        self.assertFalse(t.is_alive())
+        from zipper import core
+        self.assertEqual(core._env_file().get('UNIT_SECRET'), 's3cret')
+
+    def test_names_are_checked(self):
+        from zipper import secret
+        self.assertTrue(secret.valid_name('DISCORD_TOKEN'))
+        for bad in ('bad name', '1ABC', 'a;rm', ''):
+            self.assertFalse(secret.valid_name(bad))
+
+
 class QueueRows(unittest.TestCase):
     def test_every_system_has_a_label(self):
         for s in runqueue.SYSTEM_ORDER:
@@ -307,7 +372,7 @@ class CommandLine(unittest.TestCase):
     def test_init_lint_status(self):
         vault = os.environ['ZIPPER_VAULT']
         if not os.path.exists(os.path.join(vault, 'CLAUDE.md')):
-            r = self.run_zipper('init', vault)
+            r = self.run_zipper('init', '--vault-only', vault)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         for cmd in (['lint'], ['status'], ['agenda'], ['views'], ['settings', 'check']):
             r = self.run_zipper(*cmd)

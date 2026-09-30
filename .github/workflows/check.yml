@@ -30,7 +30,7 @@ jobs:
         run: |
           export ZIPPER_VAULT="$RUNNER_TEMP/vault" ZIPPER_SETTINGS="$RUNNER_TEMP/settings.json" ZIPPER_ENV_FILE="$RUNNER_TEMP/env"
           echo '{"plugins": {"calendar": {"enabled": true}, "backup": {"enabled": false}}}' > "$ZIPPER_SETTINGS"
-          python -m zipper init "$ZIPPER_VAULT"
+          python -m zipper init --vault-only "$ZIPPER_VAULT"
           python -m zipper settings check
           python -m zipper lint
           python -m zipper plugin list
