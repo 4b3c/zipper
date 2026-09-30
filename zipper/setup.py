@@ -190,7 +190,7 @@ def _backup_default():
 SETUP_DIR = os.path.join(ROOT, 'template', 'setup')
 HOME_TEMPLATE = os.path.join(ROOT, 'template', 'home')
 # The guide's order. Plugins not named here follow, alphabetically.
-FIRST = ('about', 'notes', 'discord', 'claude')
+FIRST = ('discord', 'about', 'notes', 'claude')
 PLUGIN_ORDER = ('dashboard', 'backup', 'github', 'calendar', 'canvas', 'hours', 'passes',
                 'digest', 'upstream', 'peers', 'host')
 LAST = ('start', 'finish')

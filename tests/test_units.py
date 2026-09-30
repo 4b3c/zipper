@@ -345,7 +345,7 @@ class Setup(unittest.TestCase):
         left = setup.remaining(g)
         for name in plugins.manifests():
             self.assertIn(name, left)
-        self.assertEqual(left[:4], ['about', 'notes', 'discord', 'claude'])
+        self.assertEqual(left[:4], ['discord', 'about', 'notes', 'claude'])
         self.assertEqual(left[-2:], ['start', 'finish'])
         self.assertNotIn('{{', g)
 
@@ -382,7 +382,7 @@ class Setup(unittest.TestCase):
         setup.init_home(home, owner='Sam', zid='zipper-7')
         with open(os.path.join(home, 'vault/CLAUDE.md'), encoding='utf-8') as fh:
             text = fh.read()
-        self.assertEqual(setup.remaining(text)[:4], ['about', 'notes', 'discord', 'claude'])
+        self.assertEqual(setup.remaining(text)[:4], ['discord', 'about', 'notes', 'claude'])
         self.assertIn('Two things are called "plugins"', text)
         with open(os.path.join(home, 'vault/settings.json'), encoding='utf-8') as fh:
             self.assertTrue(json.load(fh).get('timezone'))
