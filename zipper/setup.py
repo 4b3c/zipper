@@ -241,6 +241,26 @@ def done(text, name=None):
                   count=1, flags=re.S)
 
 
+def host_timezone():
+    """This machine's zone, for the container's `TZ`. A zipper on UTC while its
+    calendars are read in local time sees every event move and fills the queue
+    with remove/add pairs (it happened on 2026-09-30). `$TZ`, else /etc/timezone,
+    else where /etc/localtime points, else UTC."""
+    if os.environ.get('TZ'):
+        return os.environ['TZ'].lstrip(':')
+    try:
+        with open('/etc/timezone', encoding='utf-8') as fh:
+            tz = fh.read().strip()
+        if tz:
+            return tz
+    except OSError:
+        pass
+    link = os.path.realpath('/etc/localtime')
+    if '/zoneinfo/' in link:
+        return link.split('/zoneinfo/', 1)[1]
+    return 'UTC'
+
+
 def init_home(home, owner='', zid='zipper-0', starter=False):
     """Stand up a whole zipper in `home`: the vault (with the setup guide as its
     CLAUDE.md), its config, a backup, a compose file, and a `zipper` command for this
@@ -249,7 +269,7 @@ def init_home(home, owner='', zid='zipper-0', starter=False):
     if os.path.exists(os.path.join(home, 'vault', 'settings.json')):
         raise RuntimeError('%s already holds a zipper -- leaving it alone' % home)
     subs = {'{{HOME}}': home, '{{ID}}': zid, '{{CODE}}': ROOT,
-            '{{OWNER}}': owner or 'the operator'}
+            '{{OWNER}}': owner or 'the operator', '{{TZ}}': host_timezone()}
     os.makedirs(os.path.join(home, 'config'), exist_ok=True)
     os.makedirs(os.path.join(home, 'backup'), exist_ok=True)
     envf = os.path.join(home, 'config', '.env')

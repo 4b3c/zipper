@@ -7,12 +7,15 @@
 # Each gets its own vault, config, Claude login and Discord bot. They share the
 # image and a network they use only to message each other (port 8898).
 # Publish 8899 on loopback or your tailnet address -- never 0.0.0.0.
+# Set TZ to this machine's zone: on UTC, calendar events read as moved.
 
 x-zipper: &zipper
   build: { context: ., dockerfile: docker/Dockerfile }
   image: zipper:local
   restart: unless-stopped
   networks: [zippers]
+  environment:
+    TZ: America/Phoenix
 
 services:
   zipper-0:

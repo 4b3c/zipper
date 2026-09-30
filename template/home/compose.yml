@@ -12,6 +12,8 @@ services:
     container_name: {{ID}}
     hostname: {{ID}}
     restart: unless-stopped
+    environment:
+      TZ: {{TZ}}                   # this machine's zone: calendars and the schedule are local time
     env_file: [./config/.env]
     volumes:
       - ./config:/zipper/config

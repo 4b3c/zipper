@@ -331,6 +331,22 @@ class Setup(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             setup.init_home(home)
 
+    def test_compose_carries_the_hosts_timezone(self):
+        home = os.path.join(TMP, 'home-tz')
+        old = os.environ.get('TZ')
+        os.environ['TZ'] = 'America/Phoenix'
+        try:
+            setup.init_home(home, zid='zipper-8')
+        finally:
+            if old is None:
+                os.environ.pop('TZ', None)
+            else:
+                os.environ['TZ'] = old
+        with open(os.path.join(home, 'compose.yml'), encoding='utf-8') as fh:
+            text = fh.read()
+        self.assertIn('TZ: America/Phoenix', text)
+        self.assertNotIn('{{', text)
+
 
 class Secret(unittest.TestCase):
     def test_the_page_saves_once_and_closes(self):
