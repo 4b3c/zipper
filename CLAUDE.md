@@ -28,7 +28,7 @@ Dependencies are allowed where they earn their place; `requirements.txt` lists t
 | `zipper/ics.py` `events.py` | Calendars, recurrence, event notes |
 | `zipper/plugins.py` | The plugin loader and registry. See `zipper/README.md` § Plugins |
 | `plugins/<name>/` | One plugin each: `plugin.json` (manifest) and `__init__.py` (code, imported only when enabled) |
-| `zipper/writer.py` | The only place input facts enter frontmatter. Facts only; `last_touched` forward only |
+| `zipper/writer.py` | The only place plugin facts enter frontmatter. Facts only; `last_touched` forward only |
 | `zipper/gh.py` `canvas.py` `hours.py` | What the plugins wrap: fetching and storage |
 | `zipper/metrics.py` | The numbers |
 | `zipper/runqueue.py` `views.py` | The queue, the saved queries |
@@ -37,10 +37,10 @@ Dependencies are allowed where they earn their place; `requirements.txt` lists t
 | `zipper/serve.py` + `zipper/web/` | The dashboard. `serve.py` is the entry point |
 | `zipper/web/cards.py` | The card framework: resolving `dashboard:`/`<plugin>:`/`vault:` cards, isolation, actions, the `ui` kit |
 | `plugins/dashboard/cards/`, `plugins/<name>/cards/` | Built-in cards, and cards a plugin brings |
-| `zipper/web/home.py` | `/`, the dashboard, including the Claude card |
+| `zipper/web/home.py` | `/`: the page frame and the built-in panels (week, day, queue, Claude, zipper) that cards wrap |
 | `zipper/web/render.py` | The `/views`, `/tasks` and `/canvas` pages, and helpers `home.py` shares |
 | `zipper/web/js.py` `css.py` | `TERM_JS`/`TERM_CSS` drive the Claude card; the rest styles the list pages |
-| `zipper/settings.py` `setup.py` | The settings file; `init` and the `setup` wizard |
+| `zipper/settings.py` `setup.py` | The vault's `settings.json`; `init`, the setup guide's assembly, the Stop hook |
 | `zipper/supervise.py` | `zipper run`: web, nginx, bot and the schedule where there is no systemd |
 | `zipper/code.py` | `zipper code` (proposing changes) and `zipper update` (taking them) |
 | `zipper/hostd.py` `host.py` | The host daemon (root, on the host) and its client |
