@@ -219,5 +219,5 @@ extension/.amo-upload-uuid
 zipper.settings.json
 
 # Local container layout (compose.example.yml)
-compose.yml
-zippers/
+/compose.yml
+/zippers/

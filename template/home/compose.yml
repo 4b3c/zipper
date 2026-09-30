@@ -1,0 +1,28 @@
+# {{ID}}: one zipper. From this folder: docker compose up -d --build
+#
+#   vault/    the notes -- a git repository; the only thing that is really yours
+#   config/   zipper.settings.json and .env (secrets; never in the vault)
+#   backup/   the vault's second copy, pushed on every commit (backup plugin)
+services:
+  zipper:
+    build:
+      context: {{CODE}}
+      dockerfile: docker/Dockerfile
+    image: zipper:local
+    container_name: {{ID}}
+    hostname: {{ID}}
+    restart: unless-stopped
+    env_file: [./config/.env]
+    volumes:
+      - ./config:/zipper/config
+      - ./vault:/zipper/vault
+      - ./backup:/zipper/backup
+      - code:/zipper/code          # its own checkout, updated by `zipper update`
+      - home:/zipper/home          # its Claude login and transcripts
+    # The dashboard (plugin), on this machine only. To reach it from elsewhere, publish
+    # it on a private address (a tailnet IP), never 0.0.0.0.
+    ports: ["127.0.0.1:8899:8899"]
+
+volumes:
+  code: {}
+  home: {}
