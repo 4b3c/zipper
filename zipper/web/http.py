@@ -500,7 +500,7 @@ def conversation_reaper():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--port', type=int, default=8800)
+    ap.add_argument('--port', type=int, default=int(os.environ.get('ZIPPER_PORT') or 8800))
     ap.add_argument('--host', default='127.0.0.1')
     ap.add_argument('--open', action='store_true', help='open a browser and exit when it closes')
     ap.add_argument('--no-terminal', action='store_true', help='skip the embedded Claude session')

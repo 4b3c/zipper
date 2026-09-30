@@ -7,7 +7,7 @@ want to know what zipper can do.
 import argparse
 
 from . import (canvas, chat, conversations, decisions, digest, events, ext, gh, ghapp,
-               google, hours, ics, lint, metrics, runqueue, status, sync, views)
+               google, hours, ics, lint, metrics, runqueue, settings, status, sync, views)
 
 
 def _pass_cmd(a):
@@ -144,6 +144,15 @@ def main():
     s.add_argument('--token', dest='print_token', action='store_true',
                    help='print a raw installation token')
     s.set_defaults(fn=ghapp.cmd_ghapp)
+
+    s = sub.add_parser('settings', help='show or change zipper.settings.json (never secrets)')
+    ss = s.add_subparsers(dest='action')
+    ss.add_parser('show'); ss.add_parser('path'); ss.add_parser('check')
+    g = ss.add_parser('migrate', help='move the non-secret keys of .env into the file')
+    g.add_argument('--env', help='a .env to read; default: this checkout\'s')
+    g = ss.add_parser('get'); g.add_argument('key')
+    g = ss.add_parser('set'); g.add_argument('key'); g.add_argument('value')
+    s.set_defaults(fn=settings.cmd_settings)
 
     s = sub.add_parser('ext', help='build, sign and publish the browser extension')
     s.add_argument('--build', action='store_true', help='sign a new version')

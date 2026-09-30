@@ -8,6 +8,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Ports, channel and peers from zipper.settings.json, under anything the
+# environment or .env already set -- the same order the engine uses.
+from zipper import settings as _settings
+_settings.apply()
+
 import bot.client as _client_mod
 from bot.server import setup_routes
 

@@ -214,3 +214,6 @@ __marimo__/
 
 # web-ext build state; the values live in .env
 extension/.amo-upload-uuid
+
+# One zipper's settings (structure; secrets stay in .env)
+zipper.settings.json
