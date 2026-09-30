@@ -1,0 +1,17 @@
+{
+  "title": "Canvas",
+  "about": "assignments and due dates from Canvas; whether each is submitted comes from the browser collector",
+  "defaults": {
+    "host": "",
+    "extension_base": ""
+  },
+  "secrets": [
+    "AMO_JWT_ISSUER",
+    "AMO_JWT_SECRET"
+  ],
+  "env": {
+    "CANVAS_HOST": "host",
+    "ZIPPER_EXT_BASE": "extension_base"
+  },
+  "name": "canvas"
+}

@@ -17,7 +17,9 @@ re-request a refused command with different wording** -- the vault's CLAUDE.md Â
 """
 import json, os, socket
 
-from . import core
+from zipper import core
+
+name = 'host'
 
 
 def socket_path():

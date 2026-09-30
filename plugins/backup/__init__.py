@@ -15,8 +15,9 @@ says so -- when there is no remote at all, and when the remote falls a day behin
 """
 import datetime, os, subprocess
 
-from .core import VAULT
+from zipper.core import VAULT
 
+name = 'backup'
 STALE_HOURS = 24
 
 
@@ -52,6 +53,12 @@ def push():
         return ''
     r = _git('push', '-q', 'origin', 'HEAD')
     return '' if r.returncode == 0 else (r.stderr or r.stdout).strip().split('\n')[-1]
+
+
+def on_commit():
+    """The plugin hook `zipper commit` calls: push, and say so if it failed."""
+    err = push()
+    return 'backup push failed -- %s' % err if err else ''
 
 
 def behind():

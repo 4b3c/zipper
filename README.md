@@ -20,8 +20,10 @@ can be added. You can ask it things over Discord or a web dashboard.
   several conversations going at once.
 - Stays on your server. This repository is only the code; your notes stay on your machine.
 
-Each input — GitHub, calendars, Canvas, the timesheet — is one module in `zipper/inputs/`,
-and `ZIPPER_INPUTS` picks which run. Adding a source means writing one file. Claude Code
+The core is a Discord bot handing messages to Claude conversations that edit a vault.
+Everything else — GitHub, calendars, Canvas, the timesheet, the dashboard, backups,
+scheduled passes — is a **plugin**: a folder in `plugins/`, switched on with
+`zipper plugin enable <name>`. Only the dashboard is on by default. Claude Code
 does the thinking; the Python engine just fetches data and writes it into the notes.
 
 ---
@@ -231,7 +233,7 @@ renders; it never concludes.** See `extension/README.md`.
 ```bash
 cp compose.example.yml compose.yml          # one service per person
 mkdir -p zippers/zipper-0/{config,vault}
-docker compose run --rm zipper-0 setup      # the wizard: inputs, Discord, schedule
+docker compose run --rm zipper-0 plugin list   # then `plugin enable <name>` for each you want
 docker compose up -d
 docker compose exec -it zipper-0 claude     # once: /login (or ANTHROPIC_API_KEY in .env)
 ```
@@ -245,7 +247,7 @@ serves `/api/msg` and nothing else.
 
 ```bash
 pip install -r requirements.txt             # plus git, tmux, ttyd, and the claude CLI
-python3 -m zipper setup                     # writes zipper.settings.json and .env
+python3 -m zipper plugin list               # `plugin enable <name>`; `settings set` for the rest
 python3 -m zipper run                       # or the systemd units in deploy/
 ```
 

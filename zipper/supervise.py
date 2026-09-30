@@ -4,8 +4,8 @@
 inside a container, or on a laptop.
 
     the dashboard   python3 -m zipper.serve --daemon       always
-    the bot         python3 -u -m bot.discord_bot          when DISCORD_TOKEN is set
-    the schedule    fetch / pass / digest / update         from settings.schedule
+    the bot         python3 -u -m bot.discord_bot          required: DISCORD_TOKEN
+    the schedule    fetch / pass / digest / update         from the enabled plugins
 
 Children are restarted when they exit, with a backoff so a crash loop does not
 spin. The schedule runs jobs as subprocesses, one at a time: a pass that takes
@@ -54,28 +54,32 @@ def _save_state(st):
     os.replace(tmp, _state_path())
 
 
-def due(now, st, sched, auto_update=False):
-    """The jobs due at `now`, given what has run. Pure, so it can be tested."""
+def due(now, st, fetch_minutes, pulls, jobs):
+    """The jobs due at `now`, given what has run. Pure, so it can be tested.
+
+    `pulls`: whether any enabled plugin fetches -- with none, there is nothing to
+    fetch. `jobs`: [(job, spec)] from the plugins, where spec is 'HH:MM' (a slot,
+    once a day) or 'every' (the fetch clock -- `update` rides it, and waits by
+    itself while a conversation is live).
+    """
     out = []
-    last = st.get('fetch')
-    every = datetime.timedelta(minutes=int(sched.get('fetch_minutes') or 60))
-    if not last or now - datetime.datetime.fromisoformat(last) >= every:
+    every = datetime.timedelta(minutes=int(fetch_minutes or 60))
+
+    def stale(key):
+        return not st.get(key) or now - datetime.datetime.fromisoformat(st[key]) >= every
+    if pulls and stale('fetch'):
         out.append(('fetch', 'fetch'))
-    # Taking merged changes rides the fetch clock. `update` itself waits while a
-    # conversation is live, so an hourly try is what "when idle" means.
-    if auto_update and (not st.get('update') or
-                        now - datetime.datetime.fromisoformat(st['update']) >= every):
-        out.append(('update', 'update'))
-    slots = [('pass', t) for t in (sched.get('pass') or [])]
-    if sched.get('digest'):
-        slots.append(('digest', sched['digest']))
-    for job, hhmm in slots:
+    for job, spec in jobs:
+        if spec == 'every':
+            if stale(job):
+                out.append((job, job))
+            continue
         try:
-            h, m = (int(x) for x in hhmm.split(':'))
+            h, m = (int(x) for x in spec.split(':'))
         except ValueError:
             continue
         at = now.replace(hour=h, minute=m, second=0, microsecond=0)
-        key = '%s@%s' % (job, hhmm)
+        key = '%s@%s' % (job, spec)
         ran = st.get(key)
         if at <= now < at + GRACE and (not ran or datetime.datetime.fromisoformat(ran) < at):
             out.append((job, key))
@@ -123,15 +127,23 @@ def _children():
            '--port', os.environ.get('ZIPPER_PORT', '8800')]
     if os.environ.get('ZIPPER_NO_TERMINAL'):
         web.append('--no-terminal')     # tests, and zippers that never want a shell
+    # The web process is core even without the dashboard plugin: it is where the
+    # bot hands each Discord message to a Claude conversation. Without the plugin
+    # it serves only that relay (zipper/web/http.py).
     kids = [Child('web', web)]
-    if os.environ.get('ZIPPER_NGINX'):
-        # In the container, nginx fronts the dashboard and its terminals
-        # (docker/nginx.py). Supervised like the rest, so it cannot die alone.
+    from . import plugins
+    if os.environ.get('ZIPPER_NGINX') and (plugins.is_enabled('dashboard')
+                                           or plugins.is_enabled('peers')):
+        # In the container, nginx fronts the dashboard (8899) and the peer port
+        # (8898) -- see docker/nginx.py. With neither, nothing listens outside.
         kids.append(Child('nginx', ['nginx', '-g', 'daemon off;']))
     if core.cfg('DISCORD_TOKEN'):
         kids.append(Child('bot', [py, '-u', '-m', 'bot.discord_bot']))
     else:
-        print('[run] no DISCORD_TOKEN -- the bot is not started', flush=True)
+        # The one thing a zipper cannot do without. Say so on every start, and keep
+        # running: the container has to stay up for setup to finish.
+        print('[run] zipper needs a Discord bot: DISCORD_TOKEN is not set '
+              '(`zipper secret DISCORD_TOKEN`). Nothing will answer until it is.', flush=True)
     return kids
 
 
@@ -142,8 +154,9 @@ def _scheduler(stop):
             continue
         now = datetime.datetime.now()
         st = _load_state()
-        jobs = due(now, st, settings.get('schedule') or {},
-                   auto_update=bool(settings.get('code.auto_update')))
+        from . import plugins
+        jobs = due(now, st, settings.get('schedule.fetch_minutes'), plugins.pulls(),
+                   plugins.jobs())
         if not jobs:
             continue
 

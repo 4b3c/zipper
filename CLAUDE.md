@@ -26,9 +26,10 @@ Dependencies are allowed where they earn their place; `requirements.txt` lists t
 | `zipper/cli.py` | The whole command surface |
 | `zipper/lint.py` `sync.py` `status.py` | Validation, evidence, the snapshot |
 | `zipper/ics.py` `events.py` | Calendars, recurrence, event notes |
-| `zipper/inputs/` | One module per input, behind a registry. See `zipper/README.md` § Inputs |
+| `zipper/plugins.py` | The plugin loader and registry. See `zipper/README.md` § Plugins |
+| `plugins/<name>/` | One plugin each: `plugin.json` (manifest) and `__init__.py` (code, imported only when enabled) |
 | `zipper/writer.py` | The only place input facts enter frontmatter. Facts only; `last_touched` forward only |
-| `zipper/gh.py` `canvas.py` `hours.py` | What the inputs wrap: fetching and storage |
+| `zipper/gh.py` `canvas.py` `hours.py` | What the plugins wrap: fetching and storage |
 | `zipper/metrics.py` | The numbers |
 | `zipper/runqueue.py` `views.py` | The queue, the saved queries |
 | `zipper/chat.py` | The Discord CLI |

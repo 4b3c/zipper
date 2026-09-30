@@ -1,0 +1,11 @@
+{
+  "title": "Dashboard",
+  "about": "a web page: the day, the queue, what is due, and Claude terminals in the browser. Off means the web process only relays Discord",
+  "default_on": true,
+  "defaults": {},
+  "secrets": [
+    "ZIPPER_TERM_CRED"
+  ],
+  "env": {},
+  "name": "dashboard"
+}

@@ -23,7 +23,20 @@ from . import home
 
 # ---------------------------------------------------------------- http
 
-SRV = {'server': None, 'clients': 0, 'quit_timer': None, 'daemon': False}
+SRV = {'server': None, 'clients': 0, 'quit_timer': None, 'daemon': False, 'dashboard': True}
+
+# With the dashboard plugin off this process is only the core's relay: the bot hands
+# each Discord message in here, and plugins post readings. Everything else is a page.
+RELAY_GET = ('/api/conversations', '/health')
+RELAY_POST = ('/discord', '/api/canvas', '/api/hours', '/api/msg')
+
+
+def _relay_only_refuses(method, path):
+    if SRV['dashboard']:
+        return False
+    if method == 'GET':
+        return path not in RELAY_GET
+    return path not in RELAY_POST and not path.startswith('/api/inputs/')
 
 def _maybe_quit():
     """Last tab closed -> stop. A reload also drops the SSE stream, so wait a
@@ -96,6 +109,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         core.TODAY = datetime.date.today()
+        if self.path == '/health':
+            self._send(200, json.dumps({'ok': True, 'dashboard': SRV['dashboard']}),
+                       'application/json')
+            return
+        if _relay_only_refuses('GET', self.path):
+            self._send(404, 'the dashboard plugin is off', 'text/plain; charset=utf-8')
+            return
         if self.path == '/' or self.path.startswith('/?'):
             # The front page. `?day=` selects which day the schedule draws;
             # anything else is ignored rather than guessed at.
@@ -233,6 +253,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         core.TODAY = datetime.date.today()
+        if _relay_only_refuses('POST', self.path):
+            self._send(404, 'the dashboard plugin is off', 'text/plain; charset=utf-8')
+            return
         if self.path == '/api/refresh':
             threading.Thread(target=do_refresh, daemon=True).start()
             self._send(202, json.dumps({'ok': True}), 'application/json')
@@ -535,18 +558,22 @@ def main():
         return 0 if res['ok'] else 1
     srv = ThreadingHTTPServer((a.host, a.port), Handler)
     srv.daemon_threads = True
-    TTYD['enabled'] = not a.no_terminal
+    from .. import plugins
+    SRV['dashboard'] = plugins.is_enabled('dashboard')
+    TTYD['enabled'] = not a.no_terminal and SRV['dashboard']
     TTYD['host'] = a.term_host
     TTYD['cred'] = a.term_cred
     SRV['server'] = srv
     SRV['daemon'] = a.daemon
     feed_load()
-    box.start_sampler()
     threading.Thread(target=feed_watch, daemon=True).start()
-    threading.Thread(target=notes_watch, daemon=True).start()
     threading.Thread(target=conversation_reaper, daemon=True).start()
+    if SRV['dashboard']:
+        box.start_sampler()
+        threading.Thread(target=notes_watch, daemon=True).start()
     url = 'http://%s:%d/' % (a.host, a.port)
-    print('zipper dashboard on %s%s' % (url, '  (daemon)' if a.daemon else ''))
+    print('zipper %s on %s%s' % ('dashboard' if SRV['dashboard'] else 'relay (dashboard off)',
+                                 url, '  (daemon)' if a.daemon else ''))
     if a.daemon:
         print('inbound: POST %sdiscord   {"content": "..."}' % url)
     # No fetch at launch. Inputs are pulled on the hour by zipper-fetch.timer

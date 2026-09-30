@@ -12,7 +12,8 @@ Split out of `zipper/serve.py` on 2026-09-07.
 import argparse, datetime, glob, html, json, os, shutil, subprocess, sys, tempfile, threading, time
 import base64, io, re, urllib.parse
 
-from .. import box, core, canvas, inputs, chat, conversations, events, ext, gh, google, hours, ics, metrics, usage
+from .. import plugins as inputs
+from .. import box, core, canvas, chat, conversations, events, ext, gh, google, hours, ics, metrics, usage
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

@@ -28,7 +28,8 @@ from .core import *          # noqa: F401,F403 -- the shared vocabulary
 from . import core
 from .events import resolve_events
 from .metrics import _ledger_update
-from . import ics, inputs, status, sync, views
+from . import ics, status, sync, views
+from . import plugins as inputs
 
 
 QUEUE_JSON = os.path.join(INBOX, 'queue.json')
@@ -193,8 +194,7 @@ def flags(evrecs=None):
     """Conditions, re-derived every run. Never queued, never ticked."""
     if evrecs is None:
         evrecs = resolve_events(fix=False)
-    from . import backup
-    out = backup.flags()
+    out = inputs.flags()
     notes = [(p, fm_dict(read_note(p)[0])) for p in iter_notes()]
     logged_recently = set()
     for f in glob.glob(os.path.join(LOGDIR, '*.md')):
@@ -497,10 +497,8 @@ def cmd_commit(a):
              else 'nothing to commit'))
     if not ok and r.stdout.strip():
         print('  ' + r.stdout.strip().split('\n')[0])
-    from . import backup
-    err = backup.push()
-    if err:
-        print('  WARNING: backup push failed -- %s' % err)
+    for w in inputs.on_commit():
+        print('  WARNING: %s' % w)
 
     # The invariant, checked rather than assumed. Anything still dirty here
     # would silently widen the next pass's diff, and the whole point of the

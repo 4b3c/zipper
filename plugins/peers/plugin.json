@@ -1,0 +1,12 @@
+{
+  "title": "Other zippers",
+  "about": "messages to and from zippers on the same host, as queue rows",
+  "defaults": {
+    "zippers": {}
+  },
+  "secrets": [
+    "ZIPPER_COMMS_TOKEN"
+  ],
+  "env": {},
+  "name": "peers"
+}

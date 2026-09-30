@@ -1,0 +1,13 @@
+{
+  "title": "Scheduled passes",
+  "about": "a headless Claude works the brief into the notes at set times, and messages you only if something needs you",
+  "defaults": {
+    "times": [
+      "09:00",
+      "21:00"
+    ]
+  },
+  "secrets": [],
+  "env": {},
+  "name": "passes"
+}

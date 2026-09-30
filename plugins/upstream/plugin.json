@@ -1,0 +1,10 @@
+{
+  "title": "Code updates",
+  "about": "a queue row when a change to the shared Zipper code is merged, and (optionally) taking it automatically",
+  "defaults": {
+    "auto_update": true
+  },
+  "secrets": [],
+  "env": {},
+  "name": "upstream"
+}

@@ -16,10 +16,27 @@ def _pass_cmd(a):
 
 
 def _mod(module, name):
-    """Import on use: `run` and `setup` pull in more than a quick `lint` needs."""
+    """Import on use: `run` and `setup` pull in more than a quick `lint` needs.
+    `module` is under zipper/ unless it starts with `plugins.`."""
     def run(a):
         import importlib
-        return getattr(importlib.import_module('zipper.' + module), name)(a)
+        from . import plugins      # puts the checkout on sys.path for `plugins.*`
+        path = module if module.startswith('plugins.') else 'zipper.' + module
+        return getattr(importlib.import_module(path), name)(a)
+    return run
+
+
+def _needs(plugins_, fn):
+    """A command that belongs to a plugin: refuse, with the line that turns it on,
+    while none of `plugins_` is enabled."""
+    names = (plugins_,) if isinstance(plugins_, str) else plugins_
+
+    def run(a):
+        from . import plugins
+        if not any(plugins.is_enabled(n) for n in names):
+            print(plugins.require(names[0]))
+            return 1
+        return fn(a)
     return run
 
 
@@ -28,7 +45,7 @@ def _setup(name):
 
 
 def _github_cmd(a):
-    from .inputs import github
+    from plugins import github
     return github.cmd(a)
 
 
@@ -54,33 +71,33 @@ def main():
     s = sub.add_parser('ingest-ics'); s.add_argument('source')
     s.add_argument('--match', default=None,
                    help='regex; keep only events whose summary matches')
-    s.add_argument('--label', default='calendar'); s.set_defaults(fn=ics.cmd_ingest_ics)
-    sub.add_parser('calendars').set_defaults(fn=ics.cmd_calendars)
+    s.add_argument('--label', default='calendar'); s.set_defaults(fn=_needs(('calendar', 'canvas'), ics.cmd_ingest_ics))
+    sub.add_parser('calendars').set_defaults(fn=_needs(('calendar', 'canvas'), ics.cmd_calendars))
 
     # The timesheet. `add` captures; the sheet stays the system of record and
     # the extension reconciles the two, so nothing here submits anything.
     s = sub.add_parser('google', help='the Google account behind the timesheet')
     s.add_argument('--auth', action='store_true', help='print the consent link')
-    s.set_defaults(fn=google.cmd_google)
+    s.set_defaults(fn=_needs('hours', google.cmd_google))
 
     s = sub.add_parser('hours', help='the timesheet ledger')
     hs = s.add_subparsers(dest='action')
-    s.set_defaults(fn=hours.cmd_hours)
+    s.set_defaults(fn=_needs('hours', hours.cmd_hours))
     a1 = hs.add_parser('add'); a1.add_argument('--date', required=True)
     a1.add_argument('--start'); a1.add_argument('--end')
     a1.add_argument('--hours', type=float); a1.add_argument('--note', default='')
-    a1.add_argument('--source', default='cli'); a1.set_defaults(fn=hours.cmd_hours)
-    a2 = hs.add_parser('rm'); a2.add_argument('key'); a2.set_defaults(fn=hours.cmd_hours)
-    a3 = hs.add_parser('import'); a3.add_argument('csvfile'); a3.set_defaults(fn=hours.cmd_hours)
+    a1.add_argument('--source', default='cli'); a1.set_defaults(fn=_needs('hours', hours.cmd_hours))
+    a2 = hs.add_parser('rm'); a2.add_argument('key'); a2.set_defaults(fn=_needs('hours', hours.cmd_hours))
+    a3 = hs.add_parser('import'); a3.add_argument('csvfile'); a3.set_defaults(fn=_needs('hours', hours.cmd_hours))
     a4 = hs.add_parser('pull', help='read the sheet; it wins')
-    a4.set_defaults(fn=hours.cmd_hours)
+    a4.set_defaults(fn=_needs('hours', hours.cmd_hours))
     a6 = hs.add_parser('week', help="open the next `Week N` block in the tab")
     a6.add_argument('--date', help='any date in the week; default today')
     a6.add_argument('--dry-run', action='store_true')
-    a6.set_defaults(fn=hours.cmd_hours)
+    a6.set_defaults(fn=_needs('hours', hours.cmd_hours))
     a5 = hs.add_parser('push', help='write pending entries into the sheet')
     a5.add_argument('--dry-run', action='store_true')
-    a5.set_defaults(fn=hours.cmd_hours)
+    a5.set_defaults(fn=_needs('hours', hours.cmd_hours))
 
     s = sub.add_parser('ingest-budget'); s.add_argument('csvfile')
     s.set_defaults(fn=metrics.cmd_ingest_budget)
@@ -89,7 +106,7 @@ def main():
     s.set_defaults(fn=ics.cmd_agenda)
 
     s = sub.add_parser('github'); s.add_argument('--since-days', type=int, default=30)
-    s.add_argument('--full', action='store_true'); s.set_defaults(fn=_github_cmd)
+    s.add_argument('--full', action='store_true'); s.set_defaults(fn=_needs('github', _github_cmd))
 
     # A bookkeeping pass is fetch -> reasoning -> commit. Only the ends are
     # commands; the middle is an agent reading the brief against the vault, so
@@ -120,18 +137,18 @@ def main():
     s.add_argument('--dry-run', action='store_true', help='run the pass but never post to Discord')
     s.add_argument('--force', action='store_true', help='run even when the brief is empty')
     s.add_argument('--timeout', type=int, default=1800, help='seconds to allow Claude')
-    s.set_defaults(fn=_pass_cmd)
+    s.set_defaults(fn=_needs('passes', _pass_cmd))
     s = sub.add_parser('digest', help='post the evening what-is-due message to Discord')
     s.add_argument('--days', type=int, default=7, help='how far past tomorrow to look ahead')
     s.add_argument('--dry-run', action='store_true', help='print it instead of sending')
     s.add_argument('--force', action='store_true', help='send even if one already went today')
     s.add_argument('--thread', help='thread id; default is the main channel')
-    s.set_defaults(fn=digest.cmd_digest)
+    s.set_defaults(fn=_needs('digest', digest.cmd_digest))
 
     # No --days and no fetch: the browser extension takes the reading, this
     # reports it. --file still ingests a saved planner dump.
     s = sub.add_parser('canvas'); s.add_argument('--file')
-    s.set_defaults(fn=canvas.cmd_canvas)
+    s.set_defaults(fn=_needs('canvas', canvas.cmd_canvas))
     s = sub.add_parser('conversations'); s.add_argument('--close', metavar='THREAD')
     s.add_argument('--force', action='store_true',
                    help='close even a bound conversation -- kills a live terminal')
@@ -148,7 +165,7 @@ def main():
     s = sub.add_parser('inspect'); s.add_argument('repos', nargs='*')
     s.add_argument('--limit', type=int, default=12)
     s.add_argument('--readme-chars', type=int, default=6000)
-    s.set_defaults(fn=gh.cmd_inspect)
+    s.set_defaults(fn=_needs('github', gh.cmd_inspect))
 
     s = sub.add_parser('ghapp', help='the bot identity: show it, mint a token, push as it')
     s.add_argument('--push', action='store_true', help='push a repo as the App')
@@ -163,11 +180,15 @@ def main():
     s.add_argument('--starter', action='store_true',
                    help='add a suggested layout: folders, a schema, Obsidian pages')
     s.set_defaults(fn=_setup('cmd_init'))
-    s = sub.add_parser('setup', help='the wizard: inputs, Discord, schedule, Claude')
-    s.add_argument('--section', choices=['identity', 'vault', 'inputs', 'discord',
-                                         'schedule', 'claude'])
-    s.add_argument('--hook', action='store_true', help='only install the Stop hook')
+    s = sub.add_parser('setup', help="point Claude Code's Stop hook at this checkout")
+    s.add_argument('--hook', action='store_true', help='(the default; kept for old scripts)')
     s.set_defaults(fn=_setup('cmd_setup'))
+    s = sub.add_parser('plugin', help='list, describe, enable or disable plugins')
+    ps = s.add_subparsers(dest='action')
+    ps.add_parser('list')
+    for act in ('info', 'enable', 'disable'):
+        g = ps.add_parser(act); g.add_argument('name')
+    s.set_defaults(fn=_mod('plugins', 'cmd_plugin'))
 
     s = sub.add_parser('run', help='supervise the dashboard, bot and schedule (containers)')
     s.add_argument('--no-schedule', action='store_true', help='run the services only')
@@ -182,10 +203,10 @@ def main():
 
     s = sub.add_parser('host', help='ask the host daemon: status, services, approved root commands')
     s.add_argument('verb'); s.add_argument('args', nargs=argparse.REMAINDER)
-    s.set_defaults(fn=_mod('host', 'cmd_host'))
+    s.set_defaults(fn=_needs('host', _mod('plugins.host', 'cmd_host')))
     s = sub.add_parser('hostd', help='the host daemon itself (as root, on the host)')
     s.add_argument('action', choices=['init', 'install', 'serve'])
-    s.set_defaults(fn=_mod('hostd', 'cmd_hostd'))
+    s.set_defaults(fn=_mod('plugins.host.hostd', 'cmd_hostd'))
 
     s = sub.add_parser('code', help='propose a change to the shared code as a pull request')
     cs = s.add_subparsers(dest='action', required=True)
@@ -202,7 +223,7 @@ def main():
 
     s = sub.add_parser('msg', help='send a message to another zipper')
     s.add_argument('peer'); s.add_argument('text')
-    s.set_defaults(fn=_mod('inputs.peers', 'cmd_msg'))
+    s.set_defaults(fn=_needs('peers', _mod('plugins.peers', 'cmd_msg')))
 
     s = sub.add_parser('settings', help='show or change zipper.settings.json (never secrets)')
     ss = s.add_subparsers(dest='action')
@@ -219,7 +240,7 @@ def main():
     s.add_argument('--set-version', dest='set_version', metavar='X.Y.Z')
     s.add_argument('--clean', action='store_true',
                    help='put the update_url placeholder back after a failed sign')
-    s.set_defaults(fn=ext.cmd_ext)
+    s.set_defaults(fn=_needs('canvas', ext.cmd_ext))
 
     a = ap.parse_args()
     if not getattr(a, 'fn', None):

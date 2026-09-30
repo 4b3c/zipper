@@ -385,7 +385,7 @@ def _day_grid(rows, enotes, slot=30, now_min=None):
 
 def cmd_agenda(a):
     os.makedirs(METADIR, exist_ok=True)
-    from . import inputs
+    from . import plugins as inputs
     horizon = (core.TODAY + datetime.timedelta(days=a.days)).isoformat()
     rows = [{'start': e['start'], 'end': e['end'], 'label': e['label'],
              'summary': e['summary'], 'loc': e['loc'], 'uid': e['uid'],

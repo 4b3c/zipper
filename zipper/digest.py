@@ -62,7 +62,7 @@ def _canvas_age():
     digest says so, because a list that quietly includes work they finished this
     afternoon is how they got handed back homework they had already done.
     """
-    from . import inputs
+    from . import plugins as inputs
     cv = inputs.get('canvas')
     if not cv:
         return ''

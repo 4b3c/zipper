@@ -1,0 +1,16 @@
+{
+  "title": "GitHub",
+  "about": "pushes and commit counts from your repos, as evidence a project is alive",
+  "defaults": {
+    "user": "",
+    "orgs": []
+  },
+  "secrets": [
+    "GITHUB_TOKEN"
+  ],
+  "env": {
+    "ZIPPER_GH_USER": "user",
+    "ZIPPER_GH_ORGS": "orgs"
+  },
+  "name": "github"
+}

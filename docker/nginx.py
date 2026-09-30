@@ -1,17 +1,20 @@
 """Print nginx's config for a zipper in a container, from the environment.
 
-Two listeners. 8899 is the operator's: the dashboard and every terminal under
+Up to two listeners, each only if its plugin is on. 8899 (dashboard) is the operator's: the dashboard and every terminal under
 /t/<port>/. It is behind basic auth, because in a container it is reachable from
 the other zippers on the Docker network and from everyone on the tailnet, and the
 terminal is a shell. Without ZIPPER_TERM_CRED it listens on loopback only and
 says so. The extension's input endpoints stay open: they accept a reading, never
 run anything, and a browser extension cannot answer an auth prompt.
 
-8898 is for other zippers: POST /api/msg, and nothing else is proxied.
+8898 (peers) is for other zippers: POST /api/msg, and nothing else is proxied.
 """
 import os, subprocess, sys
 
 sys.path.insert(0, '/zipper/code')
+from zipper import plugins
+DASHBOARD = plugins.is_enabled('dashboard')
+PEERS = plugins.is_enabled('peers')
 web = os.environ.get('ZIPPER_PORT') or '8800'
 cred = os.environ.get('ZIPPER_TERM_CRED', '')
 if not cred:
@@ -35,7 +38,7 @@ else:
     print('zipper: ZIPPER_TERM_CRED is unset -- the dashboard is loopback-only',
           file=sys.stderr)
 
-print('''
+DASH = '''
 map $http_upgrade $zipper_upgrade { default upgrade; '' close; }
 server {
     listen %(listen)s;
@@ -61,9 +64,14 @@ server {
         proxy_read_timeout 1h;
     }
 }
+''' % {'listen': listen, 'auth': auth, 'web': web}
+PEER = '''
 server {
     listen 8898;
     location = /api/msg { proxy_pass http://127.0.0.1:%(web)s; }
     location / { return 404; }
 }
-''' % {'listen': listen, 'auth': auth, 'web': web})
+''' % {'web': web}
+# Only what is switched on listens. With neither plugin, the supervisor does not
+# start nginx at all and this file is never read.
+print((DASH if DASHBOARD else '') + (PEER if PEERS else ''))
