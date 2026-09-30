@@ -38,8 +38,8 @@ How to work through it:
   `../zipper setup done <section>` (the name after `setup:` in its marker).
   `../zipper setup remaining` lists what is left.
 - **Order matters only at the start and end:** where it runs first (on a server, that is
-  when Tailscale is set up, which the secret pages need), then Discord -- without it the
-  zipper cannot be reached -- then who they are and what the notes are for, then how the zipper
-  logs in to Claude; starting it is last. Everything else can be done later by asking any conversation to run
-  `zipper plugin enable <name>`.
+  when Tailscale is set up, which the secret pages need), then who they are and what the
+  notes are for, then how the zipper logs in to Claude; then the plugins, Discord among
+  them and all optional; starting it is last. Any plugin can also be turned on later by
+  asking any conversation to run `zipper plugin enable <name>`.
 

@@ -6,5 +6,8 @@
   },
   "secrets": [],
   "env": {},
-  "name": "digest"
+  "name": "digest",
+  "requires": [
+    "discord"
+  ]
 }

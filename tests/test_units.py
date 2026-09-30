@@ -250,6 +250,32 @@ class Plugins(unittest.TestCase):
         self.assertIsNone(plugins.get('github'))
         self.assertIn('plugin enable github', plugins.require('github'))
 
+    def test_the_digest_needs_discord(self):
+        class A:
+            action, name = 'enable', 'digest'
+        self.assertEqual(plugins.cmd_plugin(A), 1)            # refused: discord is off
+        self.assertFalse(plugins.is_enabled('digest'))
+        A.name = 'discord'
+        plugins.cmd_plugin(A)
+        A.name = 'digest'
+        self.assertEqual(plugins.cmd_plugin(A), 0)
+        self.assertTrue(plugins.is_enabled('digest'))
+        A.action, A.name = 'disable', 'discord'
+        plugins.cmd_plugin(A)
+        self.assertFalse(plugins.is_enabled('digest'))         # off with it
+
+    def test_a_zipper_that_had_discord_keeps_it(self):
+        self.assertFalse(plugins.is_enabled('discord'))
+        settings.put('discord.channel', '123')
+        self.assertTrue(plugins.is_enabled('discord'))
+        settings.put('plugins.discord.enabled', False)
+        self.assertFalse(plugins.is_enabled('discord'))
+
+    def test_nothing_is_sent_with_discord_off(self):
+        from zipper import chat
+        self.assertIn('plugin is off', chat.discord_send('hello')['error'])
+        self.assertEqual(chat.discord_history(), [])
+
 
 class Relay(unittest.TestCase):
     def test_without_the_dashboard_only_the_relay_answers(self):
@@ -345,7 +371,7 @@ class Setup(unittest.TestCase):
         left = setup.remaining(g)
         for name in plugins.manifests():
             self.assertIn(name, left)
-        self.assertEqual(left[:5], ['where', 'discord', 'about', 'notes', 'claude'])
+        self.assertEqual(left[:4], ['where', 'about', 'notes', 'claude'])
         self.assertEqual(left[-2:], ['start', 'finish'])
         self.assertNotIn('{{', g)
 
@@ -382,7 +408,7 @@ class Setup(unittest.TestCase):
         setup.init_home(home, owner='Sam', zid='zipper-7')
         with open(os.path.join(home, 'vault/CLAUDE.md'), encoding='utf-8') as fh:
             text = fh.read()
-        self.assertEqual(setup.remaining(text)[:5], ['where', 'discord', 'about', 'notes', 'claude'])
+        self.assertEqual(setup.remaining(text)[:4], ['where', 'about', 'notes', 'claude'])
         self.assertIn('Two things are called "plugins"', text)
         with open(os.path.join(home, 'vault/settings.json'), encoding='utf-8') as fh:
             self.assertTrue(json.load(fh).get('timezone'))

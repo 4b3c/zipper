@@ -1,16 +1,17 @@
 # Zipper
 
 Zipper is a personal assistant that keeps a folder of notes about your life true. You talk to
-it on Discord; Claude reads and edits your notes, answers from them, and tells you when what
-you wrote down and what actually happened disagree.
+it from its dashboard (or on Discord, if you want it on your phone); Claude reads and edits
+your notes, answers from them, and tells you when what you wrote down and what actually
+happened disagree.
 
-**At its core it is small:** a Discord bot handing each message to a Claude conversation that
-works in your **vault** — a folder of markdown files in git. That's the whole requirement: a
-Discord server with a bot, a Claude account, and a folder. It runs in a container.
+**At its core it is small:** Claude conversations working in your **vault** — a folder of
+markdown files in git — reached through a web dashboard with terminals in it. That's the
+whole requirement: a Claude account and a folder. It runs in a container.
 
-**Everything else is a plugin** you switch on: reading GitHub, calendars, Canvas or a
-timesheet; a dashboard; twice-daily bookkeeping passes; an evening digest; backups; messages
-between zippers. Several people can each run their own zipper on one machine, all on the same
+**Everything else is a plugin** you switch on: Discord; reading GitHub, calendars, Canvas or a
+timesheet; twice-daily bookkeeping passes; an evening digest (which needs Discord); backups;
+messages between zippers. Several people can each run their own zipper on one machine, all on the same
 code, and every change to that code is a pull request a person approves.
 
 ## What it does
@@ -252,7 +253,7 @@ cd ~/zipper/vault && claude         # and say "set me up"
 `init` makes one folder per zipper:
 
 - `vault/` — the notes (a git repository). Its first `CLAUDE.md` is a **setup guide**:
-  Claude walks through it with you — your name, the Discord bot, how the zipper's own Claude
+  Claude walks through it with you — your name, what the notes are for, how the zipper's own Claude
   logs in, then each plugin: what it does, whether you want it, and its settings — and
   removes each section as it is done, until only the everyday rules are left.
 - `vault/settings.json` — the one settings file: plugins, their timers, the dashboard's cards.

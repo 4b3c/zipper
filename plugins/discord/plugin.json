@@ -1,0 +1,11 @@
+{
+  "title": "Discord",
+  "about": "talk to your zipper from your phone: each thread in one Discord channel is its own conversation. Needs a Discord bot you make yourself",
+  "default_on_when": "discord.channel",
+  "defaults": {},
+  "secrets": [
+    "DISCORD_TOKEN"
+  ],
+  "env": {},
+  "name": "discord"
+}
