@@ -54,13 +54,18 @@ def _save_state(st):
     os.replace(tmp, _state_path())
 
 
-def due(now, st, sched):
+def due(now, st, sched, auto_update=False):
     """The jobs due at `now`, given what has run. Pure, so it can be tested."""
     out = []
     last = st.get('fetch')
     every = datetime.timedelta(minutes=int(sched.get('fetch_minutes') or 60))
     if not last or now - datetime.datetime.fromisoformat(last) >= every:
         out.append(('fetch', 'fetch'))
+    # Taking merged changes rides the fetch clock. `update` itself waits while a
+    # conversation is live, so an hourly try is what "when idle" means.
+    if auto_update and (not st.get('update') or
+                        now - datetime.datetime.fromisoformat(st['update']) >= every):
+        out.append(('update', 'update'))
     slots = [('pass', t) for t in (sched.get('pass') or [])]
     if sched.get('digest'):
         slots.append(('digest', sched['digest']))
@@ -82,7 +87,11 @@ class Child:
         self.name, self.argv, self.p = name, argv, None
         self.backoff, self.started = 1, 0
 
-    def ensure(self):
+    def ensure(self, wake):
+        """Start the child if it is not running. The backoff waits on `wake`, not
+        a sleep: a reload or stop must interrupt it. A plain sleep held a rollback
+        for the whole backoff -- the good code sat on disk while the supervisor
+        waited to restart the bad one."""
         if self.p and self.p.poll() is None:
             return
         if self.p is not None:
@@ -92,7 +101,8 @@ class Child:
             self.backoff = 1 if time.time() - self.started > 60 else min(self.backoff * 2, 60)
             print('[run] %s exited (%s); restarting in %ds' % (self.name, code, self.backoff),
                   flush=True)
-            time.sleep(self.backoff)
+            if wake.wait(self.backoff):
+                return
         self.started = time.time()
         self.p = subprocess.Popen(self.argv, cwd=ROOT)
         print('[run] %s started, pid %d' % (self.name, self.p.pid), flush=True)
@@ -109,8 +119,11 @@ class Child:
 def _children():
     py = sys.executable
     host = os.environ.get('ZIPPER_WEB_HOST', '127.0.0.1')
-    kids = [Child('web', [py, '-m', 'zipper.serve', '--daemon', '--host', host,
-                          '--port', os.environ.get('ZIPPER_PORT', '8800')])]
+    web = [py, '-m', 'zipper.serve', '--daemon', '--host', host,
+           '--port', os.environ.get('ZIPPER_PORT', '8800')]
+    if os.environ.get('ZIPPER_NO_TERMINAL'):
+        web.append('--no-terminal')     # tests, and zippers that never want a shell
+    kids = [Child('web', web)]
     if os.environ.get('ZIPPER_NGINX'):
         # In the container, nginx fronts the dashboard and its terminals
         # (docker/nginx.py). Supervised like the rest, so it cannot die alone.
@@ -129,7 +142,8 @@ def _scheduler(stop):
             continue
         now = datetime.datetime.now()
         st = _load_state()
-        jobs = due(now, st, settings.get('schedule') or {})
+        jobs = due(now, st, settings.get('schedule') or {},
+                   auto_update=bool(settings.get('code.auto_update')))
         if not jobs:
             continue
 
@@ -152,16 +166,23 @@ def cmd_run(a):
     kids = _children()
     stop = threading.Event()
     reload = threading.Event()
-    signal.signal(signal.SIGHUP, lambda *_: reload.set())
-    signal.signal(signal.SIGTERM, lambda *_: stop.set())
-    signal.signal(signal.SIGINT, lambda *_: stop.set())
+    wake = threading.Event()            # either of the two; interrupts a backoff
+
+    def on(ev):
+        def h(*_):
+            ev.set()
+            wake.set()
+        return h
+    signal.signal(signal.SIGHUP, on(reload))
+    signal.signal(signal.SIGTERM, on(stop))
+    signal.signal(signal.SIGINT, on(stop))
     if not getattr(a, 'no_schedule', False):
         threading.Thread(target=_scheduler, args=(stop,), daemon=True).start()
     print('[run] %s up: %s' % (settings.zipper_id(), ', '.join(k.name for k in kids)), flush=True)
     while not stop.is_set() and not reload.is_set():
         for k in kids:
-            k.ensure()
-        stop.wait(2)
+            k.ensure(wake)
+        wake.wait(2)
     for k in kids:
         k.stop()
     if reload.is_set() and not stop.is_set():

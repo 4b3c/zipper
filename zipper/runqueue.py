@@ -342,8 +342,8 @@ def cmd_brief(a):
     return 0
 
 SYSTEM_LABEL = {'github': 'GitHub', 'calendar': 'Calendar', 'canvas': 'Canvas',
-                'vault': 'Vault', 'error': 'Errors', 'other': 'Other'}
-SYSTEM_ORDER = ('github', 'canvas', 'calendar', 'vault', 'error', 'other')
+                'vault': 'Vault', 'zipper': 'Zipper', 'error': 'Errors', 'other': 'Other'}
+SYSTEM_ORDER = ('github', 'canvas', 'calendar', 'zipper', 'vault', 'error', 'other')
 
 
 def _ev_line(e):
@@ -410,27 +410,10 @@ def _write_brief(q):
           'Related: [[Status]] · [[Now]] · [[Review]] · [[Home]]', '']
     open(os.path.join(METADIR, 'Queue.md'), 'w', encoding='utf-8').write('\n'.join(L))
 
-def cmd_commit(a):
-    """Close a bookkeeping pass: tick every event and commit the notes.
-
-    The last of the pass's three steps -- fetch, reason, commit -- and the only
-    other one that is a command. What happens in between is an agent reading
-    the brief against the vault, which is why there is no `bookkeep` command:
-    naming one would suggest the machine does the part it cannot do.
-
-    **A pass always ends in a commit.** That is not tidiness -- it is what makes
-    the next pass's diff mean anything. The note diff is defined as "changed
-    since the last bookkeeping pass", and the only thing making that true is
-    that the last pass left the tree clean. Skip the commit once and the diff
-    silently becomes general backlog, which is how the tree came to hold five
-    sessions' conclusions with nothing marking where one ended.
-
-    Ticking and committing are therefore one step: they are two halves of the
-    same claim, that everything in this pass has been looked at and its
-    consequences written down.
-    """
-    changes = note_changes()
-    from . import serve, conversations, chat
+def live_others():
+    """Conversations other than this one that are live right now. Shared by
+    `commit` (sweeping up their edits) and `update` (restarting under them)."""
+    from . import conversations, chat
     try:
         # Anyone else with a live terminal may be mid-edit. Nothing locks the
         # vault -- that was a deliberate call -- so the check is a warning, not
@@ -451,8 +434,33 @@ def cmd_commit(a):
         live = [c for c in conversations.listing()
                 if c.get('thread_id') != mine
                 and (c.get('alive') or convhead.turn_running(c.get('thread_id')))]
+        return live
     except Exception:
-        live = []
+        return []
+
+
+def cmd_commit(a):
+    """Close a bookkeeping pass: tick every event and commit the notes.
+
+    The last of the pass's three steps -- fetch, reason, commit -- and the only
+    other one that is a command. What happens in between is an agent reading
+    the brief against the vault, which is why there is no `bookkeep` command:
+    naming one would suggest the machine does the part it cannot do.
+
+    **A pass always ends in a commit.** That is not tidiness -- it is what makes
+    the next pass's diff mean anything. The note diff is defined as "changed
+    since the last bookkeeping pass", and the only thing making that true is
+    that the last pass left the tree clean. Skip the commit once and the diff
+    silently becomes general backlog, which is how the tree came to hold five
+    sessions' conclusions with nothing marking where one ended.
+
+    Ticking and committing are therefore one step: they are two halves of the
+    same claim, that everything in this pass has been looked at and its
+    consequences written down.
+    """
+    changes = note_changes()
+    from . import serve
+    live = live_others()
     if live and not getattr(a, 'force', False):
         print('commit: %d other conversation(s) live — committing now would '
               'sweep up their half-finished edits.' % len(live))

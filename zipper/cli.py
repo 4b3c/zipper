@@ -179,6 +179,18 @@ def main():
     s.add_argument('action', choices=['init', 'install', 'serve'])
     s.set_defaults(fn=_mod('hostd', 'cmd_hostd'))
 
+    s = sub.add_parser('code', help='propose a change to the shared code as a pull request')
+    cs = s.add_subparsers(dest='action', required=True)
+    g = cs.add_parser('start'); g.add_argument('slug')
+    g = cs.add_parser('propose'); g.add_argument('title'); g.add_argument('--body')
+    g.add_argument('--draft', action='store_true'); g.add_argument('--path')
+    cs.add_parser('prs')
+    s.set_defaults(fn=_mod('code', 'cmd_code'))
+    s = sub.add_parser('update', help='take merged changes: pull, check, restart, or roll back')
+    s.add_argument('--check', action='store_true', help='only say what is new')
+    s.add_argument('--force', action='store_true', help='even with conversations live')
+    s.set_defaults(fn=_mod('code', 'cmd_update'))
+
     s = sub.add_parser('settings', help='show or change zipper.settings.json (never secrets)')
     ss = s.add_subparsers(dest='action')
     ss.add_parser('show'); ss.add_parser('path'); ss.add_parser('check')

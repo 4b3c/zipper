@@ -26,7 +26,7 @@ RS256 is signed by shelling out to
 `openssl`, which is already on the box, rather than taking a `cryptography`
 dependency for one signature every hour.
 """
-import os, sys, json, time, base64, subprocess, urllib.request, datetime
+import os, sys, json, time, base64, subprocess, urllib.request, urllib.error, datetime
 
 HERE     = os.path.dirname(os.path.abspath(__file__))
 ROOT     = os.path.dirname(HERE)
@@ -85,6 +85,38 @@ def api(path, token, method='GET'):
     r.add_header('User-Agent', 'zipper')
     with urllib.request.urlopen(r, timeout=30) as fh:
         return json.load(fh)
+
+
+def api_json(path, token, method='POST', body=None):
+    """A write to the API. Returns the JSON reply, or {'error': code, 'message': ...}
+    -- a 403 or 422 is an answer the caller wants to show, not a crash."""
+    data = json.dumps(body).encode() if body is not None else None
+    r = urllib.request.Request('https://api.github.com' + path, data=data, method=method)
+    r.add_header('Authorization', 'Bearer ' + token)
+    r.add_header('Accept', 'application/vnd.github+json')
+    r.add_header('User-Agent', 'zipper')
+    try:
+        with urllib.request.urlopen(r, timeout=30) as fh:
+            raw = fh.read()
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as e:
+        try:
+            msg = json.loads(e.read()).get('message', '')
+        except Exception:
+            msg = ''
+        return {'error': e.code, 'message': msg}
+
+
+def repo_slug(repo=ROOT):
+    """owner/name of a checkout's origin, or settings code.repo."""
+    configured = os.environ.get('ZIPPER_CODE_REPO', '')
+    if configured:
+        return configured
+    url = _run(['git', 'remote', 'get-url', 'origin'], repo).stdout.strip()
+    for pre in ('https://github.com/', 'git@github.com:', 'ssh://git@github.com/'):
+        if url.startswith(pre):
+            return url[len(pre):].rstrip('/').removesuffix('.git')
+    return ''
 
 
 def token(force=False):
