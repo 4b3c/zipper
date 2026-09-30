@@ -24,6 +24,9 @@ services:
       - ./zippers/zipper-0/vault:/zipper/vault
       - zipper-0-code:/zipper/code
       - zipper-0-home:/zipper/home
+      # Host access (zipper.hostd). Mount only this zipper's own directory, and
+      # set host.socket to /run/zipper-host/hostd.sock in its settings.
+      # - /run/zipper-hostd/zipper-0:/run/zipper-host
     ports: ["127.0.0.1:8900:8899"]
 
   zipper-1:

@@ -172,6 +172,13 @@ def main():
     s = sub.add_parser('restart', help='reload this zipper\'s code; conversations survive')
     s.set_defaults(fn=_mod('supervise', 'cmd_restart'))
 
+    s = sub.add_parser('host', help='ask the host daemon: status, services, approved root commands')
+    s.add_argument('verb'); s.add_argument('args', nargs=argparse.REMAINDER)
+    s.set_defaults(fn=_mod('host', 'cmd_host'))
+    s = sub.add_parser('hostd', help='the host daemon itself (as root, on the host)')
+    s.add_argument('action', choices=['init', 'install', 'serve'])
+    s.set_defaults(fn=_mod('hostd', 'cmd_hostd'))
+
     s = sub.add_parser('settings', help='show or change zipper.settings.json (never secrets)')
     ss = s.add_subparsers(dest='action')
     ss.add_parser('show'); ss.add_parser('path'); ss.add_parser('check')
