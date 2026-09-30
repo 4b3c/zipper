@@ -250,59 +250,41 @@ def flags(evrecs=None):
 
 # ------------------------------------------------------------------ bookkeep
 
-def fetch_all(a, emit=True):
-    """Pull every input, regenerate everything derived from them, and turn what
-    changed into queue rows.
+def cmd_pull(a):
+    """Pull plugins -- named ones, the ones whose timer is due (`--due`), or all
+    that pull -- then regenerate everything derived from them and the brief.
 
-    The emit half matters as much as the fetch: queue rows *are* the diff
-    between two fetches, so whatever fetches has to be what publishes rows, or
-    a push lands in the data with nothing in the queue pointing at it. Rows are
-    written to Inbox/feed.json, and a running dashboard's feed watcher picks the
-    file up within a second -- so this works the same from a timer, from the
-    terminal, or from inside the server.
-
-    A bookkeeping pass always starts here. The brief's whole claim is that it
-    shows what is true *now* -- open events, an unreviewed diff, live flags --
-    and rendering it over a stale fetch quietly breaks that: a push from an hour
-    ago is missing, a submitted assignment still reads as due, and a flag fires
-    or fails to fire on yesterday's data. Fetching separately made freshness a
-    thing you had to remember; making it the first step of the pass makes it a
-    thing you cannot skip.
-
-    Each input's `pull` is wrapped by `inputs.pull_all`: a GitHub outage must
-    degrade the brief, never prevent it.
+    There is no global fetch any more: every plugin that polls has its own timer
+    (`plugins.<name>.poll_minutes`), and `zipper run` or a systemd timer calls
+    `zipper pull --due` every few minutes. A bookkeeping pass does the same first,
+    so the brief it reads is never staler than the plugins' own intervals.
     """
     from . import serve
     serve.feed_load()
-    before = serve.snapshot_data() if emit else None
-
-    inputs.pull_all()
+    names = list(getattr(a, 'names', None) or [])
+    if getattr(a, 'due', False):
+        names = inputs.due()
+    elif not names:
+        names = [i.name for i in inputs.pullers()]
+    for n in names:
+        print('== %s ==' % n)
+        added, err = inputs.pull(n)
+        print('%s: %d new row(s)%s' % (n, added, ' -- ' + err if err else ''))
+    if not names:
+        print('pull: nothing due')
     print('== sync ==');   sync.cmd_sync(a)
     print('\n== agenda =='); a.days = getattr(a, 'days', 14) or 14; ics.cmd_agenda(a)
     print('\n== status =='); status.cmd_status(a)
     print('\n== views ==');  views.cmd_views(a)
-    if emit:
-        n = serve.emit_diff(before, serve.snapshot_data())
-        print('\n== queue =='); print('queue: %d new row(s)' % n)
+    print()
+    return cmd_brief(a)
 
 
 def cmd_fetch(a):
-    """Pull the inputs, publish what changed, and write the brief.
-
-    **This is the first step of a bookkeeping pass, not the pass.** Bookkeeping
-    is fetch -> reasoning -> commit, and only the two ends are commands. The
-    middle needs an agent: deciding that a push to `my-app` means the My App
-    note's `next_action` is now wrong is a judgement about the vault's contents,
-    and nothing here can make it. So this stops at handing over a brief.
-
-    Fetching happens exactly twice: on the hour, and at the start of a
-    bookkeeping pass. It used to also happen when the dashboard launched, which
-    tied how fresh the data was to when a browser happened to open -- so the
-    morning page was current and an all-day tab was a day stale.
-    """
-    fetch_all(a, emit=True)
-    print()
-    return cmd_brief(a)
+    """The old whole-refresh command: now every pulling plugin, then the brief."""
+    print('note: `fetch` is `zipper pull` now -- plugins also pull on their own timers.\n')
+    a.names, a.due = [], False
+    return cmd_pull(a)
 
 
 def cmd_brief(a):
@@ -516,18 +498,18 @@ def cmd_commit(a):
     # to throw history away -- and only ticked rows are ever dropped.
     # A vault that has never fetched has no queue file yet -- a new vault's first
     # commit is exactly that case.
-    try:
-        with open(serve.FEED_JSON, encoding='utf-8') as fh:
-            blob = json.load(fh)
-    except FileNotFoundError:
-        blob = {'rows': []}
-    os.makedirs(os.path.dirname(serve.FEED_JSON), exist_ok=True)
-    kept = serve.feed_prune(blob.get('rows', []), serve.FEED_MAX)
-    dropped = len(blob.get('rows', [])) - len(kept)
-    blob['rows'] = kept
-    with open(serve.FEED_JSON + '.tmp', 'w', encoding='utf-8') as fh:
-        json.dump(blob, fh, indent=1)
-    os.replace(serve.FEED_JSON + '.tmp', serve.FEED_JSON)
+    with serve.feed_txn():
+        try:
+            with open(serve.FEED_JSON, encoding='utf-8') as fh:
+                blob = json.load(fh)
+        except FileNotFoundError:
+            blob = {'rows': []}
+        kept = serve.feed_prune(blob.get('rows', []), serve.FEED_MAX)
+        dropped = len(blob.get('rows', [])) - len(kept)
+        blob['rows'] = kept
+        with open(serve.FEED_JSON + '.tmp', 'w', encoding='utf-8') as fh:
+            json.dump(blob, fh, indent=1)
+        os.replace(serve.FEED_JSON + '.tmp', serve.FEED_JSON)
     if dropped:
         print('  pruned %d ticked row(s); %d kept' % (dropped, len(kept)))
 
@@ -537,7 +519,5 @@ def cmd_commit(a):
     return 0
 
 def cmd_queue(a):
-    """Deprecated spelling. A pass is `fetch` -> reasoning -> `commit` now."""
-    print('note: `queue` is now `fetch` — it pulls the inputs and writes the '
-          'brief. Close the pass with `zipper commit "msg"`.\n')
+    """Deprecated spelling."""
     return cmd_fetch(a)

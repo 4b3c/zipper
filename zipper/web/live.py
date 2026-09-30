@@ -16,7 +16,7 @@ from .. import core
 from .data import content_sig
 
 
-def live_sig():
+def live_sig(day=None):
     """Hash of everything the data cards draw.
 
     `content_sig` covers calendar, Canvas, open tasks and flags. Added here:
@@ -32,6 +32,10 @@ def live_sig():
     for t in task_rows() + done_task_rows():
         h.update(('%s|%s|%s' % (t['key'], t['title'], t.get('done'))).encode())
     h.update(queue_panel(flags())[2].encode())
+    # Cards that are not built-in panels fingerprint themselves (their data, by
+    # default), so a vault card's change reaches an open page like any other.
+    from .cards import sig as cards_sig
+    h.update(cards_sig(day).encode())
     return h.hexdigest()[:12]
 
 
@@ -90,7 +94,7 @@ LIVE_JS = """
     if(busy||document.hidden||Date.now()-touched<4000) return;
     busy=true;
     try{
-      const st=await fetch('/api/state',{cache:'no-store'}).then(r=>r.json());
+      const st=await fetch('/api/state'+location.search,{cache:'no-store'}).then(r=>r.json());
       if(st&&st.sig&&st.sig!==sig&&await refresh()) sig=st.sig;
     }catch(e){}finally{busy=false;}
   }
@@ -112,6 +116,8 @@ LIVE_JS = """
     });
   }
 
+  // A card's button redraws the page at once rather than waiting for the poll.
+  window.zipperRefresh=()=>refresh();
   setInterval(poll,10000);
   setInterval(clock,30000);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden){clock();poll();}});

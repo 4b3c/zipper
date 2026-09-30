@@ -10,3 +10,7 @@ Meta/Queue.md
 Meta/Status.md
 Meta/Agenda.md
 Meta/Repos.md
+
+# Compiled Python from dashboard cards
+__pycache__/
+*.pyc

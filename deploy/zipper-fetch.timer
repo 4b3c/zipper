@@ -1,12 +1,11 @@
 [Unit]
-Description=Fetch every Zipper input hourly
+Description=Check every five minutes for Zipper plugins due to pull
 
 [Timer]
-OnCalendar=hourly
+OnCalendar=*:0/5
 # The Canvas keepalive only works if it actually runs; catch up after a reboot
 # rather than waiting for the next hour boundary.
 Persistent=true
-RandomizedDelaySec=120
 
 [Install]
 WantedBy=timers.target

@@ -17,7 +17,7 @@ from . import core
 
 PROMPT = """This is a scheduled bookkeeping pass, started by a timer, with nobody watching.
 
-`zipper fetch` has just run. The brief has %(events)d open event(s), %(notes)d \
+The plugins have just pulled. The brief has %(events)d open event(s), %(notes)d \
 uncommitted note(s) and %(flags)d flag(s).
 
 Do step 2 of a pass as the vault's CLAUDE.md describes: read Meta/Queue.md against the \
@@ -95,7 +95,7 @@ def _open_thread(message, name):
 
 def cmd_pass(a):
     from . import runqueue, conversations
-    runqueue.cmd_fetch(argparse.Namespace(days=14))
+    runqueue.cmd_pull(argparse.Namespace(days=14, names=[], due=True))
     q = _brief()
     counts = {'events': len(q.get('events', [])), 'notes': len(q.get('notes_uncommitted', [])),
               'flags': len(q.get('flags', []))}

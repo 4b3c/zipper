@@ -142,11 +142,12 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == '/api/conversations':
             self._send(200, json.dumps({'conversations': conversation_rows()}),
                        'application/json')
-        elif self.path == '/api/state':
+        elif self.path.split('?')[0] == '/api/state':
             with LOCK:
                 st = dict(STATE)
             st['ages'] = {k: ago(v) for k, v in freshness().items()}
-            st['sig'] = live_sig()
+            q = urllib.parse.parse_qs(self.path.partition('?')[2])
+            st['sig'] = live_sig((q.get('day') or [None])[0])
             st['clients'] = SRV['clients']
             self._send(200, json.dumps(st), 'application/json')
         elif self.path.split('?')[0] == '/oauth/google/callback':
@@ -256,8 +257,25 @@ class Handler(BaseHTTPRequestHandler):
         if _relay_only_refuses('POST', self.path):
             self._send(404, 'the dashboard plugin is off', 'text/plain; charset=utf-8')
             return
-        if self.path == '/api/refresh':
-            threading.Thread(target=do_refresh, daemon=True).start()
+        if self.path.startswith('/api/card/'):
+            # A card's button: /api/card/<card id>/<action>, JSON args in the body,
+            # handled by that card's backend (zipper/web/cards.py).
+            from .cards import act
+            parts = self.path.split('?')[0].split('/')
+            n = int(self.headers.get('Content-Length', 0))
+            try:
+                body = json.loads(self.rfile.read(n).decode('utf-8') or '{}') if n else {}
+            except ValueError:
+                body = {}
+            res = act(parts[3] if len(parts) > 3 else '', parts[4] if len(parts) > 4 else '',
+                      body.get('args'), body.get('day'))
+            self._send(200 if res['ok'] else 400, json.dumps(res), 'application/json')
+            return
+        if self.path == '/api/refresh' or self.path.startswith('/api/pull/'):
+            # /api/pull/<plugin>: a card's own refresh button. /api/refresh: all.
+            name = self.path[len('/api/pull/'):] if self.path.startswith('/api/pull/') else ''
+            threading.Thread(target=do_refresh, args=([name] if name else None,),
+                             daemon=True).start()
             self._send(202, json.dumps({'ok': True}), 'application/json')
         elif self.path == '/api/session':
             n = int(self.headers.get('Content-Length', 0))

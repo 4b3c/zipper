@@ -1,7 +1,6 @@
 #!/bin/sh
 # {{ID}}'s zipper command, for use on this machine (setup, mostly). Inside the
 # container, plain `zipper` does the same.
-export ZIPPER_SETTINGS="{{HOME}}/config/zipper.settings.json"
 export ZIPPER_ENV_FILE="{{HOME}}/config/.env"
 export ZIPPER_VAULT="{{HOME}}/vault"
 exec env PYTHONPATH="{{CODE}}${PYTHONPATH:+:$PYTHONPATH}" python3 -m zipper "$@"

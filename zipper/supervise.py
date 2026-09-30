@@ -54,24 +54,20 @@ def _save_state(st):
     os.replace(tmp, _state_path())
 
 
-def due(now, st, fetch_minutes, pulls, jobs):
+def due(now, st, jobs, pulls_due=False):
     """The jobs due at `now`, given what has run. Pure, so it can be tested.
 
-    `pulls`: whether any enabled plugin fetches -- with none, there is nothing to
-    fetch. `jobs`: [(job, spec)] from the plugins, where spec is 'HH:MM' (a slot,
-    once a day) or 'every' (the fetch clock -- `update` rides it, and waits by
-    itself while a conversation is live).
+    `pulls_due`: whether any plugin's own poll timer has run out (plugins.due());
+    if so, one `zipper pull --due` pulls exactly those. `jobs`: [(job, spec)] from
+    the plugins -- spec 'HH:MM' (a slot, once a day) or 'every:N' (every N
+    minutes; `update` rides this, and waits by itself while a conversation is live).
     """
-    out = []
-    every = datetime.timedelta(minutes=int(fetch_minutes or 60))
-
-    def stale(key):
-        return not st.get(key) or now - datetime.datetime.fromisoformat(st[key]) >= every
-    if pulls and stale('fetch'):
-        out.append(('fetch', 'fetch'))
+    out = [('pull --due', 'pull')] if pulls_due else []
     for job, spec in jobs:
-        if spec == 'every':
-            if stale(job):
+        if spec.startswith('every'):
+            mins = int(spec.split(':', 1)[1]) if ':' in spec else 60
+            last = st.get(job)
+            if not last or (now - datetime.datetime.fromisoformat(last)).total_seconds() >= mins * 60:
                 out.append((job, job))
             continue
         try:
@@ -155,8 +151,7 @@ def _scheduler(stop):
         now = datetime.datetime.now()
         st = _load_state()
         from . import plugins
-        jobs = due(now, st, settings.get('schedule.fetch_minutes'), plugins.pulls(),
-                   plugins.jobs())
+        jobs = due(now, st, plugins.jobs(), pulls_due=bool(plugins.due(now)))
         if not jobs:
             continue
 
@@ -168,7 +163,7 @@ def _scheduler(stop):
                     st[key] = now.isoformat(timespec='seconds')
                     _save_state(st)
                     print('[run] %s' % job, flush=True)
-                    subprocess.run([sys.executable, '-m', 'zipper', job], cwd=ROOT)
+                    subprocess.run([sys.executable, '-m', 'zipper'] + job.split(), cwd=ROOT)
         threading.Thread(target=work, daemon=True).start()
 
 

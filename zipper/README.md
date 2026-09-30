@@ -8,7 +8,7 @@ What was removed, and why, is in `../HISTORY.md`.
 
 ## Configuration
 
-`zipper.settings.json` holds structure; `.env` holds secrets. `zipper/settings.py` fills any
+The vault's `settings.json` holds structure; `.env` (outside the vault) holds secrets. `zipper/settings.py` fills any
 unset environment variable from the settings file when the package is imported, and
 `core.cfg(key)` then reads `.env` first, then the environment -- so a shell that started
 before a key was added still sees it. **Anything reading config at call time goes through
@@ -61,7 +61,7 @@ plugin's first snapshot is a baseline and emits no rows.
 
     python3 -m zipper ingest-ics "https://calendar.google.com/calendar/ical/.../basic.ics" --label gcal
 
-A URL is remembered in `Inbox/calendars.json` and refetched by every `fetch`; a file goes
+A URL is remembered in `Inbox/calendars.json` and refetched whenever the calendar plugin pulls; a file goes
 stale. The secret URL grants read access to anyone holding it, so it lives only in `Inbox/`.
 
 **Budget** — `python3 -m zipper ingest-budget transactions.csv`. Column detection is
@@ -94,7 +94,7 @@ files a 23:59 deadline on its own day and the feed often on the next).
 `--daemon` keeps it up with no tabs open; without it the last tab closing (after a 4s grace
 for reloads) stops the server. The service always runs `--daemon`.
 
-**No fetch at launch.** `zipper-fetch.timer` pulls hourly and every pass fetches first;
+**No fetch at launch.** Each plugin pulls on its own timer (`zipper pull --due`), and every pass pulls what is due first;
 **refresh** forces one. Sources publish over SSE as they land. Each source shows its age
 across the top, amber past its threshold — every data bug so far was stale data shown as
 current.

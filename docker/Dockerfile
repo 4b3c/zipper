@@ -26,7 +26,7 @@ RUN install -m 755 /opt/zipper-seed/docker/entrypoint.sh /usr/local/bin/zipper-e
 ENV HOME=/zipper/home \
     PYTHONPATH=/zipper/code \
     PYTHONUNBUFFERED=1 \
-    ZIPPER_SETTINGS=/zipper/config/zipper.settings.json \
+    ZIPPER_VAULT=/zipper/vault \
     ZIPPER_ENV_FILE=/zipper/config/.env \
     ZIPPER_NGINX=1 \
     ZIPPER_VAULT_DEFAULT=/zipper/vault \
