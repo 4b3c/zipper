@@ -237,7 +237,11 @@ renders; it never concludes.** See `extension/README.md`.
 ## Running it
 
 You need three things: **Docker**, **Claude Code** (`claude`), and a **Discord server with a
-bot** (the setup explains how to make one). Then:
+bot** (the setup explains how to make one) -- and a machine that stays on. A zipper on a
+laptop goes quiet whenever the lid closes: Discord goes unanswered and the scheduled passes
+are skipped. A small VPS or a computer at home that never sleeps is the real home for one;
+a laptop is for trying it out. On a server, the setup has you join it to Tailscale first.
+Then:
 
 ```bash
 git clone https://github.com/4b3c/Zipper && cd Zipper

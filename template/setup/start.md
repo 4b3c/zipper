@@ -15,7 +15,8 @@ Then the real test: ask them to send a message in their zipper's channel. A thre
 open and Claude should answer within a minute. If nothing happens, `docker compose logs`
 shows why.
 
-If the dashboard is on, it is at http://127.0.0.1:8899 on this machine, behind the
+If the dashboard is on, it is at http://127.0.0.1:8899 on this machine (or
+http://<tailnet address>:8899 from their devices, on a server), behind the
 password saved as `ZIPPER_TERM_CRED` (`user:password`; set it with `../zipper secret`
 before starting, or the page stays loopback-only).
 
