@@ -59,10 +59,14 @@ BASE_FLAGS = ['-p', '--verbose',
               '--output-format', 'stream-json',
               '--replay-user-messages']
 
-# How long to wait for the whole turn. A turn here does real work -- tools, file
-# edits, a commit -- so this bounds a hang, not a normal reply. The pane path had
-# no equivalent: a wedged TUI simply sat there.
+# How long a turn may go *silent*. A turn here does real work -- tools, file
+# edits, a build -- so this bounds a hang, not a long reply: every event read
+# pushes the deadline out again. It was once a limit on the whole turn, and a
+# fifteen-minute build was killed mid-push with its reply unsent -- the Stop hook
+# runs inside the process, so a killed turn forwards nothing.
 TURN_TIMEOUT = float(os.environ.get('ZIPPER_HEAD_TIMEOUT', 900))
+# A ceiling on the whole turn regardless, so a loop that keeps talking still ends.
+TURN_MAX = float(os.environ.get('ZIPPER_HEAD_MAX', 7200))
 
 
 def _claude():
@@ -246,10 +250,11 @@ def _events(proc, timeout):
     output it could not read. The distinction between those two is precisely
     what the pane could never make.
     """
-    end = time.time() + timeout
+    start = time.time()
+    end = start + timeout
     buf = b''
     while True:
-        if time.time() >= end:
+        if time.time() >= end or time.time() - start >= max(TURN_MAX, timeout):
             return
         if not select.select([proc.stdout], [], [], 0.5)[0]:
             if proc.poll() is not None:
@@ -258,6 +263,7 @@ def _events(proc, timeout):
         chunk = os.read(proc.stdout.fileno(), 65536)
         if not chunk:
             break
+        end = time.time() + timeout         # alive: the idle clock restarts
         buf += chunk
         while b'\n' in buf:
             raw, buf = buf.split(b'\n', 1)
@@ -319,6 +325,19 @@ def _run_turn(thread_id, text, timeout, out, on_echo=None):
     return out
 
 
+def _say_cut_off(thread_id):
+    """Tell the thread its turn was killed. The Stop hook died with the process,
+    so without this the operator waits on a reply that is never coming."""
+    try:
+        from . import chat
+        chat.discord_send('That turn was stopped before it finished -- no output '
+                          'for %d minutes, or %d in total. Work done up to then is on disk; '
+                          'say "continue" to pick it up.'
+                          % (TURN_TIMEOUT // 60, TURN_MAX // 60), thread_id=thread_id)
+    except Exception as e:
+        print('convhead: could not report a cut-off turn: %s' % e)
+
+
 def _attempt(cmd, thread_id, text, timeout, out, on_echo=None):
     """One `claude -p` process: hand over the message, read the turn. Returns stderr.
 
@@ -373,6 +392,7 @@ def _attempt(cmd, thread_id, text, timeout, out, on_echo=None):
         if proc.poll() is None:
             proc.kill()
             proc.wait(timeout=5)
+            _say_cut_off(thread_id)
         err = (proc.stderr.read() or b'').decode('utf-8', 'replace').strip()
         for h in (proc.stdout, proc.stderr):
             with contextlib.suppress(OSError):
