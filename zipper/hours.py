@@ -1,9 +1,9 @@
 """zipper.hours
 
-The Luminosity timesheet, as a ledger rather than a spreadsheet.
+The timesheet, as a ledger rather than a spreadsheet.
 
-The spreadsheet stays the system of record -- it is what he copies into Workday
-on Thursday nights, and an hour that never reaches it is an hour he is not paid
+The spreadsheet stays the system of record -- it is what they copy into Workday
+on Thursday nights, and an hour that never reaches it is an hour they are not paid
 for. So nothing here replaces it. This module holds what has been *captured*
 (told to Zipper, usually over Discord) and tracks how far each entry has got:
 
@@ -22,6 +22,7 @@ import os
 import re
 import datetime as dt
 
+from . import core
 from .core import INBOX
 
 LEDGER = os.path.join(INBOX, 'hours.json')
@@ -29,7 +30,7 @@ LEDGER = os.path.join(INBOX, 'hours.json')
 # Which Google Sheet is the timesheet. A document id is not a credential, but it
 # points straight at a private file, so it lives in .env with everything else
 # personal rather than in the extension -- whose manifest is published. The
-# panel matches spreadsheets in general and asks the server which one is his,
+# panel matches spreadsheets in general and asks the server which one is their,
 # which also means moving to a new sheet is one line here and no rebuild there.
 SHEET_ID = os.environ.get('ZIPPER_SHEET_ID', '').strip()
 
@@ -60,7 +61,7 @@ def _save(d):
 
 # ---------------------------------------------------------------- time format
 #
-# His rule, verbatim: 24-hour for any period that crosses noon, 12-hour
+# Their rule, verbatim: 24-hour for any period that crosses noon, 12-hour
 # otherwise. It exists because the Total column is a plain subtraction -- a
 # 10:00 to 2:00 span would come out negative -- and not because the sheet has
 # any opinion about clocks. So it is a *rendering* rule: the ledger always
@@ -105,7 +106,7 @@ def hhmmss(hours):
 # ------------------------------------------------------------------- identity
 #
 # An entry has to be recognisable in the sheet after a round trip, and the only
-# things that survive are the date, the times and the note -- he may reword a
+# things that survive are the date, the times and the note -- they may reword a
 # note, so the note is not part of the key. Date plus start plus end is unique
 # in every term of the existing sheet; where a row has no times (carried-over
 # hours) the duration stands in for them.
@@ -113,7 +114,7 @@ def hhmmss(hours):
 def key_of(date, start, end, hours, rendered=False):
     """The key is the pair *as the sheet shows it*, never a reconstruction.
 
-    His convention is lossy on purpose: a span that does not cross noon is
+    Their convention is lossy on purpose: a span that does not cross noon is
     written in 12-hour, so 7:30 in the sheet could be either half of the day
     and nothing in the row says which. Inverting that was a guess, and on
     2026-09-19 the guess read a 7:30 start as the evening -- the captured entry
@@ -177,13 +178,13 @@ def reconcile(rows, tab=None, complete=False, force=False):
     """Take a snapshot of the sheet and make the ledger agree with it.
 
     The sheet wins on everything it knows. A captured row found there becomes
-    `in_sheet`; a row he typed straight into the sheet is adopted, because the
+    `in_sheet`; a row they typed straight into the sheet is adopted, because the
     ledger claiming to be complete while the sheet has more is the one failure
-    that would quietly under-report his hours.
+    that would quietly under-report their hours.
 
     Deletion is the dangerous direction and is treated as such. A browser can
     read a half-rendered page, and a snapshot that is merely *short* looks
-    exactly like a tab he emptied -- so rows are only removed when the caller
+    exactly like a tab they emptied -- so rows are only removed when the caller
     says it read the whole tab (`complete`), and even then not if that would
     discard a quarter of what is on file. Getting this wrong costs real money,
     since a row that leaves the ledger stops being chased into the sheet.
@@ -203,7 +204,7 @@ def reconcile(rows, tab=None, complete=False, force=False):
         if hours is None:
             continue
         # Rows here are read out of the sheet, so their times are already in
-        # his written form -- and the duration is a subtraction of exactly
+        # their written form -- and the duration is a subtraction of exactly
         # those two cells, which is why it survives the ambiguity intact.
         k = key_of(date, r.get('start'), r.get('end'), hours, rendered=True)
         seen.add(k)
@@ -222,8 +223,8 @@ def reconcile(rows, tab=None, complete=False, force=False):
         else:
             if e['state'] == 'pending':
                 confirmed += 1
-            # The note is the sheet's to own once the row exists there -- he
-            # edits wording in place and the ledger should not fight him.
+            # The note is the sheet's to own once the row exists there -- they
+            # edits wording in place and the ledger should not fight them.
             e['note'] = (r.get('note') or e['note']).strip()
             e['submitted'] = sub
             e['state'] = 'submitted' if sub else 'in_sheet'
@@ -256,7 +257,7 @@ def pending():
 
 
 def to_write():
-    """Pending entries as the sheet wants them: 6 cells, his time convention."""
+    """Pending entries as the sheet wants them: 6 cells, their time convention."""
     out = []
     for e in sorted(pending(), key=lambda x: (x['date'], x['start'] or '~')):
         st, en = sheet_times(e['start'], e['end'])
@@ -312,11 +313,11 @@ def pull():
     """Read the sheet and make the ledger agree with it.
 
     `complete=True` is honest here in a way it never was from the browser: an
-    API read returns the whole tab, so a row missing from it really is a row he
+    API read returns the whole tab, so a row missing from it really is a row they
     deleted. This is the path the delete guard was written for.
     """
     from . import google, sheet
-    sid = google._cfg('ZIPPER_SHEET_ID')
+    sid = sheet_id()
     tab = _load().get('sheet', {}).get('tab') or current_tab()
     t = sheet.Tab(sid, tab)
     return reconcile(t.entries(), tab=tab, complete=True)
@@ -326,13 +327,13 @@ def push(dry=False):
     """Put every pending entry into the sheet, or say why it cannot.
 
     Reads the sheet *first*. `pending` is the ledger's belief about what the
-    sheet is missing, and a belief formed before he typed a row in by hand is
+    sheet is missing, and a belief formed before they typed a row in by hand is
     how the same hour gets written twice -- so the belief is refreshed against
     the sheet in the same breath, and a row already there simply stops being
     pending before anything is planned.
     """
     from . import google, sheet
-    sid = google._cfg('ZIPPER_SHEET_ID')
+    sid = sheet_id()
     pull()
     tab = _load().get('sheet', {}).get('tab') or current_tab()
     ents = sorted(pending(), key=lambda x: (x['date'], x['start'] or '~'))
@@ -347,8 +348,27 @@ def push(dry=False):
     return writes, refused
 
 
+def metric_key():
+    """The metrics.csv series the sheet's weekly totals land in."""
+    return core.cfg('ZIPPER_HOURS_METRIC') or 'hours_worked'
+
+
+def sheet_id():
+    """The sheet, or a sentence saying it is not configured.
+
+    Without this an unset id reached the Sheets API as an empty path segment and
+    came back as a bare `HTTP Error 404`, which reads as a broken sheet rather
+    than a missing setting."""
+    from . import google
+    sid = google._cfg('ZIPPER_SHEET_ID')
+    if not sid:
+        raise RuntimeError('no timesheet configured: set inputs.hours.sheet in '
+                           'zipper.settings.json (or ZIPPER_SHEET_ID)')
+    return sid
+
+
 def sync_metric():
-    """Make `luminosity_hours` a consequence of the sheet, not a parallel record.
+    """Make the hours metric a consequence of the sheet, not a parallel record.
 
     Appends a row only where the week's total actually moved. `metrics.csv` is
     append-only -- a past row is never edited -- so writing every week on every
@@ -359,11 +379,12 @@ def sync_metric():
     """
     import csv as _csv
     from . import metrics as M
+    key = metric_key()
     seen = {}
     try:
         with open(M.METCSV, encoding='utf-8') as fh:
             for r in _csv.DictReader(fh):
-                if r['key'] == 'luminosity_hours':
+                if r['key'] == key:
                     seen[r['date']] = r['value']     # last row per date wins
     except FileNotFoundError:
         pass
@@ -372,7 +393,7 @@ def sync_metric():
         prev = seen.get(w['week'])
         if prev is not None and abs(float(prev) - w['worked']) < 1e-9:
             continue
-        M.add_metric('luminosity_hours', w['worked'], w['week'],
+        M.add_metric(key, w['worked'], w['week'],
                      '' if prev is None else 'was %s' % prev, 'hours-sheet')
         moved.append((w['week'], prev, w['worked']))
     return moved
@@ -406,6 +427,14 @@ def current_tab():
 
 
 def cmd_hours(a):
+    try:
+        return _cmd_hours(a)
+    except RuntimeError as e:
+        print('hours: %s' % e)
+        return 1
+
+
+def _cmd_hours(a):
     action = getattr(a, 'action', None) or 'show'
     if action == 'add':
         e = add(a.date, a.start, a.end, a.hours, a.note or '', a.source or 'cli')
@@ -423,7 +452,7 @@ def cmd_hours(a):
         return
     if action == 'week':
         from . import google, sheet
-        sid = google._cfg('ZIPPER_SHEET_ID')
+        sid = sheet_id()
         tab = _load().get('sheet', {}).get('tab') or current_tab()
         d = dt.date.fromisoformat(a.date) if a.date else dt.date.today()
         try:

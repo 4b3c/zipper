@@ -1,7 +1,7 @@
 """The dashboard's front page.
 
 Top row, four panels, one height: which day, that day's hours, what is due,
-what he has taken on himself. Read left to right. Under it, the Claude card (the
+what they have taken on themselves. Read left to right. Under it, the Claude card (the
 conversations and their terminal); then the queue and the Zipper panel; then next
 actions and ventures; then how old each input is.
 
@@ -796,12 +796,12 @@ def _row(it, showat=True, showdue=False, pill=False):
     tag = ('<span class="pill" %s>%s</span>'
            % (_style('--hue:%d' % hue(it.get('tag'))), esc(it['tag']))
            if pill and it.get('tag') else '')
-    # The description is the rest of what he wrote, kept off the title line and
+    # The description is the rest of what they wrote, kept off the title line and
     # **closed until the row is clicked**. A list is for finding the thing you
     # meant; the reasons are for after you have found it. Open, it shows in
     # full -- there is no second click, so there is nothing to truncate to.
     #
-    # A task's description is always shown: he wrote it, and the title rule
+    # A task's description is always shown: they wrote it, and the title rule
     # means it is where the content deliberately went. A Canvas one is only
     # shown when it is short enough to be a summary -- those bodies run to
     # thousands of characters of course boilerplate, and two clamped lines of

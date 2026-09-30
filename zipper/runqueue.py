@@ -75,7 +75,7 @@ def _is_generated(path):
 def note_changes():
     """Uncommitted note edits, whoever made them.
 
-    Authorship is deliberately not modelled. Abram, this session and another
+    Authorship is deliberately not modelled. The operator, this session and another
     Discord session all edit the same files, and a change needs looking at
     because it is unreviewed, not because of who typed it.
     """
@@ -230,9 +230,9 @@ def flags(evrecs=None):
                            % (t, d['status'], d['last_push']))
         if d.get('review') and d['review'] <= core.TODAY.isoformat():
             out.append('%s is due for review (%s)' % (t, d['review']))
-    # Event notes. A meeting he scheduled for a reason is not finished when it
+    # Event notes. A meeting they scheduled for a reason is not finished when it
     # ends -- it is finished when what came out of it is written down. This is
-    # the only flag that expects an answer from him rather than an edit.
+    # the only flag that expects an answer from them rather than an edit.
     for r in evrecs:
         when = (r['start'] or '?').replace('T', ' ')
         if r['state'] == 'due':
@@ -290,7 +290,7 @@ def cmd_fetch(a):
 
     **This is the first step of a bookkeeping pass, not the pass.** Bookkeeping
     is fetch -> reasoning -> commit, and only the two ends are commands. The
-    middle needs an agent: deciding that a push to `pantry` means the Pantry
+    middle needs an agent: deciding that a push to `my-app` means the My App
     note's `next_action` is now wrong is a judgement about the vault's contents,
     and nothing here can make it. So this stops at handing over a brief.
 

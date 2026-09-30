@@ -26,7 +26,7 @@ The rule
 Post if the turn was *started* from Discord. The bot records what it delivered
 (`conversations.note_delivery`), and the last user message in the transcript is
 compared against that record. A match means the bot put it there; anything else
-means he typed it, and the terminal already showed him the answer.
+means they typed it, and the terminal already showed them the answer.
 
 The comparison is against the **last** user message rather than the first,
 because that is the one that started this turn -- a conversation can begin on a
@@ -100,7 +100,7 @@ def read_turn(path, limit=1_000_000):
     twice. That is what ate five replies on the morning of 2026-09-16.
 
     `turn_users` is **every** prompt this turn is answering, not just the last.
-    The opening message starts the turn; anything he sends while it runs arrives
+    The opening message starts the turn; anything they send while it runs arrives
     as an `enqueue` and is answered by the same turn. They do not all come
     through the same door -- a turn opened from Discord can be added to from the
     dashboard -- so "did this turn come from Discord?" cannot be answered from
@@ -157,7 +157,7 @@ def read_turn(path, limit=1_000_000):
                 # An `enqueue` never *starts* a turn -- it interrupts one that
                 # is already running -- so it adds to this turn's prompts
                 # rather than replacing them. That is what keeps a
-                # Discord-opened turn recognisable after he types into the
+                # Discord-opened turn recognisable after they type into the
                 # dashboard mid-turn.
                 turn_users.append(body)
         elif t == 'assistant':
@@ -240,7 +240,7 @@ def main():
     if not closed:
         # The turn ended on a tool use -- interrupted, or stopped by another
         # hook -- so there is no closing row to wait for. What was said before
-        # the tools was still said, and it is the only thing he will get for
+        # the tools was still said, and it is the only thing they will get for
         # this turn. Send it rather than letting the turn vanish.
         _log('note  turn never closed; forwarding %d chars anyway' % len(reply))
 
@@ -272,7 +272,7 @@ def main():
         return
 
     if not any(conversations.delivered(tid, u) for u in (turn_users or [last_user])):
-        # Typed at the keyboard; he already saw it. Logged anyway, because
+        # Typed at the keyboard; they already saw it. Logged anyway, because
         # "decided it was typed" is exactly the wrong call that ate a reply
         # twice today, and it is indistinguishable from a real one in hindsight.
         _log('skip  %s not a delivered message -- treated as typed (%r)'
@@ -289,8 +289,8 @@ def main():
     except Exception as e:
         # Never block the turn on Discord -- but never fail invisibly either,
         # and never leave the thread showing a typing indicator for an answer
-        # that is not coming. That combination is what made him wait in Discord
-        # long after the reply had been written to a terminal he wasn't reading.
+        # that is not coming. That combination is what made them wait in Discord
+        # long after the reply had been written to a terminal they weren't reading.
         _log('FAIL  %s send failed after %d chars: %s: %s'
              % (tid, len(reply), type(e).__name__, e))
         try:

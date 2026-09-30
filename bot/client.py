@@ -289,7 +289,7 @@ async def failure_notice(err: str):
                 f"asked about `{ZIPPER_UNIT}`.")
 
     # A running server that answered with a reason of its own: the connection
-    # was fine and the *delivery* failed. Saying "disconnected" would send him
+    # was fine and the *delivery* failed. Saying "disconnected" would send them
     # to look at systemd for a problem that is in the pane.
     return f"⚠️ Couldn't deliver that: {err}"
 
@@ -346,7 +346,7 @@ async def on_message(message: discord.Message):
     # thread sitting empty with its message still in flight.
     prompt = await build_prompt(message)
 
-    # The title comes from what he typed, or failing that from the first
+    # The title comes from what they typed, or failing that from the first
     # filename -- never from the prompt, whose first line may be a tmp path.
     # A thread named /tmp/zipper-discord-files/... is unreadable in the sidebar.
     subject = message.content or (message.attachments[0].filename

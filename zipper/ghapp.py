@@ -1,29 +1,26 @@
 #!/usr/bin/env python3
 """
-The GitHub App identity - how Zipper acts on GitHub as itself.
+The GitHub App identity - how a zipper acts on GitHub as itself.
 
-Before this existed, everything Zipper did on GitHub borrowed Abram: his personal
-token in `.env`, reaching all 144 repos including the 65 NDA'd ASU-LL ones, with
-every commit and every push indistinguishable from him at a keyboard. The App is a
-separate actor - a `<slug>[bot]` account with its own profile and its own noreply
-address, and no square on his contribution graph.
+Without it, everything a zipper did on GitHub would borrow the operator: their
+personal token, reaching every repo and org they can see, with every commit and
+push indistinguishable from them at a keyboard. The App is a separate actor - a
+`<slug>[bot]` account with its own noreply address.
 
 Two credentials, and the difference matters:
 
   the private key   long-lived, on disk, and ONLY able to mint tokens
   an install token  what actually touches the API - expires in an hour
 
-So the secret at rest is not a key to the account; it is a key to a one-hour,
-one-permission lease - `contents: write`, and nothing else, on whatever the
-installation covers. `GITHUB_TOKEN` stays in `.env` because `zipper github` reads
-144 repos across an org the App is not installed on; fetching is still his. This
-module is about *writing*.
+So the secret at rest is not a key to the account; it is a key to a one-hour
+lease on whatever permissions the App was granted. `GITHUB_TOKEN` stays separate
+because `zipper github` reads repos (and orgs) the App is not installed on;
+fetching is the operator's. This module is about *writing*.
 
-The installation is deliberately account-wide rather than one repo: Zipper is
-meant to work across his projects, not just its own. That trades the narrowest
-possible blast radius for reach, knowingly. What it does NOT trade away is the
-org: the App is installed on his personal account, so no ASU-LL repo is reachable
-with this token under any circumstance.
+**Several zippers share one App.** Each pushes branches named after its id and
+opens pull requests; none can land on the default branch, because branch
+protection requires a review the App cannot give. That is what makes sharing
+the key safe: the worst a leaked key does is open a PR a human must approve.
 
 RS256 is signed by shelling out to
 `openssl`, which is already on the box, rather than taking a `cryptography`

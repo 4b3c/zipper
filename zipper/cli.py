@@ -51,7 +51,7 @@ def main():
     s.add_argument('--auth', action='store_true', help='print the consent link')
     s.set_defaults(fn=google.cmd_google)
 
-    s = sub.add_parser('hours', help='the Luminosity timesheet ledger')
+    s = sub.add_parser('hours', help='the timesheet ledger')
     hs = s.add_subparsers(dest='action')
     s.set_defaults(fn=hours.cmd_hours)
     a1 = hs.add_parser('add'); a1.add_argument('--date', required=True)
@@ -140,7 +140,7 @@ def main():
 
     s = sub.add_parser('ghapp', help='the bot identity: show it, mint a token, push as it')
     s.add_argument('--push', action='store_true', help='push a repo as the App')
-    s.add_argument('--repo', help='which repo to push (default: /opt/zipper)')
+    s.add_argument('--repo', help='which repo to push (default: this checkout)')
     s.add_argument('--token', dest='print_token', action='store_true',
                    help='print a raw installation token')
     s.set_defaults(fn=ghapp.cmd_ghapp)

@@ -14,7 +14,7 @@
  * carries the rows to the clipboard and then records that they landed.
  *
  * It collects and it renders. It never decides what an hour is -- the cells
- * arrive already formatted by `zipper.hours`, including his 24-hour-only-
+ * arrive already formatted by `zipper.hours`, including their 24-hour-only-
  * across-noon convention, because that rule belongs with the ledger.
  */
 const api = globalThis.browser ?? globalThis.chrome;
@@ -34,7 +34,7 @@ let PENDING = [];
 function tsv(rows) {
   // Sheets pastes a tab-separated block as cells. The trailing empty Submitted
   // column is deliberate: it keeps the paste six wide, so a row never lands
-  // shifted if he pastes into column A.
+  // shifted if they paste into column A.
   return rows.map((r) => r.cells.join('\t')).join('\n');
 }
 
@@ -80,7 +80,7 @@ function render(panel) {
 
   // Two buttons on purpose. Copying is not evidence that anything landed in
   // the sheet, and the whole point of the ledger is that an hour stays pending
-  // until something says otherwise. He is that something, for now.
+  // until something says otherwise. They are that something, for now.
   const done = el('button', 'zh-btn zh-ok', 'I pasted them');
   done.addEventListener('click', async () => {
     done.disabled = true;
@@ -150,7 +150,7 @@ function mount() {
  * private file. The id lives in .env on the box, and the first thing this asks
  * for is whether the document in the address bar is that one. Nothing renders
  * until it says yes -- so on any other spreadsheet the panel simply is not
- * there, and the extension never learns the id of a sheet he did not open.
+ * there, and the extension never learns the id of a sheet they did not open.
  */
 async function mountIfMine() {
   const here = location.pathname.match(/\/spreadsheets\/d\/([^/]+)/);

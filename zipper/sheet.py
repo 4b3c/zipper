@@ -1,11 +1,11 @@
 """zipper.sheet
 
-Reading and writing the Luminosity timesheet through the Sheets API.
+Reading and writing the timesheet through the Sheets API.
 
 The tab is not a table. It is week blocks -- a `Week N` header carrying the
 week's range and a SUM over the rows beneath it, then one row per session --
 and a writer that ignores that shape would produce rows the totals never count.
-Two details of his sheet decide everything here:
+Two details of their sheet decide everything here:
 
   * The Total column is a formula, `=C{row}-B{row}`, not a value. A row written
     with "5:30:00" in D would look right and stop tracking its own times.
@@ -21,7 +21,7 @@ than guessing -- see `plan`.
 
 Times go in as text ("1:30"), which Sheets parses into the same day-fraction it
 already stores. The 24-hour-across-noon rule lives in `zipper.hours`, because it
-is a fact about his sheet rather than about this transport.
+is a fact about their sheet rather than about this transport.
 """
 import datetime as dt
 import re
@@ -75,7 +75,7 @@ class Tab:
         """Every session row, in the shape `hours.reconcile` takes.
 
         Read from the *displayed* values, not the underlying serials, and kept
-        that way. His 12-hour cells are ambiguous about which half of the day
+        that way. Their 12-hour cells are ambiguous about which half of the day
         they mean, and nothing here needs to know -- the duration is the
         subtraction of the two cells as written, and the key is the pair as
         written. Guessing the real hour was a bug, not a missing feature.
@@ -143,7 +143,7 @@ def plan(sheet_id, tab_name, entries):
     """Decide a row for each pending entry, refusing anything unclear.
 
     Returns (writes, refused). A write is (row, values) where values already
-    carry the formula for D and his rendering for B and C.
+    carry the formula for D and their rendering for B and C.
     """
     tab = Tab(sheet_id, tab_name)
     writes, refused, taken = [], [], set()
@@ -155,7 +155,7 @@ def plan(sheet_id, tab_name, entries):
             continue
         if w['submitted'].lower() == 'yes':
             # The week has been billed. Adding to it silently would change a
-            # total he has already copied into Workday.
+            # total they have already copied into Workday.
             refused.append((e, f'{w["label"]} is already submitted'))
             continue
         row = tab.free_row(w, taken)
@@ -231,8 +231,8 @@ def new_week(sheet_id, tab_name, date, dry=False):
     every row dropped is empty -- which is what makes this safe on a week
     already submitted. What the old week loses is its headroom, so an entry
     backfilled into it after the next week is open has nowhere to go and `push`
-    refuses. That is the accepted trade: he logs in order, and never a Monday
-    before the Sunday before it (his words, 2026-09-22).
+    refuses. That is the accepted trade: they log in order, and never a Monday
+    before the Sunday before it (their words, 2026-09-22).
 
     Returns (row, values, trim), where `trim` is the previous block's new SUM
     formula or None. Raises ValueError with the reason it refused.

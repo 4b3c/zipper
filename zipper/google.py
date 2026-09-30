@@ -6,14 +6,16 @@ The token lives on this box rather than in the browser, which is the whole
 point of doing it here: the extension could only ever act while a tab was open
 on the sheet, and hours arrive over Discord at times when nothing is open at
 all. With a refresh token in `.env`, `zipper hours add` can put a row in the
-spreadsheet the moment he says it.
+spreadsheet the moment they say it.
 
 No Google client library: this is three HTTP calls, and a dependency would be a
 worse trade than the forty lines below.
 
-The client is Internal to his Workspace org, which is what makes this quiet:
-no verification, no consent interstitial, and a refresh token that does not
-expire. An External client in Testing would need re-authorising every 7 days.
+Which kind of OAuth client decides how quiet this is. An Internal client (one
+Workspace org) needs no verification and its refresh token does not expire. An
+External client left in Testing works for its listed test users, but Google
+expires their refresh tokens after 7 days -- publish it (unverified is fine for
+a handful of users) or `zipper google --auth` becomes a weekly chore.
 """
 import json
 import os
@@ -43,7 +45,7 @@ def _env_file():
 
 def _cfg(key, default=''):
     # `core.cfg`: the file wins, because it is where `exchange` writes the
-    # refresh token and where he pastes. This lived here first and moved to
+    # refresh token and where they paste. This lived here first and moved to
     # core when the digest needed it too.
     return core.cfg(key, default)
 
@@ -66,7 +68,7 @@ def authorized():
 
 
 def auth_url():
-    """The link he opens once. `prompt=consent` is what yields a refresh token.
+    """The link they open once. `prompt=consent` is what yields a refresh token.
 
     Google only returns a refresh token on the *first* grant unless consent is
     forced, so a second run of this would otherwise hand back an access token
@@ -140,7 +142,7 @@ def _call(path, method='GET', payload=None, **params):
 
 
 def read(sheet_id, rng):
-    """Raw cell text. UNFORMATTED would turn his times into serial fractions."""
+    """Raw cell text. UNFORMATTED would turn their times into serial fractions."""
     res = _call(f'{sheet_id}/values/{urllib.parse.quote(rng)}',
                 valueRenderOption='FORMATTED_VALUE',
                 dateTimeRenderOption='FORMATTED_STRING')
@@ -157,7 +159,7 @@ def read_formula(sheet_id, rng):
 
 def write(sheet_id, updates):
     """Several ranges at once. USER_ENTERED so "1:30" becomes a time and
-    "=C31-B31" becomes a formula, exactly as if he had typed them."""
+    "=C31-B31" becomes a formula, exactly as if they had typed them."""
     return _call(f'{sheet_id}/values:batchUpdate', 'POST', {
         'valueInputOption': 'USER_ENTERED',
         'data': [{'range': r, 'values': v} for r, v in updates]})
@@ -206,13 +208,13 @@ def set_env(key, value):
 
 def cmd_google(a):
     if not configured():
-        print('ZIPPER_GOOGLE_CLIENT_ID / _SECRET are unset in /opt/zipper/.env')
+        print('ZIPPER_GOOGLE_CLIENT_ID / _SECRET are unset in .env')
         return 1
     if getattr(a, 'auth', False) or not authorized():
         # Naming the account is worth a line -- the client is Internal to one
         # Workspace org, so the wrong login fails at the consent screen and it
         # is better to be told which one up front. The address is config, not a
-        # default: unset, this says what it needs rather than who he is.
+        # default: unset, this says what it needs rather than who they are.
         who = _cfg('ZIPPER_GOOGLE_ACCOUNT')
         print('Open this, signed in as %s:\n'
               % (who or 'the account that owns the sheet'))

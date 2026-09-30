@@ -432,8 +432,8 @@ def cmd_agenda(a):
         if r['done']:
             mark = '~~'
         body = '%s**%s**%s' % (mark, summary, mark)
-        # An event with a note is one he scheduled *for* a reason. Show the
-        # link here so the reason is in front of him before he walks in, not
+        # An event with a note is one they scheduled *for* a reason. Show the
+        # link here so the reason is in front of them before they walk in, not
         # only afterwards when the queue asks how it went.
         er = enotes.get((uid, _fmt_dt(start)))
         prep = ''

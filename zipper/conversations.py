@@ -10,7 +10,7 @@ message in the channel starts a new one.
 **Two conversations can edit the vault at the same time, and nothing stops
 them.** Deliberate, 2026-09-06: parallel instances are cheap to run and the
 locking to make them safe is not worth writing for one person who knows what
-he has running. The failure it invites is real, though -- two sessions editing
+they have running. The failure it invites is real, though -- two sessions editing
 one note, or committing over each other, produce conflicts and lost edits that
 neither instance can see. If that starts happening, this is where the lock
 goes; until then, don't work the same project in two threads at once.

@@ -206,7 +206,7 @@ def case_busy(tid):
     way, and a pane capture is far likelier to land on a frame that does not mean
     what it looks like.
 
-    This is also the ordinary case, not an exotic one: he sends a follow-up while
+    This is also the ordinary case, not an exotic one: they send a follow-up while
     a long turn is still running, which is exactly what `note_delivery` was
     rewritten for.
     """
@@ -275,7 +275,7 @@ def cleanup(tid, sbox):
     subprocess.run([convcore._tmux(), 'kill-session', '-t', convcore.target(tid)],
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     # The registry is what `zipper conversations` and the dashboard list, so a
-    # test row left behind is a fake conversation in his chat list forever.
+    # test row left behind is a fake conversation in their chat list forever.
     try:
         with convcore.mutate() as d:
             d.pop(str(tid), None)

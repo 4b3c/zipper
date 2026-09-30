@@ -6,9 +6,9 @@ Canvas planner items -- the only source that knows submitted vs due.
 already taken and hands the result to the vault. That is a deliberate amputation
 (2026-09-08), not a gap waiting to be filled:
 
-ASU issues no API access tokens to students, so the fetcher ran on a
+Many schools issue students no Canvas API token, so the fetcher ran on a
 `canvas_session` cookie copied by hand into `.env`. A copied cookie starts dying
-the moment it is taken -- ASU rotated it twice inside one day on 2026-09-06 --
+the moment it is taken -- one school rotated it twice inside one day on 2026-09-06 --
 while the identical session inside a browser never dies, because the browser
 renews it through SSO unasked. Nothing was ever wrong with the request; only the
 credential's lifetime failed. So the request moved to where the credential
@@ -33,12 +33,12 @@ DESC_CAP = 6000          # a rubric-heavy assignment body, not a whole page
 # Crossing something off by hand
 #
 # **Canvas is not always right about what is done.** CSE 434's homework lives on
-# PrairieLearn, an optional extra-credit item is one he has decided not to do --
+# PrairieLearn, an optional extra-credit item is one they have decided not to do --
 # in both cases Canvas says `submitted: false` forever and is not going to change
-# its mind. Abram's word is the better evidence, and this is where it is kept.
+# its mind. The operator's word is the better evidence, and this is where it is kept.
 #
 # The hard requirement is that it **survives a re-read**. The extension rewrites
-# `canvas.json` wholesale every time he opens Canvas, so an override that lived
+# `canvas.json` wholesale every time they open Canvas, so an override that lived
 # on the item itself would be erased by the next visit and the finished homework
 # would come back as outstanding -- which is exactly what it did.
 #
@@ -104,12 +104,12 @@ def _ov_save(d):
 
 
 def stamp_overrides(rows):
-    """Mark every row Abram has crossed off, in place.
+    """Mark every row the operator has crossed off, in place.
 
-    `done_by_hand` is when he crossed it off, or ''. Downstream, *done* means
+    `done_by_hand` is when they crossed it off, or ''. Downstream, *done* means
     `submitted or done_by_hand` -- see `is_done`. The two stay separate fields
     on purpose: the dashboard says "you crossed this off", not "Canvas received
-    it", and conflating them would be the system lying on his behalf.
+    it", and conflating them would be the system lying on their behalf.
     """
     ov = _ov_load()
     by_id = {str(e['id']): e for e in ov.values() if e.get('id')}
@@ -290,7 +290,7 @@ def ingest(items, assignments=None, source='extension'):
     """Turn one browser reading into `Inbox/canvas.json`.
 
     **The only way Canvas data enters the vault.** Nothing here fetches: the
-    engine has no Canvas credential and cannot get one. ASU issues no API
+    engine has no Canvas credential and cannot get one. Schools often issue no API
     tokens, and the session cookie that stood in for one had to be copied by
     hand into `.env`, where it began expiring immediately -- rotated twice
     inside a single day on 2026-09-06. The reading now happens in the browser,
@@ -332,12 +332,12 @@ def _report(rows, skipped=None, described=None, stamp=None):
         print('  descriptions: %d of %d item(s)' % (described, len(rows)))
     if crossed:
         # Named rather than merely counted: this is the one number in the report
-        # that rests on his word instead of on Canvas, and it should be possible
-        # to see what he took responsibility for without opening a JSON file.
+        # that rests on their word instead of on Canvas, and it should be possible
+        # to see what they took responsibility for without opening a JSON file.
         # Phrased as settled, not pending. "Canvas still calls these
         # unsubmitted" reads as an open discrepancy to go and check, and got one
-        # of these handed back to him as work he had already done.
-        print('  done on his word (Canvas disagrees, and is wrong) -- not outstanding:')
+        # of these handed back to them as work they had already done.
+        print('  done on your word (Canvas disagrees, and is wrong) -- not outstanding:')
         for r in crossed:
             print('    %s %s  (%s)' % (r['course'], r['title'][:40],
                                        r['done_by_hand'][:10]))
@@ -346,7 +346,7 @@ def _report(rows, skipped=None, described=None, stamp=None):
         # Still listed, still outstanding. `elsewhere` is a *label*: it says
         # Canvas will never mark this submitted, so the cross-off is the only
         # thing that will ever clear it. It is not itself evidence of anything
-        # being done, and must not suppress the row -- an assignment he has not
+        # being done, and must not suppress the row -- an assignment they have not
         # started is exactly as visible as any other.
         print('  on another platform -- only a cross-off will clear these:')
         for r in ext:
@@ -401,7 +401,7 @@ def cmd_canvas(a):
     except (TypeError, ValueError):
         pass
     _report(rows, stamp='%s%s via %s' % (stamp, age, blob.get('source', '?')))
-    # Staleness here is a fact about his browsing, not a fault to fix. Say it
-    # plainly and do not prescribe: the reading is as old as the last time he
+    # Staleness here is a fact about their browsing, not a fault to fix. Say it
+    # plainly and do not prescribe: the reading is as old as the last time they
     # had Canvas open, and no amount of nagging from a server changes that.
     return 0

@@ -42,7 +42,7 @@ def today_split(day=None):
     """One day, split the way it reads: things with a clock on the right,
     things merely due on the left. All-day items strike through when submitted;
     timed ones strike through once the clock has passed — but only on today,
-    since 'already happened' is meaningless on a day he is looking ahead to."""
+    since 'already happened' is meaningless on a day they are looking ahead to."""
     day = day or core.TODAY.isoformat()
     is_today = day == core.TODAY.isoformat()
     now = datetime.datetime.now().strftime('%H:%M')
@@ -102,7 +102,7 @@ def week_canvas(monday=None):
     was already handed in would read as a lighter week than it was, and the
     vanishing row is exactly the ambiguity the cross-off mechanism exists to
     remove. `carried` is separate: unfinished work due *before* this Monday,
-    which is still outstanding and belongs in the week he is looking at.
+    which is still outstanding and belongs in the week they are looking at.
     """
     mon = monday if isinstance(monday, datetime.date) else monday_of(monday)
     sun = mon + datetime.timedelta(days=6)
@@ -137,9 +137,9 @@ def week_worklist(monday=None):
     Deliberately not `ranked()`, which answers the dashboard's question: what is
     most pressing across everything, coursework and self-reported tasks
     together, cut at ten. Inside Canvas the question is narrower because the
-    surroundings have already answered half of it -- he is looking at a course
+    surroundings have already answered half of it -- they are looking at a course
     tool, about this week, and a `Tasks/` line about emailing a coffee shop has
-    no business in a sidebar he opened to see assignments.
+    no business in a sidebar they opened to see assignments.
 
     Built on `week_canvas` rather than a second date filter so that "this week"
     means one thing in the vault. Carried work leads: unfinished work due before
@@ -178,7 +178,7 @@ def open_tasks():
     continuation lines underneath, which markdown already treats as part of the
     list item, so Obsidian and the dashboard read the same file the same way::
 
-        - [ ] Buy a Pantry subscription on a real device [project:: [[Pantry]]]
+        - [ ] Email three coffee shops the demo link [project:: [[My App]]]
           Nobody has ever verified the purchase flow end to end.
 
     The rule is about being able to *see* the list. A title carrying its own
@@ -204,8 +204,8 @@ def open_tasks():
                 # Every note the line names, `project::` first and no duplicates.
                 # A task is often about one project and done with another team's
                 # work, and linking only `project::` sent the one about five CSE
-                # 423 documents to the Orbitscape note. What he wrote down is the
-                # evidence; nothing here infers a link he did not type.
+                # 423 documents to a project note. What they wrote down is the
+                # evidence; nothing here infers a link they did not type.
                 links = [proj.group(1)] if proj else []
                 for n in re.findall(r'\[\[([^\]|#]+)', raw):
                     n = n.strip()
@@ -255,7 +255,7 @@ def ranked(limit=10):
     items = []
     _, course_of = class_notes()
     # Not `outstanding()`: crossed-off work stays on this list and sinks,
-    # rather than disappearing from it. A struck-through row is him seeing his
+    # rather than disappearing from it. A struck-through row is them seeing their
     # own decision reflected back; a row that vanishes is indistinguishable from
     # the cross-off having failed, which is the complaint this whole mechanism
     # exists to answer.
@@ -348,7 +348,7 @@ def _find_task(key):
 def delete_task(key):
     """Remove a task and its indented description from its markdown file.
 
-    For a task he will not do, or one that is finished but not by him -- the
+    For a task they will not do, or one that is finished but not by them -- the
     two cases a tick would misstate. The ledger sees the line vanish while the
     task count falls and records it as `dropped_on`, never as a completion, so
     deleting cannot pass for getting things done.

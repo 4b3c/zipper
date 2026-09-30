@@ -32,7 +32,7 @@ CLAUDE_PROJECTS = os.path.expanduser('~/.claude/projects')
 
 # Two moments, five minutes apart, and they are not the same event. At
 # IDLE_NOTICE the prompt cache is still warm: a reply lands at the cache rate
-# and the warning is something he can act on. At IDLE_EXPIRY the entry is gone
+# and the warning is something they can act on. At IDLE_EXPIRY the entry is gone
 # and the row is closed -- which is what lets "closed" mean "cold" everywhere
 # else that reads it, the dashboard's full-price warning included. Warning at
 # the moment of expiry would be a weather report about yesterday.
@@ -245,7 +245,7 @@ def touch(thread_id, active=False, **fields):
     incidental write used to bump it -- caching a title, remembering a port,
     opening the thing to read it -- so merely looking at a conversation sent it
     to the top, and the order the operator was navigating by rearranged itself
-    under his cursor.
+    under their cursor.
     """
     with mutate() as d:
         row = d.setdefault(str(thread_id), {})
@@ -264,7 +264,7 @@ def touch(thread_id, active=False, **fields):
             # Using the conversation is what resets the cache clock, so it also
             # clears the fact that we warned about it. Without this the notice
             # fires once per conversation forever instead of once per idle
-            # period, and a thread he keeps answering goes quiet after one.
+            # period, and a thread they keep answering goes quiet after one.
             row.pop('warned_at', None)
         row.update(fields)
     return row
@@ -529,7 +529,7 @@ def _user_rows(thread_id):
                 if isinstance(content, list) and any(
                         isinstance(b, dict) and b.get('type') == 'tool_result'
                         for b in content):
-                    continue           # a tool answering, not him
+                    continue           # a tool answering, not them
                 n += 1
     except OSError:
         return 0                       # no transcript yet: a new conversation
@@ -658,26 +658,26 @@ def note_delivery(thread_id, text):
     misrouting every later turn. (It did: HISTORY.md, 2026-09-06.)
 
     Something still has to know, because the terminal is the other input and it
-    produces no event anyone can observe: Abram typing into the pane is invisible
+    produces no event anyone can observe: the operator typing into the pane is invisible
     to the bot, to this process, and to systemd. So provenance is recorded at the
     one moment it is unambiguous -- delivery -- and the Stop hook answers "did
     this turn come from Discord?" by comparing the transcript's last user message
-    against this. A match means the bot put it there; anything else means he
+    against this. A match means the bot put it there; anything else means they
     typed it.
 
     **It is a set, not a slot.** A single `last_delivered` assumed one message
-    in flight at a time, and a conversation does not work that way: he sends a
+    in flight at a time, and a conversation does not work that way: they send a
     follow-up while a long turn is still running, delivery overwrites the slot,
     and when the *first* turn ends the hook compares its prompt against the
     *second* message's key, decides it was typed, and drops the reply. That is
     exactly what happened on 2026-09-08 -- an eight-minute bookkeeping pass
-    answered into a terminal nobody was reading while he waited on Discord.
+    answered into a terminal nobody was reading while they waited on Discord.
 
     So every delivery is remembered, not just the newest. The list is bounded
     two ways, because an unbounded provenance log is its own bug: `KEEP` entries,
     and `TTL` seconds. Both exist to stop a key outliving the conversation it
     describes -- a message from this morning still matching at midnight would
-    forward a reply to something he typed at the keyboard hours later.
+    forward a reply to something they typed at the keyboard hours later.
     """
     now = datetime.datetime.now()
     with mutate() as d:
@@ -737,7 +737,7 @@ def clear_delivery(thread_id):
     something it never saw.
 
     That record does not sit still. It is the newest entry, so the *next* turn
-    in that conversation -- very likely one he typed at the keyboard, having
+    in that conversation -- very likely one they typed at the keyboard, having
     given up waiting -- is measured against a message the session never
     received, and the hook's answer to "did this come from Discord?" is drawn
     from a delivery that did not happen. A lie about the past tense becomes a

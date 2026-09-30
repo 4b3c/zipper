@@ -1,6 +1,6 @@
 # The engine — operational reference
 
-    cd /opt/zipper
+    cd <your checkout>
     python3 -m zipper --help
 
 `ZIPPER_VAULT` comes from `.env` (see below), so the engine finds the notes from anywhere.

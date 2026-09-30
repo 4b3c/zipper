@@ -20,19 +20,19 @@ PROMPT = """This is a scheduled bookkeeping pass, started by a timer, with nobod
 `zipper fetch` has just run. The brief has %(events)d open event(s), %(notes)d \
 uncommitted note(s) and %(flags)d flag(s).
 
-Do step 2 of a pass as CLAUDE.md §2 describes: read Meta/Queue.md against the vault, work \
-each row into the notes it affects, then `python3 -m zipper lint`, `status`, and \
-`python3 -m zipper commit "<what changed>"` from /opt/zipper. Do not pass --force: if commit \
-refuses because another conversation is live, leave the tree uncommitted and say so.
+Do step 2 of a pass as the vault's CLAUDE.md describes: read Meta/Queue.md against the \
+vault, work each row into the notes it affects, then `python3 -m zipper lint`, `status`, and \
+`python3 -m zipper commit "<what changed>"`. Do not pass --force: if commit refuses because \
+another conversation is live, leave the tree uncommitted and say so.
 
-Some things are his to decide, not yours (CLAUDE.md §8): a status that is a judgment about \
-his life, a flag you can't resolve from the data, an event debrief, anything you would ask \
-him about. Don't guess at those; list them.
+Some things are the operator's to decide, not yours: a status that is a judgment about \
+their life, a flag you can't resolve from the data, an event debrief, anything you would \
+ask them about. Don't guess at those; list them.
 
-Your final message is what he may receive on Discord. Its first line must be exactly \
-`NOTIFY: yes` if anything needs him, or `NOTIFY: no` if the pass was routine. After that \
-line, write the message: what needs him first, then one or two lines on what the pass did. \
-Keep it short. Do not call `discord send`.
+Your final message is what the operator may receive on Discord. Its first line must be \
+exactly `NOTIFY: yes` if anything needs them, or `NOTIFY: no` if the pass was routine. \
+After that line, write the message: what needs them first, then one or two lines on what \
+the pass did. Keep it short. Do not call `discord send`.
 """
 
 
@@ -70,7 +70,7 @@ def _run_claude(prompt, sid, timeout):
 
 def parse(result):
     """(notify, message) from the pass's final message. Anything unparseable notifies:
-    a pass that went wrong is exactly what he should hear about."""
+    a pass that went wrong is exactly what they should hear about."""
     lines = result.strip().split('\n')
     head = lines[0].strip().lower() if lines else ''
     body = '\n'.join(lines[1:]).strip()

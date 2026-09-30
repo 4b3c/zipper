@@ -6,8 +6,8 @@
  * whatever the gradebook has an ungraded column for, so it carries closed
  * assignments, things submitted elsewhere, and ungraded participation credit,
  * while the work that actually matters this week sits below a fold with no
- * ordering worth the name. The list Zipper already computes is the one he
- * reads every morning; this puts it where he is when the question comes up.
+ * ordering worth the name. The list Zipper already computes is the one they
+ * reads every morning; this puts it where they are when the question comes up.
  *
  * What this file is not
  * ---------------------
@@ -49,7 +49,7 @@
    *
    * A collector that fails quietly is correct -- nobody is watching Canvas for
    * evidence that a background read happened, and the data going stale is the
-   * signal. A *panel* that fails quietly is not: he is looking straight at the
+   * signal. A *panel* that fails quietly is not: they are looking straight at the
    * place it should be, and "nothing there" has half a dozen causes that look
    * identical from the sidebar. Every decision this file makes says so.
    */
@@ -92,11 +92,11 @@
     }
   }
 
-  /* Dates the way he would say them.
+  /* Dates the way they would say them.
    *
-   * "2026-09-18" is a fact about a database; "Thursday" is a fact about his week.
+   * "2026-09-18" is a fact about a database; "Thursday" is a fact about their week.
    * Overdue counts up rather than down because how far past is the part that
-   * changes what he does about it.
+   * changes what they do about it.
    */
   function whenText(due) {
     if (!due) return '';
@@ -118,7 +118,7 @@
   * { box-sizing: border-box; font-family: LatoWeb, Lato, system-ui, sans-serif; }
 
   /* The panel sits at the very top of #right-side, which starts level with the
-     ASU utility nav -- so with no padding the heading collides with it and the
+     school's utility nav -- so with no padding the heading collides with it and the
      whole thing reads as cramped. This is the breathing room Canvas' own
      sidebar gets from its widget margins and ours had to ask for. */
   .wrap { padding: 1.5rem 0 1.25rem; color: #2d3b45; }
@@ -128,7 +128,7 @@
   h2 { font-size: 1.05rem; font-weight: 700; margin: 0; letter-spacing: -.01em; }
   .span { font-size: .72rem; color: #6b7780; white-space: nowrap; }
 
-  /* How much of the week is behind him, which is the one number the list
+  /* How much of the week is behind them, which is the one number the list
      itself cannot show -- a list of what is left says nothing about what is
      done. */
   .prog { margin-bottom: 1rem; }
@@ -187,7 +187,7 @@
   /* Canvas' list is hidden only once ours has something to show.
    *
    * If Zipper is unreachable -- off the tailnet, service down -- the right
-   * outcome is the page he already had, not an empty box where his work used to
+   * outcome is the page they already had, not an empty box where their work used to
    * be. So this is called from the success path and nowhere else, and the panel
    * says what went wrong in the space it already occupies.
    */
@@ -230,7 +230,7 @@
       if (text.startsWith('while(1);')) text = text.slice(9);
       const out = {};
       for (const c of JSON.parse(text)) {
-        // A student enrollment specifically: he is an observer or TA nowhere,
+        // A student enrollment specifically: they are an observer or TA nowhere,
         // but `enrollments[0]` would be a guess and this is not.
         const e = (c.enrollments || []).find((x) => x.type === 'student');
         if (e) out[String(c.id)] = e.computed_current_score;
@@ -296,7 +296,7 @@
         li.classList.toggle('done', box.checked);
       }
       box.disabled = false;
-      refresh(true);   // he just changed it; the cache is stale by definition
+      refresh(true);   // they just changed it; the cache is stale by definition
     });
 
     const body = document.createElement('div');
@@ -349,8 +349,8 @@
     return f(week.monday) + ' – ' + f(week.sunday);
   }
 
-/* Which tab is showing, kept outside `draw` so a refresh does not throw him
- * back to To Do while he is reading Done.
+/* Which tab is showing, kept outside `draw` so a refresh does not throw them
+ * back to To Do while they are reading Done.
  */
   let tab = 'todo';
 
@@ -359,7 +359,7 @@
    * `week_worklist` orders by day and sinks finished work *within* a day, so a
    * Monday assignment handed in on Monday still sits above an open one due
    * Sunday. In a real week that meant ten struck-through Sprint 0 rows above
-   * the two things he actually had to do -- the panel was technically correct
+   * the two things they actually had to do -- the panel was technically correct
    * and useless. Splitting them means the default view is only what is left,
    * and the finished work is one click away rather than in the way.
    */

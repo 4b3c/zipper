@@ -111,7 +111,7 @@ class Handler(BaseHTTPRequestHandler):
             # none -- and copies what you highlight into a *tmux* buffer, saying
             # "copied N chars to tmux buffer". That text lives on the box. This
             # hands the newest one to the page so it can put it on the operator's
-            # actual clipboard, which is the thing he asked for.
+            # actual clipboard, which is the thing they asked for.
             q = urllib.parse.parse_qs(self.path.partition('?')[2])
             seen = (q.get('seen') or [''])[0]
             self._send(200, json.dumps(newest_buffer(seen)), 'application/json')
@@ -130,9 +130,9 @@ class Handler(BaseHTTPRequestHandler):
             st['clients'] = SRV['clients']
             self._send(200, json.dumps(st), 'application/json')
         elif self.path.split('?')[0] == '/oauth/google/callback':
-            # Where Google sends him back. This is the only unauthenticated
+            # Where Google sends them back. This is the only unauthenticated
             # path that writes a credential, so it does exactly one thing with
-            # exactly one input and says so in plain text -- he is looking at
+            # exactly one input and says so in plain text -- they are looking at
             # this page in a browser, not at a JSON body.
             q = urllib.parse.parse_qs(self.path.split('?', 1)[-1])
             code = (q.get('code') or [''])[0]
@@ -152,7 +152,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path.split('?')[0] == '/api/hours':
             # What the sheet is missing. The extension asks on page load and
             # writes these rows; it never decides what an hour is. Times are
-            # already rendered in his convention (24h only across noon), so
+            # already rendered in their convention (24h only across noon), so
             # the browser copies cells and does no arithmetic.
             self._send(200, json.dumps({'pending': hours.to_write(),
                                         'sheet_id': hours.SHEET_ID,
@@ -165,7 +165,7 @@ class Handler(BaseHTTPRequestHandler):
             # selection is made here and not in the browser for the same reason
             # the ordering is -- two surfaces that decide for themselves what
             # counts as this week will disagree, and the sidebar is the one
-            # place he would not think to doubt it.
+            # place they would not think to doubt it.
             # Log the caller for the same reason `/ext/` does: `tailscale serve`
             # makes every request arrive from 127.0.0.1, so without this a rate
             # measured here cannot be attributed to a machine -- and "is the
@@ -476,7 +476,7 @@ def conversation_reaper():
 
     The message is the point, not the kill: an idle instance costs nothing, but
     the next message to a cold one is re-read from scratch at full price. The
-    operator asked to know that before he types, not after -- which is why the
+    operator asked to know that before they type, not after -- which is why the
     notice goes out at `IDLE_NOTICE`, while answering is still cheap, and the
     close follows at `IDLE_EXPIRY`. `reap` returns only what it closed; the
     warnings announce themselves in the thread.
@@ -489,7 +489,7 @@ def conversation_reaper():
             for tid in conversations.reap(notify=notify):
                 # Status, not an event. A conversation going idle is the
                 # machinery talking about itself -- it happened to Zipper, not
-                # to Abram's work, and it has no system, no action and nothing
+                # to the operator's work, and it has no system, no action and nothing
                 # to bookkeep against. It reached the queue as a transient row
                 # for a while, which meant the one channel that is supposed to
                 # be "things needing a decision" carried housekeeping too.

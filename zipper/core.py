@@ -205,7 +205,7 @@ def _days_since(iso):
 
 def _utc_local(ts):
     """GitHub returns UTC ('...Z'); the vault dates everything in local time.
-    Without this a 20:28 push in Phoenix reads as the next day."""
+    Without this a 20:28 push at UTC-7 reads as the next day."""
     if not ts:
         return ''
     try:
@@ -278,7 +278,7 @@ def defenced(lines):
     """`lines` with everything inside a ``` fence blanked out.
 
     **A checkbox in a code block is an example, not a task.** Documenting the
-    task format in `Tasks/Main.md` with a fenced example put "Buy a Pantry
+    task format in `Tasks/Main.md` with a fenced example put "Buy a My App
     subscription on a real device" on the dashboard twice on 2026-09-18, and into
     the ledger: the sample line is a perfectly well-formed task line, and nothing
     was reading the fence. Same shape as the rule about checkboxes in `Events/`
