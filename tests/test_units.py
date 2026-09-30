@@ -345,7 +345,7 @@ class Setup(unittest.TestCase):
         left = setup.remaining(g)
         for name in plugins.manifests():
             self.assertIn(name, left)
-        self.assertEqual(left[:3], ['about', 'discord', 'claude'])
+        self.assertEqual(left[:4], ['discord', 'about', 'notes', 'claude'])
         self.assertEqual(left[-2:], ['start', 'finish'])
         self.assertNotIn('{{', g)
 
@@ -376,6 +376,28 @@ class Setup(unittest.TestCase):
         self.assertTrue(cfg['plugins']['backup']['enabled'])
         with self.assertRaises(RuntimeError):
             setup.init_home(home)
+
+    def test_the_guide_asks_about_the_notes_and_names_the_plugins_apart(self):
+        home = os.path.join(TMP, 'home-guide')
+        setup.init_home(home, owner='Sam', zid='zipper-7')
+        with open(os.path.join(home, 'vault/CLAUDE.md'), encoding='utf-8') as fh:
+            text = fh.read()
+        self.assertEqual(setup.remaining(text)[:4], ['discord', 'about', 'notes', 'claude'])
+        self.assertIn('Two things are called "plugins"', text)
+        with open(os.path.join(home, 'vault/settings.json'), encoding='utf-8') as fh:
+            self.assertTrue(json.load(fh).get('timezone'))
+
+    def test_starter_never_overwrites(self):
+        vault = os.path.join(TMP, 'starter-vault')
+        os.makedirs(os.path.join(vault, 'Tasks'))
+        with open(os.path.join(vault, 'Tasks', 'Main.md'), 'w', encoding='utf-8') as fh:
+            fh.write('mine\n')
+        added = setup.add_starter(vault)
+        self.assertIn('Projects/', added)
+        self.assertNotIn(os.path.join('Tasks', 'Main.md'), added)
+        with open(os.path.join(vault, 'Tasks', 'Main.md'), encoding='utf-8') as fh:
+            self.assertEqual(fh.read(), 'mine\n')
+        self.assertEqual(setup.add_starter(vault), [])
 
     def test_compose_carries_the_hosts_timezone(self):
         home = os.path.join(TMP, 'home-tz')

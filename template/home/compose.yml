@@ -3,6 +3,11 @@
 #   vault/    the notes, settings.json and the dashboard's cards -- a git repository
 #   config/   .env: secrets only, never in the vault
 #   backup/   the vault's second copy, pushed on every commit (backup plugin)
+#   zipper/   its own checkout of the code, updated by `zipper update`
+#   home/     its Claude login and transcripts
+#
+# Everything this zipper is lives in this folder: stop it (docker compose down) and
+# `rm -r` the folder, and nothing of it is left.
 services:
   zipper:
     build:
@@ -19,12 +24,8 @@ services:
       - ./config:/zipper/config
       - ./vault:/zipper/vault
       - ./backup:/zipper/backup
-      - code:/zipper/code          # its own checkout, updated by `zipper update`
-      - home:/zipper/home          # its Claude login and transcripts
+      - ./zipper:/zipper/code
+      - ./home:/zipper/home
     # The dashboard (plugin), on this machine only. To reach it from elsewhere, publish
     # it on a private address (a tailnet IP), never 0.0.0.0.
     ports: ["127.0.0.1:8899:8899"]
-
-volumes:
-  code: {}
-  home: {}

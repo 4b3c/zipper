@@ -190,7 +190,7 @@ def _backup_default():
 SETUP_DIR = os.path.join(ROOT, 'template', 'setup')
 HOME_TEMPLATE = os.path.join(ROOT, 'template', 'home')
 # The guide's order. Plugins not named here follow, alphabetically.
-FIRST = ('about', 'discord', 'claude')
+FIRST = ('discord', 'about', 'notes', 'claude')
 PLUGIN_ORDER = ('dashboard', 'backup', 'github', 'calendar', 'canvas', 'hours', 'passes',
                 'digest', 'upstream', 'peers', 'host')
 LAST = ('start', 'finish')
@@ -219,6 +219,31 @@ def guide(subs):
     for n in LAST:
         out += _block(n, read(os.path.join(SETUP_DIR, n + '.md')))
     return out + GUIDE_CLOSE + '\n\n'
+
+
+def add_starter(vault):
+    """The suggested layout, into an existing vault: its folders and files, skipping
+    anything already there. Never overwrites a note. Returns what it added."""
+    added = []
+    for d in STARTER_DIRS:
+        p = os.path.join(vault, d)
+        if not os.path.exists(p):
+            os.makedirs(p)
+            added.append(d + '/')
+    for base, _dirs, files in os.walk(STARTER):
+        for f in files:
+            rel = os.path.relpath(os.path.join(base, f), STARTER)
+            dst = os.path.join(vault, rel)
+            if os.path.exists(dst):
+                continue
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            with open(os.path.join(base, f), encoding='utf-8') as fh:
+                text = fh.read()
+            with open(dst, 'w', encoding='utf-8') as fh:
+                fh.write(text.replace('{{OWNER}}', settings.get('owner') or 'the operator')
+                             .replace('{{ID}}', settings.zipper_id()))
+            added.append(rel)
+    return added
 
 
 def remaining(text):
@@ -293,6 +318,7 @@ def init_home(home, owner='', zid='zipper-0', starter=False):
                record_backup=False, settings_json={
                    'id': zid, 'owner': owner,
                    'code': {'repo': '4b3c/Zipper', 'branch': 'main'},
+                   'timezone': host_timezone(),
                    'plugins': {'backup': {'enabled': True}}})
     return home
 
@@ -335,6 +361,10 @@ def cmd_setup(a):
         print('Stop hook -> %s' % install_hook())
         return 0
     from . import core
+    if action == 'starter':
+        added = add_starter(core.VAULT)
+        print('added %s' % (', '.join(added) if added else 'nothing -- it was all there'))
+        return 0
     p = os.path.join(core.VAULT, 'CLAUDE.md')
     with open(p, encoding='utf-8') as fh:
         text = fh.read()
