@@ -196,7 +196,8 @@ zipper update                     # take merged changes: check, restart, or roll
 change against its purpose and ends `VERDICT: APPROVE` or `REJECT`. Approved: CI passes, it
 is approved and merged with the operator's `GITHUB_TOKEN` -- a real review, so the ruleset
 on `main` is enforced as for anyone -- and `zipper update`
-restarts onto it -- rolling back if it does not come up. Anything else comes back to the
+restarts onto it. If it does not come up, this zipper rolls back and main is reverted at once
+(a PR merged without a tester: it restores the tree that was running). Anything else comes back to the
 conversation that asked, as its next message, with the trace. A change to `.github/` always goes to the operator. **End the turn after
 `review`**: the restart waits for it. Three rejections of one branch means ask the operator.
 

@@ -45,6 +45,38 @@ class Review(unittest.TestCase):
         self.assertEqual(review.parse_tester(out, 'warning: something\n'), ('REJECT', reply))
         self.assertEqual(review.parse_tester('not json', 'boom')[0], None)
 
+    def _merge(self, update_lines, rc):
+        from unittest import mock
+        from zipper import code
+        def update(force, log):
+            for ln in update_lines:
+                log(ln)
+            return rc
+        ok = mock.Mock(returncode=0, stdout='', stderr='')
+        with mock.patch.object(review, 'DIR', TMP), \
+                mock.patch.object(review, 'approve_and_merge', return_value=None), \
+                mock.patch.object(review, '_wait_quiet'), \
+                mock.patch.object(review, 'revert', return_value='Reverted on main: #9.') as rv, \
+                mock.patch.object(code, '_fetch'), \
+                mock.patch.object(code, '_git', return_value=ok), \
+                mock.patch.object(code, 'update', side_effect=update):
+            job = dict(self.job, repo='o/r')
+            return review.merge_and_restart(job), rv.called, job
+
+    def test_a_merge_that_does_not_come_up_is_reverted(self):
+        (ok, stage, detail), reverted, job = self._merge(
+            ['update: ROLLED BACK to abc -- the dashboard did not come back'], 1)
+        self.assertFalse(ok)
+        self.assertEqual(stage, 'restart')
+        self.assertTrue(reverted)
+        self.assertIn('Reverted on main', detail)
+
+    def test_a_refused_update_is_not_reverted(self):
+        (ok, stage, _), reverted, _ = self._merge(['update: REFUSED -- local edits'], 1)
+        self.assertEqual((ok, stage, reverted), (False, 'restart', False))
+        (ok, stage, _), reverted, _ = self._merge(['update: now at abc'], 0)
+        self.assertEqual((ok, stage, reverted), (True, 'merged', False))
+
     def test_prompt_carries_the_purpose(self):
         p = review.tester_prompt(self.job)
         self.assertIn('The digest skipped Fridays.', p)
