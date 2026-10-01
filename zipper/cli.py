@@ -78,7 +78,12 @@ def main():
     # the extension reconciles the two, so nothing here submits anything.
     s = sub.add_parser('google', help='the Google account behind the timesheet')
     s.add_argument('--auth', action='store_true', help='print the consent link')
-    s.set_defaults(fn=_needs('hours', google.cmd_google))
+    s.set_defaults(fn=_needs(('hours', 'gmail'), google.cmd_google))
+
+    s = sub.add_parser('gmail', help='recent mail the queue saw, or read one message')
+    s.add_argument('id', nargs='?', help='a message id from a queue row (#...)')
+    s.add_argument('--limit', type=int, default=15)
+    s.set_defaults(fn=_needs('gmail', _mod('plugins.gmail', 'cmd_gmail')))
 
     s = sub.add_parser('hours', help='the timesheet ledger')
     hs = s.add_subparsers(dest='action')
