@@ -33,10 +33,18 @@ SHEETS = 'https://sheets.googleapis.com/v4/spreadsheets'
 # `drive.file` would be narrower but only reaches files opened through its own
 # picker, which a headless box cannot show. So the narrowing that is actually
 # available is where the token lives, not what it can reach.
-SCOPE = 'https://www.googleapis.com/auth/spreadsheets'
+#
+# Mail is read-only on purpose. Email text reaches the unattended passes through
+# the queue, and a token that could send would let one message instruct the box
+# to forward others. Sending, when wanted, happens in a conversation.
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets',
+          'https://www.googleapis.com/auth/gmail.readonly']
 
-ENV = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                   '.env')
+# The file core reads, so the token lands where the next process looks. This
+# once built its own path beside the code, which stopped being where `.env`
+# lives once ZIPPER_ENV_FILE moved it into config/: the callback wrote a fresh
+# token that nothing read.
+ENV = core.ENV_FILE
 
 
 def _env_file():
@@ -77,7 +85,7 @@ def auth_url():
     q = {'client_id': _cfg('ZIPPER_GOOGLE_CLIENT_ID'),
          'redirect_uri': redirect_uri(),
          'response_type': 'code',
-         'scope': SCOPE,
+         'scope': ' '.join(SCOPES),
          'access_type': 'offline',
          'prompt': 'consent',
          'include_granted_scopes': 'true'}
