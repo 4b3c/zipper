@@ -38,6 +38,9 @@ from bot.client import client, resolve_thread
 from zipper import core, turnstatus
 
 EVERY = 60
+# A status is posted a moment before its turn takes the lock, so a tick landing in
+# that gap would call a turn that has not started yet dead. Young ones wait a round.
+GRACE = 30
 PATH = os.path.join(core.INBOX, 'discord-status.json')
 
 _lock = asyncio.Lock()
@@ -165,6 +168,8 @@ async def _answered_since(thread, message_id):
 async def tick():
     """One round over every status showing."""
     for k, row in list(_load().items()):
+        if time.time() - row.get('started', 0) < GRACE:
+            continue
         try:
             running, doing = await asyncio.to_thread(
                 turnstatus.activity, row['thread'], row['slot'])

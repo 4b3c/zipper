@@ -731,6 +731,7 @@ class StatusMessage(unittest.TestCase):
             return Thread()
         status.resolve_thread = resolve
         status._ensure_loop = lambda: None
+        status.GRACE = 0
         self.running = (True, 'running zipper lint')
         turnstatus.activity = lambda tid, slot: self.running
         type(status.client).user = property(lambda c: test.me)
@@ -787,6 +788,15 @@ class StatusMessage(unittest.TestCase):
         self.assertIn('🧪 Tester on PR #7', self.log[-1][1])
         self.run_(s.stop(5, 'turn'))
         self.assertEqual(list(s._load()), ['5:review'])
+
+    def test_a_new_status_gets_a_grace_round(self):
+        s = self.status
+        s.GRACE = 30
+        self.run_(s.start(5, 'turn'))
+        self.running = (False, '')
+        self.run_(s.tick())
+        self.assertEqual([e[0] for e in self.log], ['send'])     # untouched
+        self.assertIn('5:turn', s._load())
 
     def test_doing_reads_the_last_tool_call(self):
         ts = self.turnstatus
