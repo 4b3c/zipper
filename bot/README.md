@@ -7,7 +7,7 @@ connection and no conversation state.
 bot/
 ├── discord_bot.py   # entry point
 ├── __init__.py      # main(): aiohttp server + Discord client
-├── client.py        # the gateway: on_message, post_to_zipper, resolve_thread
+├── client.py        # the gateway: on_message, post_to_zipper, resolve_thread, status line
 └── server.py        # HTTP: /send /history /edit /react /inject /typing /thread /threadinfo /threadrename
 ```
 
@@ -25,6 +25,13 @@ an `attached file saved here: <path>` line to the message (so a caption-less pho
 a message). A failed download adds a line saying so, so the session can ask for it again.
 Only the last 20 messages' files are kept. **`PrivateTmp` must stay off** on this service
 and `zipper-web`, or the path points at nothing.
+
+## Status line
+
+Every 30 seconds the bot sets its Discord status from `zipper.presence`: the title of the
+newest conversation with a turn running, plus a count of the rest (*"Pantry pricing (+2)"*),
+or *"Waiting"* when nothing is. Busy is read the same way the dashboard and `commit` read it
+(turn locks and pane status lines), and Discord is only told when the text changes.
 
 ## Service
 

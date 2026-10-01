@@ -19,6 +19,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from zipper import plugins, settings, supervise, setup, runqueue   # noqa: E402
+from zipper import presence                                        # noqa: E402
 from plugins import backup, peers, upstream                        # noqa: E402
 from plugins.host import hostd                                     # noqa: E402
 
@@ -537,6 +538,36 @@ class QueueRows(unittest.TestCase):
         rows = upstream.events(before, after)
         self.assertEqual(len(rows), 1)
         self.assertIn('new', rows[0]['text'])
+
+
+class Presence(unittest.TestCase):
+    """The bot's status line: the newest busy conversation, plus a count."""
+
+    def text(self, busy):
+        real = presence.working
+        presence.working = lambda: busy
+        try:
+            return presence.text()
+        finally:
+            presence.working = real
+
+    def test_idle(self):
+        self.assertEqual(self.text([]), 'Waiting')
+
+    def test_one(self):
+        self.assertEqual(self.text([('1', 'Pantry pricing')]), 'Pantry pricing')
+
+    def test_several(self):
+        self.assertEqual(self.text([('1', 'Pantry pricing'), ('2', 'x'), ('3', 'y')]),
+                         'Pantry pricing (+2)')
+
+    def test_long_title_is_cut(self):
+        name = presence._name('none', {'title': 'see how it shows my activity, is there a way to set'})
+        self.assertLessEqual(len(name), presence.TITLE_MAX)
+        self.assertTrue(name.endswith('\u2026'))
+
+    def test_no_name(self):
+        self.assertEqual(presence._name('none', {}), 'a conversation')
 
 
 class CommandLine(unittest.TestCase):

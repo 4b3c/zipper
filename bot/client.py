@@ -10,6 +10,7 @@ from aiohttp import ClientTimeout
 import discord
 
 from utils.constants import ZIPPER_URL
+from zipper import presence
 
 DISCORD_CHANNEL_ID = None  # set by __init__.py at startup
 
@@ -309,10 +310,43 @@ async def resolve_thread(thread_id: int):
     return None
 
 
+# How often the status line is recomputed. Discord rate-limits presence
+# updates, and one is only sent when the text changes.
+PRESENCE_EVERY = 30
+_presence_task = None
+_presence_shown = None
+
+
+async def presence_loop():
+    """Keep the bot's status set to what Zipper is working on (zipper.presence).
+
+    The read shells out to tmux for panes, so it runs off the event loop. A
+    failed read or update is logged and retried next round; the status is
+    decoration and must never take the gateway down with it.
+    """
+    global _presence_shown
+    while True:
+        try:
+            text = await asyncio.get_running_loop().run_in_executor(None, presence.text)
+            if text != _presence_shown:
+                await client.change_presence(activity=discord.CustomActivity(name=text))
+                _presence_shown = text
+        except Exception as e:
+            print(f"[discord] presence update failed: {e}")
+        await asyncio.sleep(PRESENCE_EVERY)
+
+
 @client.event
 async def on_ready():
+    global _presence_task, _presence_shown
     print(f"[discord] logged in as {client.user}")
     print(f"[discord] listening in channel {DISCORD_CHANNEL_ID}")
+    # on_ready fires again after a fresh identify, which starts the bot with no
+    # status -- discord.py does not carry the last one over. Forget what was
+    # shown so the next round sends it again, and keep the one loop running.
+    _presence_shown = None
+    if _presence_task is None or _presence_task.done():
+        _presence_task = asyncio.create_task(presence_loop())
 
 
 @client.event
