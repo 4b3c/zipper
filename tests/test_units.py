@@ -39,6 +39,12 @@ class Review(unittest.TestCase):
         self.assertIsNone(review.verdict('looks fine to me'))
         self.assertIsNone(review.verdict('the VERDICT: APPROVE line goes last'))
 
+    def test_long_tester_reply_keeps_its_verdict(self):
+        reply = 'x' * 8000 + '\nVERDICT: REJECT'
+        out = json.dumps({'type': 'result', 'result': reply})
+        self.assertEqual(review.parse_tester(out, 'warning: something\n'), ('REJECT', reply))
+        self.assertEqual(review.parse_tester('not json', 'boom')[0], None)
+
     def test_prompt_carries_the_purpose(self):
         p = review.tester_prompt(self.job)
         self.assertIn('The digest skipped Fridays.', p)

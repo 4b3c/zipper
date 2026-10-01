@@ -177,11 +177,22 @@ def tester(job):
     env['ZIPPER_CONVERSATION'] = 'review-' + job['slug']
     argv = [convhead._claude(), '-p', '--output-format', 'json', '--permission-mode',
             os.environ.get('ZIPPER_PERMISSION_MODE', 'auto'), tester_prompt(job)]
-    rc, out = _run(argv, job['path'], TESTER_TIMEOUT, env=env)
+    # Stdout alone and whole: `_run` keeps a tail of stdout+stderr, which cuts
+    # the JSON open (a reply over a few KB) or prefixes it with a warning.
     try:
-        reply = json.loads(out[out.index('{'):]).get('result') or ''
+        r = subprocess.run(argv, cwd=job['path'], env=env, capture_output=True, text=True,
+                           timeout=TESTER_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return None, 'the tester ran past %d minutes' % (TESTER_TIMEOUT // 60)
+    return parse_tester(r.stdout, r.stderr)
+
+
+def parse_tester(stdout, stderr=''):
+    """(verdict, reply) from `claude -p --output-format json` output."""
+    try:
+        reply = json.loads(stdout).get('result') or ''
     except ValueError:
-        reply = out
+        reply = (stdout + '\n' + stderr)[-4000:]
     return verdict(reply), reply
 
 
