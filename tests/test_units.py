@@ -754,7 +754,15 @@ class StatusMessage(unittest.TestCase):
         self.assertIn('running zipper lint', self.log[-1][2])
         self.run_(s.stop(5, 'turn'))
         self.assertEqual(self.log[-1][:2], ('edit', 1))         # stays, as a divider
-        self.assertTrue(self.log[-1][2].startswith('✅ Worked under a minute ('))
+        self.assertTrue(self.log[-1][2].startswith('✅ Took <1m ('))
+        self.assertEqual(s._load(), {})
+
+    def test_an_undelivered_message_leaves_no_status(self):
+        s = self.status
+        self.run_(s.start(5, 'turn'))
+        self.run_(s.stop(5, 'turn', s.UNDELIVERED))
+        self.assertEqual(self.log[-1][:2], ('delete', 1))       # nothing ran: no "✅ Took"
+        self.assertFalse(any('✅' in str(e) for e in self.log))
         self.assertEqual(s._load(), {})
 
     def test_follow_up_reuses_the_message(self):
@@ -780,7 +788,7 @@ class StatusMessage(unittest.TestCase):
         self.posted_after = [self.me]
         self.run_(s.tick())
         self.assertEqual(self.log[-1][0], 'edit')
-        self.assertIn('✅ Worked', self.log[-1][2])
+        self.assertIn('✅ Took', self.log[-1][2])
 
     def test_review_is_its_own_slot(self):
         s = self.status
@@ -809,7 +817,7 @@ class StatusMessage(unittest.TestCase):
         self.assertNotIn('5:turn', s._load())      # the slot is free at once
         self.run_(s.tick())                         # the bot is back: it closes now
         self.assertEqual(self.log[-1][:2], ('edit', 1))
-        self.assertIn('✅ Worked', self.log[-1][2])
+        self.assertIn('✅ Took', self.log[-1][2])
         self.assertEqual(s._load(), {})
 
     def test_a_new_turn_after_a_failed_close_gets_its_own_status(self):
@@ -828,7 +836,7 @@ class StatusMessage(unittest.TestCase):
         self.assertNotIn('follow-up', self.log[-1][1])
         self.run_(s.tick())                         # old one closed, new one kept
         closes = [e for e in self.log if e[:2] == ('edit', 1)]
-        self.assertTrue(closes and '✅ Worked' in closes[-1][2])
+        self.assertTrue(closes and '✅ Took' in closes[-1][2])
         self.assertEqual([k for k in s._load()], ['5:turn'])
 
     def test_an_unreachable_thread_is_dropped(self):

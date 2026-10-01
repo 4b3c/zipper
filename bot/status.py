@@ -8,11 +8,11 @@ happening. So a message that Zipper received lands in the thread at once --
 
 -- is edited every minute while the work goes on --
 
-    ⏳ Still working · 3 min · 12:44 · running zipper lint
+    ⏳ Still working · 3m · 12:44 · running zipper lint
 
 -- and when the reply arrives it becomes its closing line and stays:
 
-    ✅ Worked 4 min (12:41 → 12:45)
+    ✅ Took 4m (12:41 → 12:45)
 
 It stays above the reply as a divider, so a thread reads working, answer, testing,
 verdict. The reply is still its own new message, never edited into the status:
@@ -79,8 +79,8 @@ def _clock(ts=None):
 def _mins(started):
     m = int((time.time() - started) // 60)
     if m < 1:
-        return 'under a minute'
-    return '%d min' % m if m < 60 else '%dh %02dm' % (m // 60, m % 60)
+        return '<1m'
+    return '%dm' % m if m < 60 else '%dh %02dm' % (m // 60, m % 60)
 
 
 def opening(slot, label):
@@ -109,7 +109,13 @@ def finished(row, outcome=''):
         if outcome:
             parts.append(outcome)
         return ' · '.join(parts + [span])
-    return '✅ Worked %s' % span
+    return '✅ Took %s' % span
+
+
+# The outcome `/discord` passes when a message never reached the conversation.
+# Nothing ran, so the status is deleted rather than closed: a "✅ Took" line over
+# the bot's failure notice would claim work that never happened.
+UNDELIVERED = 'undelivered'
 
 
 def stopped(row):
@@ -158,8 +164,10 @@ async def start(thread_id, slot='turn', label=''):
 
 
 async def stop(thread_id, slot='turn', outcome=''):
-    """The work is answered: the status becomes its closing line ("✅ Worked
-    4 min (13:59 → 14:03)") and stays, as the divider above the reply.
+    """The work is answered: the status becomes its closing line ("✅ Took 4m
+    (13:59 → 14:03)") and stays, as the divider above the reply. A message
+    that was never delivered (`UNDELIVERED`) has nothing to close, so its
+    status is deleted instead.
 
     An edit that fails keeps the row, marked `done` with the text it should
     end on, and the next tick tries again. Dropping the row first would leave
@@ -173,7 +181,7 @@ async def stop(thread_id, slot='turn', outcome=''):
         row = _load().get(k)
     if not row:
         return {'ok': True, 'had': False}
-    final = finished(row, outcome)
+    final = None if outcome == UNDELIVERED else finished(row, outcome)
     settled = await _settle(row, final)
     async with _lock:
         state = _load()
@@ -187,7 +195,8 @@ async def stop(thread_id, slot='turn', outcome=''):
 
 
 async def _settle(row, text):
-    """Edit a status to its closing line. True once nothing is left to do.
+    """Edit a status to its closing line, or delete it when `text` is None.
+    True once nothing is left to do.
 
     A message already gone, or a thread that cannot be resolved, counts as
     settled, as it does in `tick`: retrying it every round would stall every
@@ -197,7 +206,10 @@ async def _settle(row, text):
         _, msg = await _message(row)
         if msg is None:
             return True
-        await msg.edit(content=text)
+        if text is None:
+            await msg.delete()
+        else:
+            await msg.edit(content=text)
     except discord.NotFound:
         pass
     except Exception as e:
@@ -218,7 +230,7 @@ async def tick():
     """One round over every status showing."""
     for k, row in list(_load().items()):
         if row.get('done'):
-            if await _settle(row, row.get('final') or finished(row)):
+            if await _settle(row, row['final'] if 'final' in row else finished(row)):
                 async with _lock:
                     state = _load()
                     if state.get(k, {}).get('message_id') == row['message_id']:

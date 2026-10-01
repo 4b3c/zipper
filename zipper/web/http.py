@@ -481,7 +481,7 @@ class Handler(BaseHTTPRequestHandler):
                 # Failed -- but a follow-up can fail while the turn before it
                 # is still working, and that turn keeps its indicator and status.
                 chat.discord_typing(False, tid)
-                chat.discord_status(False, tid)
+                chat.discord_status(False, tid, label='undelivered')
             self._send(200 if res.get('ok') else 503, json.dumps(res),
                        'application/json')
         elif (self.path.startswith('/api/inputs/')

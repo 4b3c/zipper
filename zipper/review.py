@@ -337,7 +337,7 @@ def _announce(job):
     The asking turn ends as soon as it submits, so the thread goes quiet while
     this runs, and a status message says it has not (bot/status.py). It waits
     for that turn's reply first: posted at once, it lands between the turn's
-    "✅ Worked" and its reply, and the thread no longer reads working / answer /
+    "✅ Took" line and its reply, and the thread no longer reads working / answer /
     testing / verdict. "Not running" means the reply is out, because the Stop
     hook sends it from inside the turn's process.
     """
