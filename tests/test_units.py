@@ -77,6 +77,37 @@ class Review(unittest.TestCase):
         (ok, stage, _), reverted, _ = self._merge(['update: now at abc'], 0)
         self.assertEqual((ok, stage, reverted), (True, 'merged', False))
 
+    def test_checks_not_registered_yet_are_waited_for(self):
+        from unittest import mock
+        calls = []
+        def run(argv, cwd, timeout, env=None):
+            calls.append(argv[2])
+            if argv[2] == 'checks' and calls.count('checks') < 3:
+                return 1, "no checks reported on the 'x' branch"
+            return 0, ''
+        with mock.patch.object(review, '_run', side_effect=run), \
+                mock.patch.object(review.time, 'sleep'):
+            self.assertIsNone(review.approve_and_merge('9', 'o/r', 'ok'))
+        self.assertEqual(calls, ['checks', 'checks', 'checks', 'review', 'merge'])
+
+    def test_a_failing_check_is_not_retried(self):
+        from unittest import mock
+        with mock.patch.object(review, '_run', return_value=(1, 'check  fail  1m')), \
+                mock.patch.object(review.time, 'sleep') as sl:
+            self.assertEqual(review.approve_and_merge('9', 'o/r', 'ok')[0], 'ci')
+        sl.assert_not_called()
+
+    def test_revert_reports_a_network_error_instead_of_raising(self):
+        import urllib.error
+        from unittest import mock
+        from zipper import code
+        with mock.patch.object(review, '_run', return_value=(0, 'abc123\n')), \
+                mock.patch.object(code, 'start', return_value=('b', TMP)), \
+                mock.patch.object(code, '_git', return_value=mock.Mock(returncode=0)), \
+                mock.patch.object(code, 'propose', side_effect=urllib.error.URLError('down')):
+            out = review.revert(dict(self.job, repo='o/r'))
+        self.assertIn('main is still broken', out)
+
     def test_prompt_carries_the_purpose(self):
         p = review.tester_prompt(self.job)
         self.assertIn('The digest skipped Fridays.', p)

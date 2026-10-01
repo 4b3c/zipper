@@ -53,6 +53,7 @@ DIR = os.path.join(ROOT, 'data', 'review')
 MAX_ROUNDS = 3
 TESTER_TIMEOUT = 45 * 60
 CI_TIMEOUT = 25 * 60
+CI_REGISTER_WAIT = 5 * 60
 STALE_AFTER = 3 * 3600
 VERDICT_RE = re.compile(r'^\W*VERDICT:\s*(APPROVE|REJECT)\b', re.M)
 
@@ -243,7 +244,10 @@ def merge_and_restart(job):
         if rc and any('ROLLED BACK' in ln for ln in lines):
             # The new code did not run here, so main is broken for every
             # zipper. Put main back to the tree that was running.
-            job['revert'] = revert(job)
+            try:
+                job['revert'] = revert(job)
+            except Exception as e:      # the rollback lines must still reach the author
+                job['revert'] = 'The revert crashed -- main is still broken: %r' % e
             return False, 'restart', ('merged, but it did not come up, so this zipper rolled '
                                       'back to the previous version.\n%s\n\n%s'
                                       % ('\n'.join(lines), job['revert']))
@@ -258,8 +262,16 @@ def approve_and_merge(pr, repo, body):
     review and an ordinary merge, both with the operator's GITHUB_TOKEN. The App
     authored the PR, so the operator's account may approve it, and GitHub still
     enforces the review, the checks and up-to-date itself."""
-    rc, out = _run(['gh', 'pr', 'checks', pr, '-R', repo, '--required', '--watch',
-                    '--fail-fast', '--interval', '20'], ROOT, CI_TIMEOUT)
+    # A PR opened a moment ago has no checks yet, and `--watch` does not wait
+    # for them to appear: it fails at once with "no checks reported". Not yet
+    # is not failed, so ask again until they register.
+    end = time.time() + CI_REGISTER_WAIT
+    while True:
+        rc, out = _run(['gh', 'pr', 'checks', pr, '-R', repo, '--required', '--watch',
+                        '--fail-fast', '--interval', '20'], ROOT, CI_TIMEOUT)
+        if not (rc and 'checks reported' in out.lower() and time.time() < end):
+            break
+        time.sleep(10)
     if rc:
         return 'ci', 'the required checks did not pass:\n' + out
     rc, out = _run(['gh', 'pr', 'review', pr, '-R', repo, '--approve', '--body', body], ROOT, 120)
@@ -292,22 +304,25 @@ def revert(job):
                                  'up on it and rolled back. This restores the tree that was '
                                  'running.' % (pr, sha[:8], settings.zipper_id()),
                                  request_review=False)
-    except RuntimeError as e:
-        return 'Could not open the revert -- main is still broken: %s' % e
+    except Exception as e:          # git, GitHub or the network: report, never raise
+        return 'Could not open the revert -- main is still broken: %r' % e
     num = url.rstrip('/').rsplit('/', 1)[-1]
     problem = approve_and_merge(num, repo, 'Reverts #%s, which did not come up on %s.'
                                 % (pr, settings.zipper_id()))
     if problem:
         return 'Opened %s but could not merge it (%s) -- main is still broken:\n%s' % (
             url, problem[0], problem[1])
-    code._git('worktree', 'remove', '--force', path)
-    code._git('branch', '-D', branch)
-    # Main now has the tree this zipper is already running: move onto it
-    # without a restart, so `update` has nothing to do.
-    code._fetch()
-    base = 'origin/' + code._branch()
-    if not code._git('diff', '--quiet', 'HEAD', base).returncode:
-        code._git('merge', '--ff-only', '-q', base)
+    try:
+        code._git('worktree', 'remove', '--force', path)
+        code._git('branch', '-D', branch)
+        # Main now has the tree this zipper is already running: move onto it
+        # without a restart, so `update` has nothing to do.
+        code._fetch()
+        base = 'origin/' + code._branch()
+        if not code._git('diff', '--quiet', 'HEAD', base).returncode:
+            code._git('merge', '--ff-only', '-q', base)
+    except Exception as e:
+        return 'Reverted on main: %s (tidying up after failed: %r).' % (url, e)
     return 'Reverted on main: %s.' % url
 
 
@@ -359,7 +374,7 @@ def message(job):
     if job.get('detail'):
         parts += ['', '```', job['detail'][-3000:].strip(), '```']
     if job.get('tester'):
-        parts += ['', 'Tester:', job['tester'][-3000:].strip()]
+        parts += ['', 'Tester:', job['tester'][-12000:].strip()]
     if job['state'] == 'merged':
         parts += ['', 'Check it where the operator would see it, and tell them. Then '
                   '`git -C %s worktree remove %s`.' % (ROOT, job['path'])]
