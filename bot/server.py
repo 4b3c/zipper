@@ -315,7 +315,7 @@ async def handle_status(request: web.Request) -> web.Response:
                 return web.json_response({"error": "discord client not ready"}, status=503)
             res = await status.start(int(thread_id), slot, body.get("label") or "")
         else:
-            res = await status.stop(int(thread_id), slot)
+            res = await status.stop(int(thread_id), slot, body.get("label") or "")
         return web.json_response(res)
     except Exception as e:
         print(f"[discord] status error: {e}")
