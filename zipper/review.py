@@ -297,9 +297,9 @@ def review(path):
 # ---------------------------------------------------------------- reporting
 
 def message(job):
-    head = '[review] %s: %s (PR #%d, round %d)' % (
+    head = '[review] %s: %s (PR #%d, round %d of %d)' % (
         'APPROVED, merged and live' if job['state'] == 'merged' else 'REJECTED at ' + job['stage'],
-        job['title'], job['pr'], job['round'])
+        job['title'], job['pr'], job['round'], MAX_ROUNDS - 1)
     parts = [head]
     if job.get('detail'):
         parts += ['', '```', job['detail'][-3000:].strip(), '```']
