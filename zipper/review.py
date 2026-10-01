@@ -32,7 +32,7 @@ rejections of one branch the message says to stop and ask the operator.
 **The tester must never touch the live system** -- its prompt says so, and it
 runs in the worktree with no Discord thread, so its reply is never forwarded.
 """
-import fcntl, glob, json, os, re, subprocess, sys, time, urllib.request
+import fcntl, glob, json, os, re, subprocess, sys, threading, time, urllib.request
 
 from . import code, core, settings
 
@@ -326,16 +326,50 @@ def revert(job):
     return 'Reverted on main: %s.' % url
 
 
+# Set by `report` so an announcement still waiting does not post after the verdict.
+_reported = threading.Event()
+_announcer = None
+
+
+def _announce(job):
+    """Post the review's status message once the asking turn has replied.
+
+    The asking turn ends as soon as it submits, so the thread goes quiet while
+    this runs, and a status message says it has not (bot/status.py). It waits
+    for that turn's reply first: posted at once, it lands between the turn's
+    "✅ Worked" and its reply, and the thread no longer reads working / answer /
+    testing / verdict. "Not running" means the reply is out, because the Stop
+    hook sends it from inside the turn's process.
+    """
+    global _announcer
+    tid = job.get('thread') or ''
+    if not tid:
+        return
+
+    def run():
+        from . import chat, turnstatus
+        end = time.time() + 600
+        while time.time() < end and not _reported.is_set():
+            try:
+                if not turnstatus.activity(tid)[0]:
+                    break
+            except Exception:
+                break
+            time.sleep(2)
+        if not _reported.is_set():
+            chat.discord_status(True, tid, 'review', 'Tester on PR #%d, round %d of %d'
+                                % (job['pr'], job['round'], MAX_ROUNDS))
+
+    _announcer = threading.Thread(target=run, name='review-announce', daemon=True)
+    _announcer.start()
+
+
 def review(path):
     with open(path, encoding='utf-8') as fh:
         job = json.load(fh)
     job.update(state='reviewing', sha=code._git('rev-parse', 'HEAD', cwd=job['path']).stdout.strip())
     _save(job)
-    from . import chat
-    # The asking turn ends as soon as it submits, so the thread goes quiet
-    # while this runs. A status message says it has not (bot/status.py).
-    chat.discord_status(True, job.get('thread'), 'review', 'Tester on PR #%d, round %d of %d'
-                        % (job['pr'], job['round'], MAX_ROUNDS))
+    _announce(job)
     ok, stage, detail, said = False, '', '', ''
     try:
         code._fetch()
@@ -396,8 +430,12 @@ def report(job):
     channel if there is none, or it cannot be reached."""
     from . import chat
     text, tid = message(job), job.get('thread') or ''
+    _reported.set()
+    if _announcer is not None:
+        _announcer.join(30)         # one mid-post finishes, so the close finds it
     if tid:
-        chat.discord_status(False, tid, 'review')
+        chat.discord_status(False, tid, 'review', 'approved, merged' if job['state'] == 'merged'
+                            else 'rejected at ' + job.get('stage', '?'))
     try:
         if tid and not tid.startswith('local-'):
             code.healthy(120)

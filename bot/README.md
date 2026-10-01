@@ -38,10 +38,11 @@ or *"Waiting"* when nothing is. Busy is read the same way the dashboard and `com
 
 While a turn runs, its thread shows one message, edited every minute:
 *"⏳ Still working · 3 min · 12:44 · running zipper lint"*. It is posted when `/discord`
-takes the message, and **deleted** by the Stop hook right after the reply goes out. It is
-deleted rather than edited into the reply because Discord notifies on new messages, never
-on edits. A review (`zipper code review`) gets its own message in a second slot
-(*"🧪 Tester on PR #26…"*), cleared just before the verdict is delivered.
+takes the message. Right after the reply goes out, the Stop hook turns it into its closing
+line, *"✅ Worked 4 min (12:41 → 12:45)"*, and it **stays** as the divider above the reply.
+The reply is its own new message, not an edit of the status, because Discord notifies on new
+messages and never on edits. A review (`zipper code review`) gets its own message in a second
+slot (*"🧪 Tester on PR #26…"*), closed with the outcome just before the verdict is delivered.
 
 Each minute `zipper.turnstatus` checks that the work is really running: the turn lock, or
 a headless `claude` whose environment names the thread, which survives a `zipper-web`
