@@ -324,9 +324,9 @@ def cmd_brief(a):
     print('  -> Meta/Queue.md  +  Inbox/queue.json')
     return 0
 
-SYSTEM_LABEL = {'github': 'GitHub', 'calendar': 'Calendar', 'canvas': 'Canvas',
+SYSTEM_LABEL = {'github': 'GitHub', 'calendar': 'Calendar', 'canvas': 'Canvas', 'gmail': 'Gmail',
                 'vault': 'Vault', 'zipper': 'Zipper', 'error': 'Errors', 'other': 'Other'}
-SYSTEM_ORDER = ('github', 'canvas', 'calendar', 'zipper', 'vault', 'error', 'other')
+SYSTEM_ORDER = ('github', 'canvas', 'calendar', 'gmail', 'zipper', 'vault', 'error', 'other')
 
 
 def _ev_line(e):

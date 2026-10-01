@@ -868,5 +868,61 @@ class StatusMessage(unittest.TestCase):
                         <= len('running ') + ts.DOING_MAX)
 
 
+class Gmail(unittest.TestCase):
+    """plugins/gmail: metadata into rows, a baseline first, bodies only on demand."""
+
+    def setUp(self):
+        from plugins import gmail
+        self.g = gmail
+        self.saved = gmail.STATE
+        gmail.STATE = os.path.join(TMP, 'gmail-%s.json' % self.id().rsplit('.', 1)[-1])
+
+    def tearDown(self):
+        self.g.STATE = self.saved
+
+    def msg(self, mid, frm='Jane Roe <jane@example.edu>', subj='Lab  meeting\nmoved',
+            labels=('INBOX', 'CATEGORY_PERSONAL'), ms=1790000000000):
+        return {'id': mid, 'threadId': 't' + mid, 'labelIds': list(labels), 'internalDate': str(ms),
+                'payload': {'headers': [{'name': 'From', 'value': frm},
+                                        {'name': 'To', 'value': 'Me <me@example.edu>'},
+                                        {'name': 'Subject', 'value': subj}]}}
+
+    def test_shape_and_row(self):
+        m = self.g.shape(self.msg('a1'))
+        self.assertEqual((m['from'], m['from_addr'], m['subject']),
+                         ('Jane Roe', 'jane@example.edu', 'Lab meeting moved'))
+        r = self.g.row('a1', m)
+        self.assertEqual((r['system'], r['action'], r['who']), ('gmail', 'add', 'Jane Roe'))
+        self.assertIn('"Lab meeting moved"', r['text'])
+        self.assertTrue(r['text'].endswith('#a1'))
+        self.assertNotIn('[personal]', r['text'])
+
+    def test_sent_and_category(self):
+        sent = self.g.row('b2', self.g.shape(self.msg('b2', labels=('SENT',))))
+        self.assertTrue(sent['text'].startswith('mail sent   to Me'))
+        promo = self.g.row('c3', self.g.shape(self.msg('c3', labels=('INBOX', 'CATEGORY_PROMOTIONS'))))
+        self.assertIn('[promotions]', promo['text'])
+
+    def test_first_pull_is_a_baseline(self):
+        self.assertIsNone(self.g.snapshot())
+        self.assertEqual(self.g.events(None, frozenset({'x'})), [])
+        state = {'messages': {'old': dict(self.g.shape(self.msg('old')), baseline=True),
+                              'new': dict(self.g.shape(self.msg('new', ms=1790000060000)),
+                                          baseline=False)}}
+        self.g._save(state)
+        rows = self.g.events(frozenset(), self.g.snapshot())
+        self.assertEqual([r['text'][-4:] for r in rows], ['#new'])
+
+    def test_body_text_prefers_plain_and_strips_html(self):
+        import base64
+        enc = lambda s: base64.urlsafe_b64encode(s.encode()).decode().rstrip('=')
+        both = {'parts': [{'mimeType': 'text/plain', 'body': {'data': enc('plain words')}},
+                          {'mimeType': 'text/html', 'body': {'data': enc('<b>rich</b>')}}]}
+        self.assertEqual(self.g._text(both), 'plain words')
+        rich = {'mimeType': 'text/html',
+                'body': {'data': enc('<style>x{}</style><p>Hi &amp; bye</p><br>next')}}
+        self.assertEqual(self.g._text(rich), 'Hi & bye\n\nnext')
+
+
 if __name__ == '__main__':
     unittest.main()

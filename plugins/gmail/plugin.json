@@ -1,0 +1,13 @@
+{
+  "title": "Gmail",
+  "about": "every email in and out, as queue rows: who, subject and a pointer, never the body",
+  "defaults": {
+    "poll_minutes": 15,
+    "query": "in:inbox OR in:sent"
+  },
+  "secrets": [],
+  "env": {
+    "ZIPPER_GMAIL_QUERY": "query"
+  },
+  "name": "gmail"
+}

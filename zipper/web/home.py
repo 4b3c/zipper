@@ -544,7 +544,7 @@ bindSparks(document);
 """
 
 
-SYSNAME = {'github': 'GitHub', 'calendar': 'Calendar', 'canvas': 'Canvas',
+SYSNAME = {'github': 'GitHub', 'calendar': 'Calendar', 'canvas': 'Canvas', 'gmail': 'Gmail',
            'vault': 'Vault'}
 
 
@@ -607,7 +607,7 @@ def queue_panel(fl):
     nopen = sum(len(g) for g in groups.values())
 
     out = []
-    for sysk in ('vault', 'github', 'canvas', 'calendar'):
+    for sysk in ('vault', 'github', 'canvas', 'calendar', 'gmail'):
         g = groups.pop(sysk, None)
         if g:
             out.append((sysk, g))

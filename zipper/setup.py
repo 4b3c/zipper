@@ -192,7 +192,7 @@ SETUP_DIR = os.path.join(ROOT, 'template', 'setup')
 HOME_TEMPLATE = os.path.join(ROOT, 'template', 'home')
 # The guide's order. Plugins not named here follow, alphabetically.
 FIRST = ('about', 'notes')
-PLUGIN_ORDER = ('discord', 'dashboard', 'backup', 'github', 'calendar', 'canvas', 'hours', 'passes',
+PLUGIN_ORDER = ('discord', 'dashboard', 'backup', 'github', 'calendar', 'canvas', 'hours', 'gmail', 'passes',
                 'digest', 'upstream', 'peers', 'host')
 LAST = ('finish',)
 GUIDE_OPEN, GUIDE_CLOSE = '<!-- setup -->', '<!-- /setup -->'
