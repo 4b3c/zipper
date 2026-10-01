@@ -16,7 +16,7 @@ from .. import core
 from .data import content_sig
 
 
-def live_sig(day=None):
+def live_sig(day=None, page=''):
     """Hash of everything the data cards draw.
 
     `content_sig` covers calendar, Canvas, open tasks and flags. Added here:
@@ -35,7 +35,7 @@ def live_sig(day=None):
     # Cards that are not built-in panels fingerprint themselves (their data, by
     # default), so a vault card's change reaches an open page like any other.
     from .cards import sig as cards_sig
-    h.update(cards_sig(day).encode())
+    h.update(cards_sig(day, page).encode())
     return h.hexdigest()[:12]
 
 
@@ -94,7 +94,9 @@ LIVE_JS = """
     if(busy||document.hidden||Date.now()-touched<4000) return;
     busy=true;
     try{
-      const st=await fetch('/api/state'+location.search,{cache:'no-store'}).then(r=>r.json());
+      // Which board this is travels as `path`: /p/<key> fingerprints its own cards.
+      const q=new URLSearchParams(location.search); q.set('path',location.pathname);
+      const st=await fetch('/api/state?'+q,{cache:'no-store'}).then(r=>r.json());
       if(st&&st.sig&&st.sig!==sig&&await refresh()) sig=st.sig;
     }catch(e){}finally{busy=false;}
   }

@@ -16,6 +16,15 @@ vault's settings.json:
                   "options": {"file": "Dashboard/setup.md"}}]}
     ]
 
+**Pages.** `plugins.dashboard.pages` adds more boards beside the front page, each at
+`/p/<key>` with its own rows, drawn by the same machinery:
+
+    "pages": [{"key": "money", "title": "money", "about": "cash against the bills",
+               "rows": [{"cards": ["vault:money"]}]}]
+
+The `dashboard:pages` card is the catalog: a link to each page, and to the saved-query
+pages under /views. A card id is unique across every page, so a button finds its card.
+
 A card entry is a string or an object: `card` (required), `id` (default: the card
 name; needed when one card is used twice), `title`, `width` (in a plain row),
 `options` (handed to the card), and for vault cards `backend` / `frontend` paths
@@ -62,6 +71,15 @@ class Ctx:
         self.vault = core.VAULT
 
 
+def _entry_id(entry):
+    """Built-ins keep their bare names; anything else is prefixed by its source,
+    so canvas:week and dashboard:week never share an id."""
+    if isinstance(entry, str):
+        entry = {'card': entry}
+    source, _, name = str(entry.get('card', '')).partition(':')
+    return entry.get('id') or (name if source == 'dashboard' else '%s-%s' % (source, name))
+
+
 class Card:
     def __init__(self, entry):
         if isinstance(entry, str):
@@ -69,10 +87,7 @@ class Card:
         self.entry = entry
         self.ref = entry['card']
         self.source, _, self.name = self.ref.partition(':')
-        # Built-ins keep their bare names; anything else is prefixed by its source,
-        # so canvas:week and dashboard:week never share an id.
-        self.id = entry.get('id') or (self.name if self.source == 'dashboard'
-                                      else '%s-%s' % (self.source, self.name))
+        self.id = _entry_id(entry)
         self.options = entry.get('options') or {}
         self.backend = None
         self.frontend = None        # callable(data, ctx, ui) or None
@@ -212,37 +227,80 @@ DEFAULT_ROWS = [
 ]
 
 
-def rows():
-    """[(style, width template or '', [Card])] from the settings file."""
+def pages():
+    """The extra boards: [{'key', 'title', 'about', 'rows'}] in settings order. A
+    page without a usable key is skipped, and so is a second page with the same key."""
+    out, keys = [], set()
+    for p in settings.get('plugins.dashboard.pages') or []:
+        key = str(p.get('key') or '').strip('/') if isinstance(p, dict) else ''
+        if not key or key in keys or '/' in key:
+            continue
+        keys.add(key)
+        out.append({'key': key, 'title': p.get('title') or key, 'about': p.get('about') or '',
+                    'rows': p.get('rows') or []})
+    return out
+
+
+def page_of(key):
+    return next((p for p in pages() if p['key'] == key), None)
+
+
+def _spec(page):
+    if not page:
+        return settings.get('plugins.dashboard.rows') or DEFAULT_ROWS
+    p = page_of(page)
+    return p['rows'] if p else []
+
+
+def _entries(spec):
+    for r in spec:
+        for e in (r if isinstance(r, list) else r.get('cards') or []):
+            yield e
+
+
+def rows(page=''):
+    """[(style, width template or '', [Card])] for the front page, or for `page`."""
     out = []
-    for r in settings.get('plugins.dashboard.rows') or DEFAULT_ROWS:
+    for r in _spec(page):
         if isinstance(r, list):
             r = {'cards': r}
         cards = [Card(e) for e in r.get('cards') or []]
         out.append((r.get('style', ''), r, cards))
+    # An id is unique across every page: a button names only its card's id.
+    elsewhere = {}
+    for p in [''] + [p['key'] for p in pages()]:
+        if p != page:
+            for e in _entries(_spec(p)):
+                elsewhere.setdefault(_entry_id(e), p or 'the front page')
     seen = set()
     for _s, _r, cards in out:
         for c in cards:
-            if c.id in seen and not c.error:
+            if c.error:
+                pass
+            elif c.id in seen:
                 c.error = ('another card on this dashboard already has the id %r -- give one '
                            'of them an "id"' % c.id)
+            elif c.id in elsewhere:
+                c.error = ('a card on %s already has the id %r -- give one of them an "id"'
+                           % (elsewhere[c.id], c.id))
             seen.add(c.id)
     return out
 
 
 def find(card_id):
-    for _style, _r, cards in rows():
-        for c in cards:
-            if c.id == card_id:
-                return c
+    for page in [''] + [p['key'] for p in pages()]:
+        for _style, _r, cards in rows(page):
+            for c in cards:
+                if c.id == card_id:
+                    return c
     return None
 
 
-def body(day):
+def body(day, page=''):
     """Every row. A row with a `style` uses that CSS class as it always has; a plain
     row is a grid whose columns come from its cards' widths."""
     parts = []
-    layout = rows()
+    layout = rows(page)
     # Every card starts at once and shares one deadline, so a page with several
     # slow cards waits LIMIT seconds once, not once per card.
     futs = {id(c): c.start(day) for _s, _r, cs in layout for c in cs}
@@ -266,9 +324,10 @@ def _width(c):
     return 'minmax(0,1fr)' if w == 'fill' else str(w)
 
 
-def sig(day):
-    """Fingerprint of every card that is not a built-in panel (those are in live_sig)."""
-    return '|'.join('%s=%s' % (c.id, c.sig(day)) for _s, _r, cs in rows() for c in cs
+def sig(day, page=''):
+    """Fingerprint of every card on `page` that is not a built-in panel (those are in
+    live_sig)."""
+    return '|'.join('%s=%s' % (c.id, c.sig(day)) for _s, _r, cs in rows(page) for c in cs
                     if c.error or c.source != 'dashboard')
 
 
@@ -363,6 +422,14 @@ CARD_CSS = """
 .cardlist .rs,.cardlist .at{color:var(--mut,#888);font-size:.85em}
 .cardbad .empty{color:#b44}
 .cardmsg{font-size:.8em;color:var(--mut,#888);margin-left:6px}
+/* dashboard:pages, the catalog */
+.pgcat{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+.pgtile{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1px solid var(--line);
+  border-radius:8px;text-decoration:none;color:var(--fg)}
+.pgtile:hover{border-color:var(--accent)}
+.pgtile span{font-size:12px;color:var(--dim)}
+.pgviews{margin:10px 0 0;font-size:12px;color:var(--dim)}
+.pgviews a{color:var(--accent);text-decoration:none}
 """
 
 # One handler for every card button: POST the action, show its message in the
