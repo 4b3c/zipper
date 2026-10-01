@@ -1,0 +1,314 @@
+"""zipper.review
+
+A change to the code is reviewed by testing it, not by a human reading it.
+
+    zipper code review "<title>" "<purpose>" [--test "<how to test it>"]
+
+From inside a worktree (`zipper code start`). It pushes the branch, opens the
+pull request, and starts a detached reviewer; the conversation that asked ends
+its turn and gets the verdict back as its next message. The reviewer, in order:
+
+  1. **stale**     the branch must contain origin/main -- what is tested is
+                   what gets merged
+  2. **checks**    compile, import, lint, and every unit test file, in the
+                   worktree. Programmatic: a failure here is a trace, and no
+                   agent is spent on it
+  3. **tester**    a headless Claude in the worktree, told the purpose and how
+                   to test it, exercises the change and ends with
+                   `VERDICT: APPROVE` or `VERDICT: REJECT`
+  4. **merge**     the PR's required checks pass, then `gh pr merge --admin`
+                   with the operator's token. The App cannot merge, so another
+                   person's zipper cannot either; this one can because the
+                   operator's GITHUB_TOKEN is in its environment
+  5. **restart**   `zipper update`: fast-forward, check, restart, and roll the
+                   container back if it does not come up
+
+A rejection at any step goes back to the conversation with the trace -- the
+failing output, verbatim -- and the tester's reasoning. After MAX_ROUNDS
+rejections of one branch the message says to stop and ask the operator.
+
+**The tester must never touch the live system** -- its prompt says so, and it
+runs in the worktree with no Discord thread, so its reply is never forwarded.
+"""
+import fcntl, glob, json, os, re, subprocess, sys, time, urllib.request
+
+from . import code, core, settings
+
+
+
+def _live_root():
+    """The running checkout. **Not settings.ROOT**: `zipper` is `python3 -m
+    zipper` from the current directory, so typed inside a worktree it runs the
+    worktree's code, and ROOT is the worktree. The reviewer, its job files and
+    the update all belong to the checkout the zipper is actually running."""
+    common = code._git('rev-parse', '--path-format=absolute', '--git-common-dir',
+                       cwd=settings.ROOT).stdout.strip()
+    return os.path.dirname(common) if common.endswith('/.git') else settings.ROOT
+
+
+ROOT = _live_root()
+DIR = os.path.join(ROOT, 'data', 'review')
+MAX_ROUNDS = 3
+TESTER_TIMEOUT = 45 * 60
+CI_TIMEOUT = 25 * 60
+VERDICT_RE = re.compile(r'^\W*VERDICT:\s*(APPROVE|REJECT)\b', re.M)
+
+
+def _job_path(slug):
+    return os.path.join(DIR, slug + '.json')
+
+
+def _save(job):
+    os.makedirs(DIR, exist_ok=True)
+    tmp = _job_path(job['slug']) + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as fh:
+        json.dump(job, fh, indent=1)
+    os.replace(tmp, _job_path(job['slug']))
+
+
+def _run(argv, cwd, timeout, env=None):
+    """(returncode, output tail)."""
+    try:
+        r = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=timeout,
+                           env=env)
+        return r.returncode, (r.stdout + r.stderr)[-4000:]
+    except subprocess.TimeoutExpired as e:
+        out = (e.stdout or b'') + (e.stderr or b'')
+        if isinstance(out, bytes):
+            out = out.decode('utf-8', 'replace')
+        return 124, out[-4000:] + '\n(timed out after %ds)' % timeout
+
+
+# ---------------------------------------------------------------- submitting
+
+def submit(path, title, purpose, how=''):
+    """Push, open the PR, start the reviewer. Returns the job."""
+    branch = code._git('rev-parse', '--abbrev-ref', 'HEAD', cwd=path).stdout.strip()
+    slug = branch.split('/', 1)[-1]
+    prev = {}
+    if os.path.exists(_job_path(slug)):
+        with open(_job_path(slug), encoding='utf-8') as fh:
+            prev = json.load(fh)
+        if prev.get('state') in ('queued', 'reviewing', 'merging'):
+            raise RuntimeError('a review of %s is already running (%s)' % (branch, prev['state']))
+    url, _new = code.propose(path, title, purpose, request_review=False)
+    from . import chat
+    job = {'slug': slug, 'path': os.path.abspath(path), 'branch': branch, 'url': url,
+           'pr': int(url.rstrip('/').rsplit('/', 1)[-1]), 'repo': code.ghapp.repo_slug(path),
+           'title': title, 'purpose': purpose, 'test': how,
+           'thread': chat.current_conversation() or '',
+           'round': (prev.get('round', 0) + 1) if prev.get('state') == 'rejected' else 1,
+           'state': 'queued', 'submitted': time.time()}
+    _save(job)
+    log = open(os.path.join(DIR, slug + '.log'), 'a')
+    subprocess.Popen([sys.executable, '-m', 'zipper', 'code', '_review', _job_path(slug)],
+                     cwd=ROOT, start_new_session=True, stdin=subprocess.DEVNULL,
+                     stdout=log, stderr=subprocess.STDOUT)
+    return job
+
+
+# ---------------------------------------------------------------- reviewing
+
+def checks(path):
+    """'' when the worktree passes everything CI runs, else the trace."""
+    problem = code.check(cwd=path)
+    if problem:
+        return problem
+    for f in sorted(glob.glob(os.path.join(path, 'tests', 'test_*.py'))):
+        mod = 'tests.' + os.path.basename(f)[:-3]
+        rc, out = _run([sys.executable, '-m', 'unittest', mod], path, 600)
+        if rc:
+            return 'unit tests failed (%s):\n%s' % (mod, out)
+    return ''
+
+
+def tester_prompt(job):
+    return '\n'.join([
+        'You are the tester for a change to Zipper\'s own code. The working directory is a git '
+        'worktree on branch %s (pull request #%d). Another Zipper conversation wrote it and is '
+        'waiting on your verdict; if you approve, it is merged to main and the live zipper '
+        'restarts onto it.' % (job['branch'], job['pr']),
+        '',
+        'Title: %s' % job['title'],
+        'Purpose, in the author\'s words:',
+        job['purpose'],
+        '',
+        'How the author says to test it:',
+        job.get('test') or '(not given -- work it out from the purpose and the diff)',
+        '',
+        'Compile, import, lint and the unit tests already passed. Read CLAUDE.md here, then '
+        '`git diff origin/main...HEAD`. Then exercise the changed behaviour for real: call the '
+        'functions, run the CLI from this worktree, write throwaway scripts, render pages with '
+        'tests/shot.py for UI. Approve only if it does what the purpose says and breaks nothing '
+        'you can find.',
+        '',
+        'Rules:',
+        '- Never touch the live system. Do not edit /zipper/code (the running checkout) or '
+        '/zipper/vault, restart anything, push, merge, comment on GitHub or send Discord '
+        'messages.',
+        '- Run anything that imports zipper with an empty environment (CLAUDE.md section 7): '
+        '`env -i PATH="$PATH" HOME=$T ZIPPER_SETTINGS=$T/settings.json ZIPPER_ENV_FILE=$T/env '
+        'ZIPPER_VAULT=$T/vault python3 ...` with T=$(mktemp -d). The live environment holds the '
+        'real Discord token.',
+        '- Do not fix the code. If it is wrong, say exactly what is wrong and how you found it.',
+        '',
+        'End with what you tested and what happened, then, as the very last line, exactly '
+        '`VERDICT: APPROVE` or `VERDICT: REJECT`.',
+    ])
+
+
+def verdict(text):
+    """'APPROVE', 'REJECT' or None -- the last verdict line wins."""
+    found = VERDICT_RE.findall(text or '')
+    return found[-1] if found else None
+
+
+def tester(job):
+    """(verdict or None, the tester's reply)."""
+    from . import convhead
+    env = dict(os.environ)
+    env.pop('ZIPPER_DISCORD_THREAD', None)
+    # A pane marker: the Stop hook never forwards from one, so the tester's
+    # reply cannot land in any Discord thread.
+    env['ZIPPER_CONVERSATION'] = 'review-' + job['slug']
+    argv = [convhead._claude(), '-p', '--output-format', 'json', '--permission-mode',
+            os.environ.get('ZIPPER_PERMISSION_MODE', 'auto'), tester_prompt(job)]
+    rc, out = _run(argv, job['path'], TESTER_TIMEOUT, env=env)
+    try:
+        reply = json.loads(out[out.index('{'):]).get('result') or ''
+    except ValueError:
+        reply = out
+    return verdict(reply), reply
+
+
+def _wait_quiet(limit=3600):
+    from . import supervise
+    end = time.time() + limit
+    while supervise.turns_running() and time.time() < end:
+        time.sleep(10)
+
+
+def merge_and_restart(job):
+    """(ok, stage, detail). Serialised: one merge-and-restart at a time."""
+    os.makedirs(DIR, exist_ok=True)
+    with open(os.path.join(DIR, 'merge.lock'), 'w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        code._fetch()
+        if code._git('merge-base', '--is-ancestor', 'origin/' + code._branch(), 'HEAD',
+                     cwd=job['path']).returncode:
+            return False, 'stale', ('main moved while this was being tested. Rebase '
+                                    '(`git -C %s rebase origin/main`) and review again.'
+                                    % job['path'])
+        pr, repo = str(job['pr']), job['repo']
+        rc, out = _run(['gh', 'pr', 'checks', pr, '-R', repo, '--required', '--watch',
+                        '--fail-fast', '--interval', '20'], ROOT, CI_TIMEOUT)
+        if rc:
+            return False, 'ci', 'the required checks did not pass:\n' + out
+        rc, out = _run(['gh', 'pr', 'merge', pr, '-R', repo, '--merge', '--admin'], ROOT, 120)
+        if rc:
+            return False, 'merge', 'gh pr merge failed (nothing is wrong with the code):\n' + out
+        _wait_quiet()
+        lines = []
+        rc = code.update(force=True, log=lines.append)
+        if rc:
+            return False, 'restart', ('merged, but `zipper update` did not keep it, so this '
+                                      'zipper is back on the previous version and main is '
+                                      'broken until a fix lands:\n' + '\n'.join(lines))
+    return True, 'merged', '\n'.join(lines)
+
+
+def review(path):
+    with open(path, encoding='utf-8') as fh:
+        job = json.load(fh)
+    job.update(state='reviewing', sha=code._git('rev-parse', 'HEAD', cwd=job['path']).stdout.strip())
+    _save(job)
+    ok, stage, detail, said = False, '', '', ''
+    try:
+        code._fetch()
+        if code._git('merge-base', '--is-ancestor', 'origin/' + code._branch(), 'HEAD',
+                     cwd=job['path']).returncode:
+            stage, detail = 'stale', ('the branch does not contain origin/main. Rebase '
+                                      '(`git -C %s rebase origin/main`) and review again.'
+                                      % job['path'])
+        else:
+            detail = checks(job['path'])
+            stage = 'checks' if detail else 'tester'
+            if not detail:
+                v, said = tester(job)
+                if v == 'APPROVE':
+                    job['state'] = 'merging'
+                    _save(job)
+                    ok, stage, detail = merge_and_restart(job)
+                elif v is None:
+                    detail = 'the tester ended without a verdict line'
+    except Exception as e:
+        ok, stage, detail = False, 'reviewer', repr(e)
+    job.update(state='merged' if ok else 'rejected', stage=stage, detail=detail,
+               tester=said, finished=time.time())
+    _save(job)
+    report(job)
+    return 0 if ok else 1
+
+
+# ---------------------------------------------------------------- reporting
+
+def message(job):
+    head = '[review] %s: %s (PR #%d, round %d)' % (
+        'APPROVED, merged and live' if job['state'] == 'merged' else 'REJECTED at ' + job['stage'],
+        job['title'], job['pr'], job['round'])
+    parts = [head]
+    if job.get('detail'):
+        parts += ['', '```', job['detail'][-3000:].strip(), '```']
+    if job.get('tester'):
+        parts += ['', 'Tester:', job['tester'][-3000:].strip()]
+    if job['state'] == 'merged':
+        parts += ['', 'Check it where the operator would see it, and tell them. Then '
+                  '`git -C %s worktree remove %s`.' % (ROOT, job['path'])]
+    elif job['round'] >= MAX_ROUNDS:
+        parts += ['', 'That is %d rejections of this branch. Stop and ask the operator before trying '
+                  'again.' % job['round']]
+    else:
+        parts += ['', 'Fix it in %s, commit, and `zipper code review` again.' % job['path']]
+    return '\n'.join(parts)
+
+
+def report(job):
+    """Hand the verdict to the conversation that asked; Discord's notify
+    channel if there is none, or it cannot be reached."""
+    from . import chat
+    text, tid = message(job), job.get('thread') or ''
+    try:
+        if tid and not tid.startswith('local-'):
+            code.healthy(120)
+            url = (os.environ.get('ZIPPER_URL') or 'http://127.0.0.1:8800').rstrip('/') + '/discord'
+            req = urllib.request.Request(url, data=json.dumps(
+                {'discord_thread_id': tid, 'content': text, 'source': 'review'}).encode(),
+                headers={'Content-Type': 'application/json'})
+            with urllib.request.urlopen(req, timeout=300) as fh:
+                if json.loads(fh.read() or b'{}').get('ok'):
+                    return
+        elif tid:
+            from . import convcore
+            if convcore.alive(tid) and convcore.paste(tid, text).get('ok'):
+                return
+    except Exception as e:
+        print('review: could not reach %s: %r' % (tid, e), flush=True)
+    chat.discord_send('%s: %s' % (settings.zipper_id(), text),
+                      thread_id=core.cfg('ZIPPER_NOTIFY_CHANNEL') or None)
+
+
+# ---------------------------------------------------------------- commands
+
+def cmd_review(a):
+    try:
+        job = submit(a.path or os.getcwd(), a.title, a.purpose, a.test or '')
+    except RuntimeError as e:
+        print('review: %s' % e)
+        return 1
+    print('review: %s is being tested (round %d) -- %s\nEnd your turn; the verdict arrives '
+          'as the next message in this conversation.' % (job['branch'], job['round'], job['url']))
+    return 0
+
+
+def cmd_run_review(a):
+    return review(a.job)

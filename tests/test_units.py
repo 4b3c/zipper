@@ -19,13 +19,45 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from zipper import plugins, settings, supervise, setup, runqueue   # noqa: E402
-from zipper import presence                                        # noqa: E402
+from zipper import presence, review                                # noqa: E402
 from plugins import backup, peers, upstream                        # noqa: E402
 from plugins.host import hostd                                     # noqa: E402
 
 
 def tearDownModule():
     shutil.rmtree(TMP, ignore_errors=True)
+
+
+class Review(unittest.TestCase):
+    job = {'slug': 'x', 'path': '/w/x', 'branch': 'zipper-0/x', 'pr': 7, 'round': 1,
+           'title': 'Fix the digest', 'purpose': 'The digest skipped Fridays.', 'test': ''}
+
+    def test_verdict(self):
+        self.assertEqual(review.verdict('tested it\nVERDICT: APPROVE'), 'APPROVE')
+        self.assertEqual(review.verdict('VERDICT: APPROVE\nno wait\n**VERDICT: REJECT**'),
+                         'REJECT')
+        self.assertIsNone(review.verdict('looks fine to me'))
+        self.assertIsNone(review.verdict('the VERDICT: APPROVE line goes last'))
+
+    def test_prompt_carries_the_purpose(self):
+        p = review.tester_prompt(self.job)
+        self.assertIn('The digest skipped Fridays.', p)
+        self.assertIn('#7', p)
+        self.assertIn('not given', p)
+
+    def test_messages(self):
+        ok = review.message(dict(self.job, state='merged', stage='merged', detail='',
+                                 tester='all good'))
+        self.assertIn('APPROVED', ok)
+        self.assertIn('worktree remove', ok)
+        bad = review.message(dict(self.job, state='rejected', stage='checks',
+                                  detail='Traceback: boom', tester=''))
+        self.assertIn('REJECTED at checks', bad)
+        self.assertIn('Traceback: boom', bad)
+        self.assertIn('review` again', bad)
+        last = review.message(dict(self.job, state='rejected', stage='tester', detail='',
+                                   tester='wrong', round=review.MAX_ROUNDS))
+        self.assertIn('ask the operator', last)
 
 
 class TOTP(unittest.TestCase):
