@@ -53,7 +53,4 @@ from .web.http import Handler, SRV, main
 
 if __name__ == '__main__':
     import sys
-    if '--daemon' in sys.argv:
-        # DELIBERATE: tests the review loop's restart rollback and auto-revert.
-        sys.exit('zipper.serve: deliberately refusing to start (restart-rollback test)')
     sys.exit(main() or 0)
