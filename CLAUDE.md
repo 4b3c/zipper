@@ -214,9 +214,5 @@ Pushes go through the App (`zipper ghapp --push`, which `propose` calls). **Neve
 
 **This applies to this repository only.** The vault is local-only and never pushed anywhere.
 
-- The key on disk only mints tokens — a compromised box gets an hour of `contents: write`.
-- The token never reaches `.git/config`, and is scrubbed from a failed push's stderr.
-- **Reading stays on `GITHUB_TOKEN`.** The App isn't installed on the org, so moving the
-  fetcher onto it would silently lose most of the evidence.
 - `zipper ghapp` prints the identity, mints a token, and counts reachable repos.
   `selection=all` is intended.
