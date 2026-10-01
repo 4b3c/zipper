@@ -1,10 +1,13 @@
 # Dashboard
 
 The dashboard is rows of cards, listed in `settings.json` under `plugins.dashboard.rows`.
+More pages go under `plugins.dashboard.pages`, each `{"key", "title", "about", "rows"}`
+and served at `/p/<key>`; a card's `id` must be unique across all of them.
 A card comes from one of three places:
 
 - `dashboard:<name>` — built in: `queue`, `claude`, `week`, `today`, `zipper`,
-  `sources`, and `todo` (the checkboxes in any markdown file).
+  `sources`, `pages` (links to the pages below), and `todo` (the checkboxes in any
+  markdown file).
 - `<plugin>:<name>` — brought by a plugin while it is on, e.g. `canvas:week`.
 - `vault:<name>` — yours, in this folder: `Dashboard/<name>/backend.py`, and
   optionally `frontend.py` beside it.

@@ -103,6 +103,8 @@ stale data shown as current.
 contract, the three sources and the isolation rules are in `zipper/web/cards.py`; the ones a
 new vault is given, and how to write one, are in `template/vault/Dashboard/README.md`. A card
 button posts to `/api/card/<id>/<action>`, which calls the card's `act_<action>(args, ctx)`.
+**More boards** sit at `/p/<key>`, one per entry in `plugins.dashboard.pages`, each with its
+own rows; the `pages` card is the catalog that links them. A card id is unique across pages.
 With the dashboard plugin off, the web process serves only the Discord relay and plugin posts.
 
 ### Today

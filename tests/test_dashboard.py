@@ -119,6 +119,58 @@ class Isolation(unittest.TestCase):
         self.assertIn('already has the id', cards.body(None))
 
 
+class Pages(unittest.TestCase):
+    def setUp(self):
+        cards._SLOW.clear()
+        vault_card('pinned', '''
+            def data(ctx):
+                return {"items": [{"title": "on its own page"}]}
+            def act_ping(args, ctx):
+                return "pong"
+            ''')
+
+    def save(self, rows, pages):
+        settings.save({'plugins': {'dashboard': {'rows': rows, 'pages': pages}}})
+
+    def test_a_page_draws_its_own_rows_and_the_front_page_does_not(self):
+        self.save([{'cards': ['dashboard:pages']}],
+                  [{'key': 'money', 'title': 'Money', 'about': 'the bills',
+                    'rows': [{'cards': ['vault:pinned']}]}])
+        self.assertIn('on its own page', cards.body(None, 'money'))
+        front = cards.body(None)
+        self.assertNotIn('on its own page', front)
+        # The catalog links the page, with its title and line.
+        self.assertIn('href="/p/money"', front)
+        self.assertIn('the bills', front)
+        self.assertEqual(cards.body(None, 'nope'), '')
+
+    def test_a_button_finds_its_card_on_another_page(self):
+        self.save([{'cards': ['dashboard:queue']}],
+                  [{'key': 'p', 'rows': [{'cards': ['vault:pinned']}]}])
+        res = cards.act('vault-pinned', 'ping', {})
+        self.assertEqual(res, {'ok': True, 'message': 'pong'})
+
+    def test_an_id_is_unique_across_pages(self):
+        self.save([{'cards': ['vault:pinned']}],
+                  [{'key': 'p', 'rows': [{'cards': ['vault:pinned']}]}])
+        self.assertIn('already has the id', cards.body(None, 'p'))
+
+    def test_bad_and_repeated_keys_are_skipped(self):
+        self.save([], [{'key': 'a'}, {'key': 'a', 'title': 'second'}, {'title': 'no key'},
+                       'not a page', {'key': 'x/y'}])
+        self.assertEqual([p['key'] for p in cards.pages()], ['a'])
+        self.assertEqual(cards.pages()[0]['title'], 'a')
+
+    def test_the_page_renders_and_a_missing_one_is_none(self):
+        from zipper.web import board
+        self.save([], [{'key': 'money', 'title': 'Money',
+                        'rows': [{'cards': ['vault:pinned']}]}])
+        html = board.page('money')
+        self.assertIn('<h1>Money</h1>', html)
+        self.assertIn('on its own page', html)
+        self.assertIsNone(board.page('nope'))
+
+
 class Actions(unittest.TestCase):
     def setUp(self):
         cards._SLOW.clear()

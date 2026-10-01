@@ -148,7 +148,9 @@ class Handler(BaseHTTPRequestHandler):
                 st = dict(STATE)
             st['ages'] = {k: ago(v) for k, v in freshness().items()}
             q = urllib.parse.parse_qs(self.path.partition('?')[2])
-            st['sig'] = live_sig((q.get('day') or [None])[0])
+            path = (q.get('path') or [''])[0]
+            st['sig'] = live_sig((q.get('day') or [None])[0],
+                                 path[3:].strip('/') if path.startswith('/p/') else '')
             st['clients'] = SRV['clients']
             self._send(200, json.dumps(st), 'application/json')
         elif self.path.split('?')[0] == '/oauth/google/callback':
@@ -209,6 +211,14 @@ class Handler(BaseHTTPRequestHandler):
             page = _views_page(key)
             if page is None:
                 self._send(404, '<p>no such view page</p>')
+            else:
+                self._send(200, page)
+        elif self.path.split('?')[0].startswith('/p/'):
+            from .board import page as board_page
+            key = urllib.parse.unquote(self.path.split('?')[0][3:].strip('/'))
+            page = board_page(key)
+            if page is None:
+                self._send(404, '<p>no such page -- see plugins.dashboard.pages</p>')
             else:
                 self._send(200, page)
         elif self.path in ('/tasks', '/canvas'):
