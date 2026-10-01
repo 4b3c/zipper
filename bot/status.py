@@ -143,7 +143,9 @@ async def stop(thread_id, slot='turn'):
 
     A delete that fails keeps the row, marked `done`, and the next tick tries
     again. Dropping the row first would leave "Still working" in the thread with
-    nothing left that knows about it.
+    nothing left that knows about it. The kept row moves to its own key, off the
+    slot: the slot is free at once, so the next turn's `start` posts a status of
+    its own instead of finding the old one and relabelling it.
     """
     k = _key(thread_id, slot)
     async with _lock:
@@ -154,20 +156,25 @@ async def stop(thread_id, slot='turn'):
     async with _lock:
         state = _load()
         if state.get(k, {}).get('message_id') == row['message_id']:
-            if gone:
-                state.pop(k)
-            else:
-                state[k]['done'] = True
+            row = state.pop(k)
+            if not gone:
+                row['done'] = True
+                state['%s:done:%s' % (k, row['message_id'])] = row
             _save(state)
     return {'ok': True, 'had': True, 'deleted': gone}
 
 
 async def _delete(row):
-    """Delete a status message. True once it is gone, however it went."""
+    """Delete a status message. True once it is gone, however it went.
+
+    A thread that cannot be resolved counts as gone, as it does in `tick`:
+    retrying it every round would stall every other status behind
+    `resolve_thread`'s backoff, indefinitely.
+    """
     try:
         _, msg = await _message(row)
         if msg is None:
-            return False
+            return True
         await msg.delete()
     except discord.NotFound:
         pass

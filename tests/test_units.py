@@ -800,9 +800,38 @@ class StatusMessage(unittest.TestCase):
             self.assertFalse(self.run_(s.stop(5, 'turn'))['deleted'])
         finally:
             s._delete = real
-        self.assertTrue(s._load()['5:turn']['done'])
+        kept = [r for r in s._load().values() if r.get('done')]
+        self.assertEqual(len(kept), 1)
+        self.assertNotIn('5:turn', s._load())      # the slot is free at once
         self.run_(s.tick())                         # the bot is back: it goes now
         self.assertEqual(self.log[-1][0], 'delete')
+        self.assertEqual(s._load(), {})
+
+    def test_a_new_turn_after_a_failed_delete_gets_its_own_status(self):
+        s = self.status
+        self.run_(s.start(5, 'turn'))
+        real = s._delete
+        async def fails(row):
+            return False
+        s._delete = fails
+        try:
+            self.run_(s.stop(5, 'turn'))
+        finally:
+            s._delete = real
+        self.run_(s.start(5, 'turn'))
+        self.assertEqual([e[0] for e in self.log], ['send', 'send'])
+        self.assertNotIn('follow-up', self.log[-1][1])
+        self.run_(s.tick())                         # old one deleted, new one kept
+        self.assertIn(('delete', 1), [e[:2] for e in self.log])
+        self.assertEqual([k for k in s._load()], ['5:turn'])
+
+    def test_an_unreachable_thread_is_dropped(self):
+        s = self.status
+        self.run_(s.start(5, 'turn'))
+        async def gone(tid):
+            return None
+        s.resolve_thread = gone
+        self.assertTrue(self.run_(s.stop(5, 'turn'))['deleted'])
         self.assertEqual(s._load(), {})
 
     def test_a_new_status_gets_a_grace_round(self):
