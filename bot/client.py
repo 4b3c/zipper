@@ -347,6 +347,9 @@ async def on_ready():
     _presence_shown = None
     if _presence_task is None or _presence_task.done():
         _presence_task = asyncio.create_task(presence_loop())
+    # Status messages left showing by a restart are picked up, not abandoned.
+    from bot import status
+    status._ensure_loop()
 
 
 @client.event

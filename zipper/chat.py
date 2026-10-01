@@ -106,6 +106,24 @@ def discord_typing(active, thread_id=None):
         return {'ok': False, 'error': str(e)}
 
 
+def discord_status(active, thread_id=None, slot='turn', label=''):
+    """Show or clear a thread's status message -- see `bot/status.py`.
+
+    `turn` is cleared by the reply (the Stop hook) and nothing else: an
+    out-of-band `discord send` mid-turn is not the answer, so unlike the typing
+    indicator it does not end the status. Never raises; a status is a courtesy
+    and must not cost a delivery.
+    """
+    thread_id = str(thread_id or default_thread() or '')
+    if not thread_id or thread_id.startswith('local-') or not discord_on():
+        return {'ok': False, 'error': 'no thread'}
+    try:
+        return _bot('/status', {'thread_id': thread_id, 'active': bool(active),
+                                'slot': slot, 'label': label}, timeout=30)
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+
+
 def discord_on():
     from . import plugins
     return plugins.is_enabled('discord')

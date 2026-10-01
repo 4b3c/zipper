@@ -331,6 +331,11 @@ def review(path):
         job = json.load(fh)
     job.update(state='reviewing', sha=code._git('rev-parse', 'HEAD', cwd=job['path']).stdout.strip())
     _save(job)
+    from . import chat
+    # The asking turn ends as soon as it submits, so the thread goes quiet
+    # while this runs. A status message says it has not (bot/status.py).
+    chat.discord_status(True, job.get('thread'), 'review', 'Tester on PR #%d, round %d of %d'
+                        % (job['pr'], job['round'], MAX_ROUNDS))
     ok, stage, detail, said = False, '', '', ''
     try:
         code._fetch()
@@ -391,6 +396,8 @@ def report(job):
     channel if there is none, or it cannot be reached."""
     from . import chat
     text, tid = message(job), job.get('thread') or ''
+    if tid:
+        chat.discord_status(False, tid, 'review')
     try:
         if tid and not tid.startswith('local-'):
             code.healthy(120)

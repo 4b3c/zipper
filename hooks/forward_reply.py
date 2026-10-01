@@ -299,6 +299,9 @@ def main():
             pass
         return
     _log('sent  %s %d chars uuid=%s' % (tid, len(reply), uuid_))
+    # After the reply, so the thread never shows neither. Only on success: a
+    # reply that failed to send leaves the status for the bot to mark stopped.
+    chat.discord_status(False, tid)
     conversations.touch(tid, last_forwarded=uuid_)
 
 

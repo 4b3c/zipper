@@ -688,5 +688,126 @@ class CommandLine(unittest.TestCase):
             self.assertEqual(r.returncode, 0, '%s: %s' % (cmd, r.stdout + r.stderr))
 
 
+class StatusMessage(unittest.TestCase):
+    """bot/status.py and zipper/turnstatus.py: the "still working" message."""
+
+    def setUp(self):
+        import asyncio
+        # bot/__init__ reads these at import. Placeholders: nothing here logs in.
+        os.environ.setdefault('DISCORD_TOKEN', 'placeholder')
+        os.environ.setdefault('DISCORD_CHANNEL_ID', '1')
+        from bot import status
+        from zipper import turnstatus
+        self.asyncio, self.status, self.turnstatus = asyncio, status, turnstatus
+        self.saved = (status.PATH, status.resolve_thread, turnstatus.activity,
+                      type(status.client).__dict__.get('user'))
+        status.PATH = os.path.join(TMP, 'discord-status-%s.json' % self.id().rsplit('.', 1)[-1])
+        self.log, self.posted_after = [], []
+        test = self
+
+        class Msg:
+            def __init__(self, mid):
+                self.id = mid
+            async def edit(self, content):
+                test.log.append(('edit', self.id, content))
+            async def delete(self):
+                test.log.append(('delete', self.id))
+
+        class Author:
+            pass
+        self.me = Author()
+
+        class Thread:
+            async def send(self, content):
+                test.log.append(('send', content))
+                return Msg(len(test.log))
+            def get_partial_message(self, mid):
+                return Msg(mid)
+            async def history(self, after=None, limit=50):
+                for a in test.posted_after:
+                    yield type('M', (), {'author': a})()
+
+        async def resolve(tid):
+            return Thread()
+        status.resolve_thread = resolve
+        status._ensure_loop = lambda: None
+        status.GRACE = 0
+        self.running = (True, 'running zipper lint')
+        turnstatus.activity = lambda tid, slot: self.running
+        type(status.client).user = property(lambda c: test.me)
+
+    def tearDown(self):
+        (self.status.PATH, self.status.resolve_thread, self.turnstatus.activity,
+         user) = self.saved
+        type(self.status.client).user = user
+
+    def run_(self, coro):
+        return self.asyncio.run(coro)
+
+    def test_lifecycle_running_then_answered(self):
+        s = self.status
+        self.run_(s.start(5, 'turn'))
+        self.assertTrue(self.log[0][1].startswith('⏳ Got it, working on it ('))
+        self.run_(s.tick())
+        self.assertEqual(self.log[-1][0], 'edit')
+        self.assertIn('Still working', self.log[-1][2])
+        self.assertIn('running zipper lint', self.log[-1][2])
+        self.run_(s.stop(5, 'turn'))
+        self.assertEqual(self.log[-1][0], 'delete')
+        self.assertEqual(s._load(), {})
+
+    def test_follow_up_reuses_the_message(self):
+        s = self.status
+        self.run_(s.start(5, 'turn'))
+        self.run_(s.start(5, 'turn'))
+        self.assertEqual([e[0] for e in self.log], ['send', 'edit'])
+        self.assertIn('your follow-up is next', self.log[-1][2])
+
+    def test_dead_turn_says_so(self):
+        s = self.status
+        self.run_(s.start(5, 'turn'))
+        self.running = (False, '')
+        self.run_(s.tick())
+        self.assertEqual(self.log[-1][0], 'edit')
+        self.assertIn('Stopped without answering', self.log[-1][2])
+        self.assertEqual(s._load(), {})
+
+    def test_missed_cleanup_after_an_answer_deletes(self):
+        s = self.status
+        self.run_(s.start(5, 'turn'))
+        self.running = (False, '')
+        self.posted_after = [self.me]
+        self.run_(s.tick())
+        self.assertEqual(self.log[-1][0], 'delete')
+
+    def test_review_is_its_own_slot(self):
+        s = self.status
+        self.run_(s.start(5, 'turn'))
+        self.run_(s.start(5, 'review', 'Tester on PR #7, round 1 of 3'))
+        self.assertEqual([e[0] for e in self.log], ['send', 'send'])
+        self.assertIn('🧪 Tester on PR #7', self.log[-1][1])
+        self.run_(s.stop(5, 'turn'))
+        self.assertEqual(list(s._load()), ['5:review'])
+
+    def test_a_new_status_gets_a_grace_round(self):
+        s = self.status
+        s.GRACE = 30
+        self.run_(s.start(5, 'turn'))
+        self.running = (False, '')
+        self.run_(s.tick())
+        self.assertEqual([e[0] for e in self.log], ['send'])     # untouched
+        self.assertIn('5:turn', s._load())
+
+    def test_doing_reads_the_last_tool_call(self):
+        ts = self.turnstatus
+        self.assertEqual(ts.describe({'name': 'Bash', 'input': {'description': 'Run lint',
+                                                                'command': 'zipper lint'}}),
+                         'running Run lint')
+        self.assertEqual(ts.describe({'name': 'Edit', 'input': {'file_path': '/a/b/review.py'}}),
+                         'editing review.py')
+        self.assertTrue(len(ts.describe({'name': 'Bash', 'input': {'command': 'x' * 300}}))
+                        <= len('running ') + ts.DOING_MAX)
+
+
 if __name__ == '__main__':
     unittest.main()

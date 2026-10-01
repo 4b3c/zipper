@@ -299,6 +299,29 @@ async def handle_threadrename(request: web.Request) -> web.Response:
         return web.json_response({"error": f"{type(e).__name__}: {e}"}, status=500)
 
 
+async def handle_status(request: web.Request) -> web.Response:
+    """Show or clear a thread's status message (bot/status.py)."""
+    from bot import status
+    try:
+        body = await request.json()
+        thread_id = body.get("thread_id")
+        if thread_id is None:
+            return web.json_response({"error": "thread_id required"}, status=400)
+        slot = body.get("slot") or "turn"
+        if slot not in ("turn", "review"):
+            return web.json_response({"error": "unknown slot %r" % slot}, status=400)
+        if body.get("active"):
+            if not client.is_ready():
+                return web.json_response({"error": "discord client not ready"}, status=503)
+            res = await status.start(int(thread_id), slot, body.get("label") or "")
+        else:
+            res = await status.stop(int(thread_id), slot)
+        return web.json_response(res)
+    except Exception as e:
+        print(f"[discord] status error: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+
 def setup_routes(app: web.Application):
     app.router.add_post("/send", handle_send)
     app.router.add_post("/history", handle_history)
@@ -306,6 +329,7 @@ def setup_routes(app: web.Application):
     app.router.add_post("/react", handle_react)
     app.router.add_post("/inject", handle_inject)
     app.router.add_post("/typing", handle_typing)
+    app.router.add_post("/status", handle_status)
     app.router.add_post("/thread", handle_thread)
     app.router.add_post("/threadinfo", handle_threadinfo)
     app.router.add_post("/threadrename", handle_threadrename)
