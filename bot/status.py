@@ -139,22 +139,42 @@ async def start(thread_id, slot='turn', label=''):
 
 
 async def stop(thread_id, slot='turn'):
-    """The work is answered: the status goes."""
+    """The work is answered: the status goes.
+
+    A delete that fails keeps the row, marked `done`, and the next tick tries
+    again. Dropping the row first would leave "Still working" in the thread with
+    nothing left that knows about it.
+    """
+    k = _key(thread_id, slot)
     async with _lock:
-        state = _load()
-        row = state.pop(_key(thread_id, slot), None)
-        _save(state)
+        row = _load().get(k)
     if not row:
         return {'ok': True, 'had': False}
+    gone = await _delete(row)
+    async with _lock:
+        state = _load()
+        if state.get(k, {}).get('message_id') == row['message_id']:
+            if gone:
+                state.pop(k)
+            else:
+                state[k]['done'] = True
+            _save(state)
+    return {'ok': True, 'had': True, 'deleted': gone}
+
+
+async def _delete(row):
+    """Delete a status message. True once it is gone, however it went."""
     try:
         _, msg = await _message(row)
-        if msg:
-            await msg.delete()
+        if msg is None:
+            return False
+        await msg.delete()
     except discord.NotFound:
         pass
     except Exception as e:
         print(f"[discord] status delete failed: {e}")
-    return {'ok': True, 'had': True}
+        return False
+    return True
 
 
 async def _answered_since(thread, message_id):
@@ -168,6 +188,14 @@ async def _answered_since(thread, message_id):
 async def tick():
     """One round over every status showing."""
     for k, row in list(_load().items()):
+        if row.get('done'):
+            if await _delete(row):
+                async with _lock:
+                    state = _load()
+                    if state.get(k, {}).get('message_id') == row['message_id']:
+                        state.pop(k)
+                        _save(state)
+            continue
         if time.time() - row.get('started', 0) < GRACE:
             continue
         try:

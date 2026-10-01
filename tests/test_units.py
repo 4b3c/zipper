@@ -789,6 +789,22 @@ class StatusMessage(unittest.TestCase):
         self.run_(s.stop(5, 'turn'))
         self.assertEqual(list(s._load()), ['5:review'])
 
+    def test_a_failed_delete_is_retried(self):
+        s = self.status
+        self.run_(s.start(5, 'turn'))
+        real = s._delete
+        async def fails(row):
+            return False
+        s._delete = fails
+        try:
+            self.assertFalse(self.run_(s.stop(5, 'turn'))['deleted'])
+        finally:
+            s._delete = real
+        self.assertTrue(s._load()['5:turn']['done'])
+        self.run_(s.tick())                         # the bot is back: it goes now
+        self.assertEqual(self.log[-1][0], 'delete')
+        self.assertEqual(s._load(), {})
+
     def test_a_new_status_gets_a_grace_round(self):
         s = self.status
         s.GRACE = 30
