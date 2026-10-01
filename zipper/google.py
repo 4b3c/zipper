@@ -40,8 +40,11 @@ SHEETS = 'https://sheets.googleapis.com/v4/spreadsheets'
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets',
           'https://www.googleapis.com/auth/gmail.readonly']
 
-ENV = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                   '.env')
+# The file core reads, so the token lands where the next process looks. This
+# once built its own path beside the code, which stopped being where `.env`
+# lives once ZIPPER_ENV_FILE moved it into config/: the callback wrote a fresh
+# token that nothing read.
+ENV = core.ENV_FILE
 
 
 def _env_file():
