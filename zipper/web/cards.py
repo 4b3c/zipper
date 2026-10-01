@@ -423,6 +423,7 @@ CARD_CSS = """
 .cardbad .empty{color:#b44}
 .cardmsg{font-size:.8em;color:var(--mut,#888);margin-left:6px}
 /* dashboard:pages, the catalog */
+.panel:has(> .pb > .pgcat){height:auto;margin-top:12px}
 .pgcat{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
 .pgtile{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1px solid var(--line);
   border-radius:8px;text-decoration:none;color:var(--fg)}
