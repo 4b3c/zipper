@@ -8,7 +8,8 @@ bot/
 ├── discord_bot.py   # entry point
 ├── __init__.py      # main(): aiohttp server + Discord client
 ├── client.py        # the gateway: on_message, post_to_zipper, resolve_thread, status line
-└── server.py        # HTTP: /send /history /edit /react /inject /typing /thread /threadinfo /threadrename
+├── status.py        # the per-thread "still working" message
+└── server.py        # HTTP: /send /history /edit /react /inject /typing /status /thread /threadinfo /threadrename
 ```
 
 ## Inbound
@@ -32,6 +33,21 @@ Every 30 seconds the bot sets its Discord status from `zipper.presence`: the tit
 newest conversation with a turn running, plus a count of the rest (*"Pantry pricing (+2)"*),
 or *"Waiting"* when nothing is. Busy is read the same way the dashboard and `commit` read it
 (turn locks and pane status lines), and Discord is only told when the text changes.
+
+## Status messages
+
+While a turn runs, its thread shows one message, edited every minute:
+*"⏳ Still working · 3 min · 12:44 · running zipper lint"*. It is posted when `/discord`
+takes the message, and **deleted** by the Stop hook right after the reply goes out. It is
+deleted rather than edited into the reply because Discord notifies on new messages, never
+on edits. A review (`zipper code review`) gets its own message in a second slot
+(*"🧪 Tester on PR #26…"*), cleared just before the verdict is delivered.
+
+Each minute `zipper.turnstatus` checks that the work is really running: the turn lock, or
+a headless `claude` whose environment names the thread, which survives a `zipper-web`
+restart that frees the lock. If it isn't running and nothing was posted after the status,
+the status changes to *"⚠️ Stopped without answering"* and stays. State lives in
+`Inbox/discord-status.json`, so a bot restart resumes the updates.
 
 ## Service
 

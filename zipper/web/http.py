@@ -465,6 +465,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             chat.discord_typing(True, tid)
+            chat.discord_status(True, tid)
             if not (conversations.load().get(str(tid)) or {}).get('title'):
                 # The thread's name in Discord is the first line of the
                 # message that opened it; the chat list should read the same
@@ -477,6 +478,7 @@ class Handler(BaseHTTPRequestHandler):
                         % (body.get('source', 'discord'), tid, res.get('state')))
             else:
                 chat.discord_typing(False, tid)
+                chat.discord_status(False, tid)
             self._send(200 if res.get('ok') else 503, json.dumps(res),
                        'application/json')
         elif (self.path.startswith('/api/inputs/')

@@ -289,6 +289,12 @@ def _run_turn(thread_id, text, timeout, out, on_echo=None, on_queue=None):
     try:
         with _turn_lock(thread_id, timeout, on_queue=on_queue) as waited:
             out['queued_for'] = waited
+            if waited:
+                # It waited behind another turn, whose reply cleared the
+                # indicator and the status. This turn is starting now; say so.
+                from . import chat
+                chat.discord_typing(True, thread_id)
+                chat.discord_status(True, thread_id)
             # **Decided inside the lock, and retried on collision.** Reading
             # this before waiting is what produced the 12:45 503 on
             # 2026-09-17: two deliveries to a thread with no transcript both
