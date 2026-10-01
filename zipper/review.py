@@ -299,7 +299,7 @@ def review(path):
 def message(job):
     head = '[review] %s: %s (PR #%d, round %d of %d)' % (
         'APPROVED, merged and live' if job['state'] == 'merged' else 'REJECTED at ' + job['stage'],
-        job['title'], job['pr'], job['round'], MAX_ROUNDS - 1)
+        job['title'], job['pr'], job['round'], MAX_ROUNDS)
     parts = [head]
     if job.get('detail'):
         parts += ['', '```', job['detail'][-3000:].strip(), '```']
@@ -349,8 +349,8 @@ def cmd_review(a):
     except RuntimeError as e:
         print('review: %s' % e)
         return 1
-    print('review: %s is being tested (round %d) -- %s\nEnd your turn; the verdict arrives '
-          'as the next message in this conversation.' % (job['branch'], job['round'], job['url']))
+    print('review: %s is being tested (round %d of %d) -- %s\nEnd your turn; the verdict arrives '
+          'as the next message in this conversation.' % (job['branch'], job['round'], MAX_ROUNDS, job['url']))
     return 0
 
 
