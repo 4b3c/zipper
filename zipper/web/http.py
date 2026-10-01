@@ -19,6 +19,7 @@ from .feed import (SUBS, SUBS_LOCK, do_refresh, emit_diff, feed_load, feed_mark,
                    snapshot_data)
 from .render import _list_page, _views_page, views_blob
 from . import home
+from .. import turnstatus
 
 
 # ---------------------------------------------------------------- http
@@ -476,7 +477,9 @@ class Handler(BaseHTTPRequestHandler):
             if res.get('ok'):
                 publish('status', 'terminal    %s -> thread %s (%s)'
                         % (body.get('source', 'discord'), tid, res.get('state')))
-            else:
+            elif not turnstatus.activity(str(tid))[0]:
+                # Failed -- but a follow-up can fail while the turn before it
+                # is still working, and that turn keeps its indicator and status.
                 chat.discord_typing(False, tid)
                 chat.discord_status(False, tid)
             self._send(200 if res.get('ok') else 503, json.dumps(res),
