@@ -51,6 +51,7 @@ DIR = os.path.join(ROOT, 'data', 'review')
 MAX_ROUNDS = 3
 TESTER_TIMEOUT = 45 * 60
 CI_TIMEOUT = 25 * 60
+STALE_AFTER = 3 * 3600
 VERDICT_RE = re.compile(r'^\W*VERDICT:\s*(APPROVE|REJECT)\b', re.M)
 
 
@@ -89,7 +90,10 @@ def submit(path, title, purpose, how=''):
     if os.path.exists(_job_path(slug)):
         with open(_job_path(slug), encoding='utf-8') as fh:
             prev = json.load(fh)
-        if prev.get('state') in ('queued', 'reviewing', 'merging'):
+        # A reviewer is a detached process; a container restart kills it and
+        # leaves its job claiming to run. Past STALE_AFTER, believe the restart.
+        if (prev.get('state') in ('queued', 'reviewing', 'merging')
+                and time.time() - prev.get('submitted', 0) < STALE_AFTER):
             raise RuntimeError('a review of %s is already running (%s)' % (branch, prev['state']))
     url, _new = code.propose(path, title, purpose, request_review=False)
     from . import chat
