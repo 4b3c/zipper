@@ -74,7 +74,7 @@ $('test').addEventListener('click', async () => {
   if (!endpoint) return say('Save an address first.', 'bad');
   say('Testing…');
   try {
-    const res = await fetch(endpoint + '/api/state', { method: 'GET' });
+    const res = await fetch(endpoint + '/api/worklist', { method: 'GET' });
     say(res.ok ? `Zipper answered ${res.status}. Good.`
                : `Reached it, but it answered ${res.status}.`,
         res.ok ? 'ok' : 'bad');
