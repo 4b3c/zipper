@@ -12,7 +12,8 @@ whole requirement: a Claude account and a folder. It runs in a container.
 **Everything else is a plugin** you switch on: Discord; reading GitHub, calendars, Canvas or a
 timesheet; twice-daily bookkeeping passes; an evening digest (which needs Discord); backups;
 messages between zippers. Several people can each run their own zipper on one machine, all on the same
-code, and every change to that code is a pull request a person approves.
+code, and every change to that code is a pull request, approved by a person or, where the
+operator maintains the repository, by testing it.
 
 ## What it does
 
@@ -137,7 +138,7 @@ python3 -m zipper <command>          # --help lists everything
 | `plugin list\|info\|enable\|disable` | Which plugins are on |
 | `settings get\|set\|check\|migrate` / `secret NAME` | The vault's `settings.json` / put a secret in `.env` through a one-time page |
 | `run` / `restart [--when-idle]` | Supervise the relay, bot, dashboard and timers (containers) / reload the code without cutting a turn off |
-| `code start\|propose\|prs` / `update` | Propose a change to the shared code as a PR / take merged changes, rolling back if they break |
+| `code start\|review\|propose\|prs` / `update` | Change the shared code as a PR: a tester agent tests it and, if it approves, it merges and restarts (`review`), or a person reviews it (`propose`) / take merged changes, rolling back if they break |
 | `msg <zipper> "text"` / `host <verb>` | Message another zipper (peers plugin) / ask the host daemon (host plugin) |
 
 ---
