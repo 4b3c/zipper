@@ -4,13 +4,16 @@ How a zipper changes the code every zipper runs, and how it takes changes in.
 
     zipper code start <slug>          a worktree on branch <id>/<slug>, off upstream
     zipper code propose "<title>"     push that branch as the App, open a pull request
+    zipper code review "<title>" "<purpose>"   test it, merge it, restart (zipper.review)
     zipper code prs                   what is open, and what was merged lately
     zipper update [--check] [--force] take merged changes: pull, check, restart, or roll back
 
 **Nobody edits the running checkout.** It would drift from every other zipper's,
-and the next pull would conflict. A change is a branch in its own worktree, a pull
-request, and a human's merge -- branch protection makes that last step a rule
-GitHub enforces rather than one we promise to keep, since the App cannot approve.
+and the next pull would conflict. A change is a branch in its own worktree and a
+pull request. `review` has a tester agent decide and merges with the operator's
+token; `propose` asks the operator instead. The App itself can never merge --
+branch protection makes that a rule GitHub enforces, so another person's
+zipper, which has only an App, cannot change main.
 
 **`update` is careful because nobody is watching.** In order:
 
@@ -79,7 +82,7 @@ def start(slug):
     return branch, path
 
 
-def propose(path, title, body='', draft=False):
+def propose(path, title, body='', draft=False, request_review=True):
     """Push the worktree at `path` and open (or find) its pull request."""
     branch = _git('rev-parse', '--abbrev-ref', 'HEAD', cwd=path).stdout.strip()
     if branch in ('HEAD', _branch()):
@@ -106,6 +109,8 @@ def propose(path, title, body='', draft=False):
     if pr.get('error'):
         raise RuntimeError('GitHub refused the pull request (%s): %s'
                            % (pr['error'], pr.get('message')))
+    if not request_review:
+        return pr['html_url'], True
     # Ask the repository's owner to review. They are the one who merges.
     ghapp.api_json('/repos/%s/pulls/%d/requested_reviewers' % (slug, pr['number']), tok,
                    body={'reviewers': [owner]})

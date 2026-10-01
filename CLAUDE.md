@@ -181,16 +181,27 @@ one logged a second bot in with the live token.
 ### Changing the code: branches and pull requests
 
 **Every zipper runs this repository, and none edits its running checkout.** A change is a
-branch named `<zipper id>/<slug>` in its own worktree, pushed as the GitHub App and opened
-as a pull request; the operator reviews and merges. Branch protection on `main` (a required
-approving review, which the App cannot give) is what makes that a rule.
+branch named `<zipper id>/<slug>` in its own worktree, pushed as the GitHub App, opened as a
+pull request, and **reviewed by testing it** (`zipper/review.py`):
 
 ```bash
-zipper code start <slug>          # worktree under data/work/<slug>
-zipper code propose "<title>"     # from inside it: push, open the PR, request review
+zipper code start <slug>                          # worktree under data/work/<slug>
+zipper code review "<title>" "<purpose>" --test "<how to test it>"   # from inside it
+zipper code propose "<title>"     # instead, to ask the operator to review by hand
 zipper code prs
 zipper update                     # take merged changes: check, restart, or roll back
 ```
+
+`review` checks compile, import, lint and the unit tests, then a tester agent exercises the
+change against its purpose and ends `VERDICT: APPROVE` or `REJECT`. Approved: CI passes, it
+is approved and merged with the operator's `GITHUB_TOKEN` -- a real review, so the ruleset
+on `main` is enforced as for anyone -- and `zipper update`
+restarts onto it -- rolling back if it does not come up. Anything else comes back to the
+conversation that asked, as its next message, with the trace. A change to `.github/` always goes to the operator. **End the turn after
+`review`**: the restart waits for it. Three rejections of one branch means ask the operator.
+
+The App can never merge; only the operator's token can. So another person's zipper, which
+has only an App, cannot change main.
 
 Pushes go through the App (`zipper ghapp --push`, which `propose` calls). **Never
 `git push origin`** -- it falls back to the operator's credentials and lands as them.
