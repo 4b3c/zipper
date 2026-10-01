@@ -4,8 +4,9 @@ Up to two listeners, each only if its plugin is on. 8899 (dashboard) is the oper
 /t/<port>/. It is behind basic auth, because in a container it is reachable from
 the other zippers on the Docker network and from everyone on the tailnet, and the
 terminal is a shell. Without ZIPPER_TERM_CRED it listens on loopback only and
-says so. The extension's input endpoints stay open: they accept a reading, never
-run anything, and a browser extension cannot answer an auth prompt.
+says so. The extension's endpoints stay open, because a browser extension cannot
+answer an auth prompt: the readings it posts, the Canvas panel's worklist and
+cross-off, and /ext/ (the signed add-on and its update manifest).
 
 8898 (peers) is for other zippers: POST /api/msg, and nothing else is proxied.
 """
@@ -55,7 +56,7 @@ server {
     location ~ ^/s/(886[0-9])/([A-Za-z0-9_-]+)$ {
         proxy_pass http://127.0.0.1:$1/$2;
     }
-    location ~ ^/(api/inputs/|api/canvas|api/hours|bookmarklet) {
+    location ~ ^/(api/inputs/|api/canvas|api/hours|api/worklist$|api/done$|ext/|bookmarklet) {
         auth_basic off;
         proxy_pass http://127.0.0.1:%(web)s;
     }
