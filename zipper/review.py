@@ -9,17 +9,17 @@ pull request, and starts a detached reviewer; the conversation that asked ends
 its turn and gets the verdict back as its next message. The reviewer, in order:
 
   1. **stale**     the branch must contain origin/main -- what is tested is
-                   what gets merged
+                   what gets merged. A change to `.github/` goes to the operator
   2. **checks**    compile, import, lint, and every unit test file, in the
                    worktree. Programmatic: a failure here is a trace, and no
                    agent is spent on it
   3. **tester**    a headless Claude in the worktree, told the purpose and how
                    to test it, exercises the change and ends with
                    `VERDICT: APPROVE` or `VERDICT: REJECT`
-  4. **merge**     the PR's required checks pass, then `gh pr merge --admin`
-                   with the operator's token. The App cannot merge, so another
-                   person's zipper cannot either; this one can because the
-                   operator's GITHUB_TOKEN is in its environment
+  4. **merge**     the PR's required checks pass, then an approving review and
+                   an ordinary merge, both with the operator's GITHUB_TOKEN. The
+                   App can do neither, so another person's zipper cannot change
+                   main; GitHub still enforces review, checks and up-to-date
   5. **restart**   `zipper update`: fast-forward, check, restart, and roll the
                    container back if it does not come up
 
@@ -126,7 +126,18 @@ def checks(path):
     return ''
 
 
+def touched(path, prefix):
+    """Files under `prefix` the branch changes."""
+    try:
+        out = code._git('diff', '--name-only', 'origin/%s...HEAD' % code._branch(),
+                        cwd=path).stdout
+    except OSError:
+        return []
+    return [f for f in out.split() if f.startswith(prefix)]
+
+
 def tester_prompt(job):
+    tests = touched(job['path'], 'tests/')
     return '\n'.join([
         'You are the tester for a change to Zipper\'s own code. The working directory is a git '
         'worktree on branch %s (pull request #%d). Another Zipper conversation wrote it and is '
@@ -145,6 +156,10 @@ def tester_prompt(job):
         'functions, run the CLI from this worktree, write throwaway scripts, render pages with '
         'tests/shot.py for UI. Approve only if it does what the purpose says and breaks nothing '
         'you can find.',
+        '',
+        ('This change edits its own tests: %s. Read those diffs first. Approve only if they '
+         'add or correct tests, never if one is weakened or removed to make the change pass.'
+         % ', '.join(tests)) if tests else '',
         '',
         'Rules:',
         '- Never touch the live system. Do not edit /zipper/code (the running checkout) or '
@@ -219,7 +234,16 @@ def merge_and_restart(job):
                         '--fail-fast', '--interval', '20'], ROOT, CI_TIMEOUT)
         if rc:
             return False, 'ci', 'the required checks did not pass:\n' + out
-        rc, out = _run(['gh', 'pr', 'merge', pr, '-R', repo, '--merge', '--admin'], ROOT, 120)
+        # The approval is a real review, from the operator's account (the PR's
+        # author is the App, so it may approve). Then an ordinary merge: GitHub
+        # still enforces the review, the checks and up-to-date itself.
+        body = 'Approved by %s\'s tester after testing it.\n\n%s' % (
+            settings.zipper_id(), (job.get('tester') or '')[-6000:])
+        rc, out = _run(['gh', 'pr', 'review', pr, '-R', repo, '--approve', '--body', body],
+                       ROOT, 120)
+        if rc:
+            return False, 'merge', 'could not approve (nothing is wrong with the code):\n' + out
+        rc, out = _run(['gh', 'pr', 'merge', pr, '-R', repo, '--merge'], ROOT, 120)
         if rc:
             return False, 'merge', 'gh pr merge failed (nothing is wrong with the code):\n' + out
         _wait_quiet()
@@ -245,6 +269,11 @@ def review(path):
             stage, detail = 'stale', ('the branch does not contain origin/main. Rebase '
                                       '(`git -C %s rebase origin/main`) and review again.'
                                       % job['path'])
+        elif touched(job['path'], '.github/'):
+            stage, detail = 'workflows', ('this changes %s. CI is the check the tester relies on, '
+                                          'so a change to it goes to the operator: '
+                                          '`zipper code propose`.' % ', '.join(
+                                              touched(job['path'], '.github/')))
         else:
             detail = checks(job['path'])
             stage = 'checks' if detail else 'tester'

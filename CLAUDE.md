@@ -194,9 +194,10 @@ zipper update                     # take merged changes: check, restart, or roll
 
 `review` checks compile, import, lint and the unit tests, then a tester agent exercises the
 change against its purpose and ends `VERDICT: APPROVE` or `REJECT`. Approved: CI passes, it
-is merged with the operator's `GITHUB_TOKEN` (`gh pr merge --admin`), and `zipper update`
+is approved and merged with the operator's `GITHUB_TOKEN` -- a real review, so the ruleset
+on `main` is enforced as for anyone -- and `zipper update`
 restarts onto it -- rolling back if it does not come up. Anything else comes back to the
-conversation that asked, as its next message, with the trace. **End the turn after
+conversation that asked, as its next message, with the trace. A change to `.github/` always goes to the operator. **End the turn after
 `review`**: the restart waits for it. Three rejections of one branch means ask the operator.
 
 The App can never merge; only the operator's token can. So another person's zipper, which
