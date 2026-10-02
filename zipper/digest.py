@@ -12,10 +12,10 @@ there is nothing on screen next to it to contradict.
 
 It concludes nothing and writes nothing to the vault. It is a reminder.
 """
-import datetime, json, os
+import csv, datetime, json, os
 
 from .core import *          # noqa: F401,F403 -- the shared vocabulary
-from . import core, chat
+from . import core, chat, settings
 
 
 # One digest per date. The timer is `Persistent=true` so a box that was asleep
@@ -79,6 +79,56 @@ def _canvas_age():
             % (secs // 86400))
 
 
+def _done_days(key):
+    """Dates on which metric `key` was logged above zero. A habit is a metric
+    row like any other number, so `zipper metric leetcode 1` is the whole log."""
+    try:
+        rows = list(csv.DictReader(open(core.METCSV, encoding='utf-8')))
+    except OSError:
+        return set()
+    out = set()
+    for r in rows:
+        if r.get('key') != key:
+            continue
+        try:
+            if float(r.get('value') or 0) > 0:
+                out.add(r['date'])
+        except ValueError:
+            pass
+    return out
+
+
+def _habits(today):
+    """One line per key in `plugins.digest.daily`: done today or not, and the streak.
+
+    Unlike the rest of the digest this is about *tonight*, not tomorrow: 19:00
+    is still early enough to do it, which is the reason it comes first. A streak
+    that is still alive counts through yesterday, so the line says what is at
+    stake instead of reading zero all evening."""
+    keys = settings.get('plugins.digest.daily') or []
+    if not keys:
+        return []
+    out = ['Daily:']
+    for key in keys:
+        days = _done_days(key)
+        done = today.isoformat() in days
+        d, streak = (today if done else today - datetime.timedelta(days=1)), 0
+        while d.isoformat() in days:
+            streak += 1
+            d -= datetime.timedelta(days=1)
+        week = sum((today - datetime.timedelta(days=i)).isoformat() in days for i in range(7))
+        if done:
+            line = '  - %s: done today · %d-day streak' % (key, streak)
+        elif streak:
+            line = '  - %s: NOT done today · %d-day streak ends at midnight' % (key, streak)
+        else:
+            line = '  - %s: NOT done today · %d of the last 7 days' % (key, week)
+        out.append(line)
+    if any(today.isoformat() not in _done_days(k) for k in keys):
+        out.append('  log it: zipper metric <key> 1 --note "<what>"')
+    return out + ['']
+
+
 def _row(it):
     """One work item, as a line. Course first: what class it is for is the thing
     they sort by in their head, and the title is often twenty words of assignment
@@ -127,6 +177,7 @@ def compose(days=7):
 
     lines = ['**%s — due tomorrow**' % tomorrow.strftime('%a %b %-d')]
     lines.append('')
+    lines += _habits(today)
 
     # **Coursework and self-set tasks are counted separately, never merged.**
     # They are due the same day but they are not the same kind of obligation:

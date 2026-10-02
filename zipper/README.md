@@ -320,6 +320,8 @@ cannot sweep up edits a Discord conversation is in the middle of.
 week ahead. `zipper-digest.timer` runs it at 19:00; `--dry-run` prints it.
 
 - **Reads through `web/data.py`**, so it and *What to work on* never disagree.
+- **Daily habits come first.** Each metric key in `plugins.digest.daily` gets a line: done
+  today or not, and the streak. A habit is a metric row above zero (`zipper metric leetcode 1`).
 - **Coursework and self-set tasks are counted separately** — different obligations, and a
   merged ranking pushes homework below the cut.
 - **Goes to `ZIPPER_NOTIFY_CHANNEL`**, not the main channel the operator writes in. Unset
