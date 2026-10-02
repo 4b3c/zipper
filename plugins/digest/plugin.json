@@ -2,7 +2,8 @@
   "title": "Evening digest",
   "about": "a Discord message of what's due, once a day",
   "defaults": {
-    "time": "19:00"
+    "time": "19:00",
+    "daily": []
   },
   "secrets": [],
   "env": {},
