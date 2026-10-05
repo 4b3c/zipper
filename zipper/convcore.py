@@ -266,6 +266,12 @@ def touch(thread_id, active=False, **fields):
             # fires once per conversation forever instead of once per idle
             # period, and a thread they keep answering goes quiet after one.
             row.pop('warned_at', None)
+            # The same goes for `closed`. A pane is reopened by `start()`, but a
+            # headless turn never goes through it, so a Discord thread the sweep
+            # had closed stayed closed while being talked to -- and `reap()`
+            # skips closed rows, so it was never warned again after its first
+            # expiry. A message landing is what reopening means.
+            row['closed'] = False
         row.update(fields)
     return row
 
