@@ -72,7 +72,7 @@ server {
 PEER = '''
 server {
     listen 8898;
-    location = /api/msg { proxy_pass http://127.0.0.1:%(web)s; }
+    location = /api/msg { client_max_body_size 64m; proxy_pass http://127.0.0.1:%(web)s; }
     location / { return 404; }
 }
 ''' % {'web': web}

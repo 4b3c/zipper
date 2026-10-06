@@ -4,7 +4,7 @@
 #   vault/    the notes, settings.json and the dashboard's cards -- a git repository
 #   config/   .env: secrets only, never in the vault
 #   backup/   the vault's second copy, pushed on every commit (backup plugin)
-#   zipper/   its own checkout of the code, updated by `zipper update`
+#   code/     its own checkout of the code, updated by `zipper update`
 #   home/     its Claude login and transcripts
 #
 # Everything this zipper is lives in this folder: stop it (docker compose down) and
@@ -25,7 +25,7 @@ services:
       - ./config:/zipper/config
       - ./vault:/zipper/vault
       - ./backup:/zipper/backup
-      - ./zipper:/zipper/code
+      - ./code:/zipper/code
       - ./home:/zipper/home
     # The dashboard: on this machine's Tailscale address (a server) or 127.0.0.1 (your own
     # computer), behind the password in config/.env. Never 0.0.0.0.

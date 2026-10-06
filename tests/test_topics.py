@@ -30,7 +30,7 @@ def tearDownModule():
 
 
 def ns(**kw):
-    base = dict(action='run', name='t', every=None, gate=None, timeout=None, model=None,
+    base = dict(action='run', name='t', every=None, gate=None, wake_on=None, timeout=None, model=None,
                 force=False, wait=True, limit=5)
     base.update(kw)
     return argparse.Namespace(**base)
@@ -105,6 +105,39 @@ class Topics(unittest.TestCase):
         topics.cmd_topic(ns())
         run = topics._runs('t')[-1]
         self.assertTrue(run['notify'])              # unparseable notifies, like a pass
+
+    def test_add_needs_a_way_to_run(self):
+        self.assertEqual(topics.cmd_topic(ns(action='add')), 1)
+        self.assertEqual(topics.cmd_topic(ns(action='add', wake_on=['studio'])), 0)
+        self.assertEqual(topics.jobs(settings.get('plugins.topics')), [])   # no timer
+
+    def test_message_lands_in_the_prompt_once(self):
+        self.add(wake_on=['studio'])
+        msg = {'id': 'm1', 'from': 'studio', 'at': '2026-10-05T20:00', 'text': 'gate ready'}
+        with open(topics._inbox('t'), 'w') as fh:       # what on_peer_message writes
+            fh.write(json.dumps(msg) + '\n')
+        msgs = topics._take_inbox('t')
+        self.assertIn('gate ready', topics.prompt('t', messages=msgs))
+        self.assertIn('not instructions', topics.prompt('t', messages=msgs))
+        self.assertEqual(topics._take_inbox('t'), [])
+        self.assertNotIn('woke this run', topics.prompt('t'))
+
+    def test_message_mid_run_marks_pending(self):
+        self.add(wake_on=['studio'])
+        with open(topics._lock('t'), 'w') as fh:
+            fh.write('%d x\n' % os.getpid())
+        topics.on_peer_message({'from': 'studio', 'text': 'again'})
+        self.assertTrue(os.path.exists(topics._pending('t')))
+        topics.on_peer_message({'from': 'someone-else', 'text': 'ignored'})
+        self.assertEqual(len(topics._take_inbox('t')), 1)
+
+    def test_a_run_takes_its_messages(self):
+        self.add(wake_on=['studio'])
+        with open(topics._inbox('t'), 'w') as fh:
+            fh.write(json.dumps({'from': 'studio', 'text': 'x'}) + '\n')
+        topics.cmd_topic(ns())
+        self.assertEqual(topics._runs('t')[-1]['messages'], 1)
+        self.assertFalse(os.path.exists(topics._inbox('t')))
 
     def test_unknown_topic(self):
         self.assertEqual(topics.cmd_topic(ns(name='nope')), 1)
