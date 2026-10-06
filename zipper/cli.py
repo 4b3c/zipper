@@ -250,6 +250,7 @@ def main():
 
     s = sub.add_parser('msg', help='send a message to another zipper')
     s.add_argument('peer'); s.add_argument('text')
+    s.add_argument('--file', action='append', help='attach a file (repeatable; 40 MB together)')
     s.set_defaults(fn=_needs('peers', _mod('plugins.peers', 'cmd_msg')))
 
     s = sub.add_parser('topic', help='standing jobs for Claude: fresh sessions that carry a condensed context')
@@ -257,6 +258,7 @@ def main():
     s.add_argument('name', nargs='?')
     s.add_argument('--every', type=int, help='add: minutes between runs')
     s.add_argument('--gate', help='add: shell command in the topic folder; non-zero skips the run')
+    s.add_argument('--wake-on', action='append', help='add: a peer zipper whose messages start a run at once (repeatable)')
     s.add_argument('--timeout', type=int, help='add: minutes a run may take (default 30)')
     s.add_argument('--model', help='add: the model a run uses')
     s.add_argument('--force', action='store_true', help='run: ignore the gate')
