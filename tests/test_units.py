@@ -642,33 +642,54 @@ class QueueRows(unittest.TestCase):
 
 
 class Presence(unittest.TestCase):
-    """The bot's status line: the newest busy conversation, plus a count."""
+    """The bot's status line: one word, never a conversation's name."""
 
-    def text(self, busy):
-        real = presence.working
-        presence.working = lambda: busy
+    def text(self, busy, doing=None, testing=False):
+        from zipper import turnstatus
+        real = presence.working, presence.testing, turnstatus.doing
+        presence.working = lambda: list(busy)
+        presence.testing = lambda: testing
+        turnstatus.doing = lambda tid: (doing or {}).get(tid, '')
         try:
             return presence.text()
         finally:
-            presence.working = real
+            presence.working, presence.testing, turnstatus.doing = real
 
     def test_idle(self):
         self.assertEqual(self.text([]), 'Waiting')
 
-    def test_one(self):
-        self.assertEqual(self.text([('1', 'Pantry pricing')]), 'Pantry pricing')
+    def test_tool_call_is_working(self):
+        self.assertEqual(self.text(['1', '2'], {'1': 'thinking', '2': 'running zipper lint'}),
+                         'Working')
 
-    def test_several(self):
-        self.assertEqual(self.text([('1', 'Pantry pricing'), ('2', 'x'), ('3', 'y')]),
-                         'Pantry pricing (+2)')
+    def test_reasoning_is_thinking(self):
+        self.assertEqual(self.text(['1', '2'], {'1': 'thinking', '2': 'writing'}), 'Thinking')
 
-    def test_long_title_is_cut(self):
-        name = presence._name('none', {'title': 'see how it shows my activity, is there a way to set'})
-        self.assertLessEqual(len(name), presence.TITLE_MAX)
-        self.assertTrue(name.endswith('\u2026'))
+    def test_unreadable_transcript_is_working(self):
+        self.assertEqual(self.text(['1']), 'Working')
 
-    def test_no_name(self):
-        self.assertEqual(presence._name('none', {}), 'a conversation')
+    def test_review_alone_is_testing(self):
+        self.assertEqual(self.text([], testing=True), 'Testing')
+        self.assertEqual(self.text(['1'], {'1': 'thinking'}, testing=True), 'Thinking')
+
+    def test_review_job_needs_its_process(self):
+        from zipper import review, turnstatus
+        d = tempfile.mkdtemp()
+        real = review.DIR, turnstatus._review_process
+        review.DIR = d
+        try:
+            with open(os.path.join(d, 'x.json'), 'w') as fh:
+                json.dump({'slug': 'x', 'state': 'reviewing'}, fh)
+            turnstatus._review_process = lambda slug: False
+            self.assertFalse(presence.testing())
+            turnstatus._review_process = lambda slug: True
+            self.assertTrue(presence.testing())
+            with open(os.path.join(d, 'x.json'), 'w') as fh:
+                json.dump({'slug': 'x', 'state': 'approved'}, fh)
+            self.assertFalse(presence.testing())
+        finally:
+            review.DIR, turnstatus._review_process = real
+            shutil.rmtree(d, ignore_errors=True)
 
 
 class CommandLine(unittest.TestCase):

@@ -29,10 +29,11 @@ and `zipper-web`, or the path points at nothing.
 
 ## Status line
 
-Every 30 seconds the bot sets its Discord status from `zipper.presence`: the title of the
-newest conversation with a turn running, plus a count of the rest (*"Pantry pricing (+2)"*),
-or *"Waiting"* when nothing is. Busy is read the same way the dashboard and `commit` read it
-(turn locks and pane status lines), and Discord is only told when the text changes.
+Every 30 seconds the bot sets its Discord status from `zipper.presence` to one word:
+*Working* (a conversation is running a tool), *Thinking* (busy, but only reasoning or
+writing), *Testing* (no conversation busy, a code review running) or *Waiting*. Never a
+conversation's name. Busy is read the same way the dashboard and `commit` read it (turn
+locks and pane status lines), and Discord is only told when the word changes.
 
 ## Status messages
 
