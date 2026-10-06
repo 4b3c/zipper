@@ -14,7 +14,7 @@ from zipper import settings as _settings
 _settings.apply()
 
 import bot.client as _client_mod
-from bot.server import setup_routes
+from bot.server import setup_routes, SEND_MAX_BYTES
 
 BOT_PORT = int(os.environ.get("BOT_PORT", 4200))
 BOT_HOST = os.environ.get("BOT_HOST", "0.0.0.0")
@@ -26,7 +26,9 @@ _client_mod.DISCORD_CHANNEL_ID = int(os.environ["DISCORD_CHANNEL_ID"])
 
 async def main():
     # Start HTTP server first, before Discord connects
-    http_app = web.Application()
+    # aiohttp refuses bodies over 1 MiB by default; leave room for a full-size file
+    # plus the multipart framing and message text around it.
+    http_app = web.Application(client_max_size=SEND_MAX_BYTES + 1024 * 1024)
     setup_routes(http_app)
     runner = web.AppRunner(http_app)
     await runner.setup()

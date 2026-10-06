@@ -198,6 +198,14 @@ def cmd_discord(a):
                 print('discord: bot reachable at %s' % BOT_URL)
             except Exception as e:
                 print('discord: bot NOT reachable at %s -- %s' % (BOT_URL, e)); return 1
+    except urllib.error.HTTPError as e:
+        # The bot answered, so it is running; say what it refused instead.
+        try:
+            why = json.loads(e.read().decode('utf-8') or '{}').get('error') or e.reason
+        except ValueError:
+            why = e.reason
+        print('discord: the bot refused it (HTTP %s) -- %s' % (e.code, why))
+        return 1
     except urllib.error.URLError as e:
         print('discord: cannot reach the bot at %s -- %s' % (BOT_URL, e))
         print('  is the discord service running?')
