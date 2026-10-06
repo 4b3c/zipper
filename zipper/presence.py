@@ -1,32 +1,28 @@
-"""The bot's Discord status line: what Zipper is working on, if anything.
+"""The bot's Discord status line: one word for what Zipper is doing.
 
-The newest busy conversation's title, with a count of the others --
-"Pantry pricing (+2)" -- or "Waiting" when no turn is running. The bot polls
-`text()` every 30 seconds and only talks to Discord when the answer changes.
+    Working   a conversation is running a tool
+    Thinking  conversations are busy, but only reasoning or writing
+    Testing   no conversation is busy, and a `zipper code review` is running
+    Waiting   nothing is
+
+No conversation names: the status is visible to everyone in the server, and
+which chat is busy is noise there. The bot polls `text()` every 30 seconds and
+only talks to Discord when the word changes.
 
 Busy means the same thing it does everywhere else: a headless Discord turn
 holding its lock (`convhead.turn_running`), or a pane whose status line says
-Claude is working (`convstate.state`). Read, never tracked -- a state kept here
+Claude is working (`convstate.state`). What a busy one is doing is the tail of
+its transcript (`turnstatus.doing`). Read, never tracked -- a state kept here
 would drift the moment a turn ended without telling us.
 """
-from . import convhead, convstate
+import glob, json, os
+
+from . import convhead, convstate, turnstatus
 from .convcore import load
 
 IDLE = 'Waiting'
-
-# Discord allows 128 characters; a status that long is truncated in the member
-# list anyway, and the first message of a thread can be a paragraph.
-TITLE_MAX = 40
-
-
-def _name(tid, row):
-    """The conversation's best name: Claude's own title, then the thread's
-    rename, then the first words of the message that opened it."""
-    name = (convstate.title(tid) or row.get('discord_name') or row.get('title') or '').strip()
-    name = ' '.join(name.split())
-    if len(name) > TITLE_MAX:
-        name = name[:TITLE_MAX - 1].rstrip() + '…'
-    return name or 'a conversation'
+# What `turnstatus.doing` says when no tool call is in flight.
+NOT_A_TOOL = ('thinking', 'writing')
 
 
 def _busy(tid, row):
@@ -37,15 +33,29 @@ def _busy(tid, row):
 
 
 def working():
-    """Busy conversations as (thread_id, name), newest message first."""
-    rows = [(tid, row) for tid, row in load().items() if _busy(tid, row)]
-    rows.sort(key=lambda r: convstate.last_active(r[0]) or 0, reverse=True)
-    return [(tid, _name(tid, row)) for tid, row in rows]
+    """Busy conversations' thread ids."""
+    return [tid for tid, row in load().items() if _busy(tid, row)]
+
+
+def testing():
+    """Whether a code review is checking, testing or merging right now."""
+    from . import review
+    for p in glob.glob(os.path.join(review.DIR, '*.json')):
+        try:
+            with open(p, encoding='utf-8') as fh:
+                job = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if job.get('state') in turnstatus.REVIEW_DOING and turnstatus._review_process(job['slug']):
+            return True
+    return False
 
 
 def text():
     busy = working()
-    if not busy:
-        return IDLE
-    name = busy[0][1]
-    return name if len(busy) == 1 else '%s (+%d)' % (name, len(busy) - 1)
+    if busy:
+        # Unreadable transcript ('') still means busy: say Working, which is true.
+        if any(turnstatus.doing(tid) not in NOT_A_TOOL for tid in busy):
+            return 'Working'
+        return 'Thinking'
+    return 'Testing' if testing() else IDLE
