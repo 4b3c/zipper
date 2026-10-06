@@ -84,10 +84,14 @@ def parse(result):
     return True, result.strip() or 'The scheduled pass produced no message.'
 
 
-def _open_thread(message, name):
+def _open_thread(message, name, channel=None):
+    """A new thread under a new message, in the main channel or in `channel`."""
     base = core.cfg('BOT_URL') or 'http://127.0.0.1:4200'
+    body = {'message': message, 'name': name}
+    if channel:
+        body['channel_id'] = str(channel)
     req = urllib.request.Request(base.rstrip('/') + '/thread', method='POST',
-                                 data=json.dumps({'message': message, 'name': name}).encode(),
+                                 data=json.dumps(body).encode(),
                                  headers={'Content-Type': 'application/json'})
     with urllib.request.urlopen(req, timeout=30) as resp:
         out = json.loads(resp.read().decode())
