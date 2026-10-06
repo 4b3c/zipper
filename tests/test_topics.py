@@ -143,7 +143,7 @@ class Topics(unittest.TestCase):
         from zipper import usage
         real = usage.read
         usage.read = lambda force=False: {'meters': [
-            {'key': 'session', 'label': 'session', 'pct': 72.0, 'resets': '2026-10-06T07:20:00'},
+            {'key': 'session', 'label': 'session', 'pct': 72.0, 'resets': '2999-01-01T07:20:00+00:00'},
             {'key': 'week', 'label': 'week', 'pct': 11.0}]}
         try:
             settings.put('plugins.topics.max_usage', 70)
@@ -170,6 +170,23 @@ class Topics(unittest.TestCase):
             self.add()
             topics.cmd_topic(ns())
             self.assertNotIn('skipped', topics._runs('t')[-1])
+        finally:
+            usage.read = real
+            settings.put('plugins.topics.max_usage', 0)
+
+    def test_stale_reading_stops_counting_at_its_reset(self):
+        from zipper import usage
+        real = usage.read
+        settings.put('plugins.topics.max_usage', 70)
+        try:
+            for resets, blocks in (('2026-10-01T10:00:00+00:00', False),   # reset passed
+                                   ('2999-01-01T00:00:00+00:00', True),    # still a floor
+                                   (None, False)):                        # can't place it
+                usage.read = lambda force=False, r=resets: {'stale': True, 'error': 'down',
+                    'meters': [{'key': 'session', 'label': 'session', 'pct': 75.0, 'resets': r}]}
+                self.assertEqual(bool(topics.over_limit()), blocks, resets)
+            usage.read = lambda force=False: {'meters': [{'key': 'week', 'label': 'week', 'pct': 90.0}]}
+            self.assertTrue(topics.over_limit())       # fresh, no reset time: believe it
         finally:
             usage.read = real
             settings.put('plugins.topics.max_usage', 0)

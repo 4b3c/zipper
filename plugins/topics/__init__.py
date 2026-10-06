@@ -27,7 +27,8 @@ when it finishes, so nothing waits for the next tick.
 **Usage has a ceiling.** With `plugins.topics.max_usage` set (a percentage), a run
 that would start while the plan's 5-hour session or 7-day window is at or over it is
 skipped and logged instead; its messages stay in the inbox for the first run after
-the window resets. Unreadable usage does not block: the meters say so separately.
+the window resets. A reading counts until its window's reset time and not after, so
+a stale one (the endpoint failing) can't hold runs past the reset.
 
 The run is detached from the schedule, which runs jobs one at a time: a
 thirty-minute topic must not hold up the hourly pull. A lock in the folder keeps
@@ -208,10 +209,27 @@ def over_limit():
     if not limit:
         return None
     from zipper import usage
-    over = [m for m in (usage.read() or {}).get('meters', [])
-            if m.get('pct') is not None and float(m['pct']) >= float(limit)]
+    u = usage.read() or {}
+    over = [m for m in u.get('meters', [])
+            if m.get('pct') is not None and float(m['pct']) >= float(limit)
+            and _still_counts(m, u.get('stale'))]
     return ', '.join('%s %s%% (resets %s)' % (m.get('label', m.get('key')), m['pct'],
                                                (m.get('resets') or '?')[:16]) for m in over) or None
+
+
+def _still_counts(meter, stale):
+    """Whether a reading over the ceiling still holds. Usage only rises within a window,
+    so a reading is a floor until its window resets and means nothing after. A stale
+    reading (the endpoint failed; usage.read fell back to the last good one) with no
+    reset time can't be placed, and doesn't block: a dead endpoint must not pause the
+    runs forever."""
+    try:
+        resets = datetime.datetime.fromisoformat(meter.get('resets') or '')
+    except ValueError:
+        return not stale
+    if resets.tzinfo is None:
+        resets = resets.astimezone()               # naive: local time
+    return datetime.datetime.now(datetime.timezone.utc) < resets
 
 
 def _gate(topic, conf):
@@ -363,7 +381,8 @@ def _cmd_list(a):
     for n, t in sorted(topics.items()):
         last = (_runs(n, 1) or [{}])[0]
         state = 'running' if _running(n) else ('last %s %s' % (
-            last.get('start', '')[:16], 'ok' if last.get('ok') else 'FAILED') if last else 'never run')
+            last.get('start', '')[:16], 'skipped' if last.get('skipped') else
+            'ok' if last.get('ok') else 'FAILED') if last else 'never run')
         print('%-16s every %-5s %s%s%s' % (n, '%sm' % t['every'] if t.get('every') else '-', state,
                                            '  gate: %s' % t['gate'] if t.get('gate') else '',
                                            '  woken by: %s' % ', '.join(t['wake_on']) if t.get('wake_on') else ''))
