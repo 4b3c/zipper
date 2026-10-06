@@ -6,6 +6,11 @@ import discord
 from aiohttp import web
 
 from utils.text import smart_split
+
+# Discord's upload limit for a server without boosts. The HTTP app's own body limit
+# (bot/__init__.py) sits above it, so an oversized file gets this check's clear 400
+# rather than aiohttp's bare "Content Too Large" at 1 MiB.
+SEND_MAX_BYTES = 8 * 1024 * 1024
 from bot.client import (client, post_to_zipper, resolve_thread, failure_notice,
                         DISCORD_CHANNEL_ID)
 
@@ -95,7 +100,7 @@ async def handle_send(request: web.Request) -> web.Response:
         # Prepare file attachment if provided
         file_obj = None
         if file_data:
-            if len(file_data) > 8 * 1024 * 1024:  # 8MB Discord limit for free servers
+            if len(file_data) > SEND_MAX_BYTES:
                 return web.json_response({
                     "error": f"file too large: {len(file_data) / 1024 / 1024:.1f}MB (Discord limit: 8MB)"
                 }, status=400)
