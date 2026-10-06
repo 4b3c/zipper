@@ -84,11 +84,16 @@ def receive(body):
 def _decode(items):
     """[(name, bytes)] from the POST's files, refusing anything that could escape
     the message's folder or is too big together."""
-    out, total = [], 0
+    out, total, seen = [], 0, set()
     for f in items:
         name = os.path.basename(str(f.get('name', '')))
-        if not name or name.startswith('.'):
+        if not name or name.startswith('.') or '\x00' in name:
             raise ValueError('bad file name %r' % f.get('name'))
+        stem, ext = os.path.splitext(name)
+        n = 2
+        while name in seen:                     # two a.png in one message: a.png, a-2.png
+            name, n = '%s-%d%s' % (stem, n, ext), n + 1
+        seen.add(name)
         try:
             data = base64.b64decode(f.get('data', ''), validate=True)
         except (ValueError, TypeError):
@@ -106,11 +111,15 @@ def _save(mid, files):
     d = os.path.join(FILES, mid)
     os.makedirs(d, exist_ok=True)
     paths = []
-    for name, data in files:
-        p = os.path.join(d, name)
-        with open(p, 'wb') as fh:
-            fh.write(data)
-        paths.append(p)
+    try:
+        for name, data in files:
+            p = os.path.join(d, name)
+            with open(p, 'wb') as fh:
+                fh.write(data)
+            paths.append(p)
+    except Exception:
+        shutil.rmtree(d, ignore_errors=True)    # no half-saved message left behind
+        raise
     # Keep the newest KEEP_FILES folders; ids sort by time within a sender, and the
     # folder's mtime orders across senders.
     dirs = sorted((os.path.join(FILES, x) for x in os.listdir(FILES)), key=os.path.getmtime)

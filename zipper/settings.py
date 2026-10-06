@@ -257,8 +257,8 @@ def check():
             if where == 'plugins' and k not in ref:
                 out.append('%s: no such plugin' % here)
                 continue
-            if where.startswith('plugins.') and where.count('.') == 1 and k == 'zippers':
-                continue                    # peers' map: any ids
+            if where.startswith('plugins.') and where.count('.') == 1 and k in ('zippers', 'topics'):
+                continue                    # peers' and topics' maps: any names
             if k not in ref:
                 out.append('%s: unknown key' % here)
             elif isinstance(ref[k], dict):

@@ -3,6 +3,7 @@
   "about": "standing jobs for Claude: each run is a fresh session that reads a topic's condensed context, works, and rewrites it for the next run",
   "defaults": {
     "dir": "",
+    "max_usage": 0,
     "topics": {}
   },
   "secrets": [],
