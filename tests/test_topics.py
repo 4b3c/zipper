@@ -1,0 +1,120 @@
+"""Topics: the scheduling, gate, lock and prompt, with a fake `claude` on PATH.
+
+    python3 -m unittest tests.test_topics -v
+"""
+import argparse, json, os, shutil, stat, sys, tempfile, unittest
+
+TMP = tempfile.mkdtemp(prefix='zipper-topics-')
+for k in [k for k in os.environ if k.startswith(('ZIPPER_', 'DISCORD_', 'GITHUB_', 'BOT_'))]:
+    del os.environ[k]
+os.environ.update(ZIPPER_SETTINGS=os.path.join(TMP, 'settings.json'),
+                  ZIPPER_ENV_FILE=os.path.join(TMP, 'env'),
+                  ZIPPER_VAULT=os.path.join(TMP, 'vault'))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+
+from zipper import settings                                         # noqa: E402
+from plugins import topics                                          # noqa: E402
+
+# A stand-in for `claude -p`: rewrites context.md when the prompt asks, and answers
+# with whatever FAKE_RESULT says.
+FAKE = """#!/bin/sh
+for a; do last="$a"; done
+case "$last" in *"rewrite"*) echo "state after run" > context.md ;; esac
+printf '{"result": "%s"}' "${FAKE_RESULT:-NOTIFY: no\\ndone}"
+"""
+
+
+def tearDownModule():
+    shutil.rmtree(TMP, ignore_errors=True)
+
+
+def ns(**kw):
+    base = dict(action='run', name='t', every=None, gate=None, timeout=None, model=None,
+                force=False, wait=True, limit=5)
+    base.update(kw)
+    return argparse.Namespace(**base)
+
+
+class Topics(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(dir=TMP)
+        settings.put('plugins.topics.dir', self.dir)
+        settings.put('plugins.topics.topics', {})
+        bindir = os.path.join(self.dir, 'bin')
+        os.makedirs(bindir)
+        fake = os.path.join(bindir, 'claude')
+        with open(fake, 'w') as fh:
+            fh.write(FAKE)
+        os.chmod(fake, os.stat(fake).st_mode | stat.S_IEXEC)
+        self.path = os.environ['PATH']
+        os.environ['PATH'] = bindir + os.pathsep + self.path
+        os.environ['HOME'] = self.dir      # scheduled._env puts ~/.local/bin first
+
+    def tearDown(self):
+        os.environ['PATH'] = self.path
+        os.environ.pop('FAKE_RESULT', None)
+
+    def add(self, **kw):
+        self.assertEqual(topics.cmd_topic(ns(action='add', every=15, **kw)), 0)
+
+    def test_add_schedules_and_scaffolds(self):
+        self.add(gate='test -e ready')
+        self.assertEqual(topics.jobs(settings.get('plugins.topics')), [('topic run t', 'every:15')])
+        self.assertTrue(os.path.exists(os.path.join(self.dir, 't', 'purpose.md')))
+        self.assertEqual(settings.get('plugins.topics.topics.t.gate'), 'test -e ready')
+
+    def test_closed_gate_runs_nothing(self):
+        self.add(gate='test -e ready')
+        topics.cmd_topic(ns())
+        self.assertEqual(topics._runs('t'), [])
+        open(os.path.join(self.dir, 't', 'ready'), 'w').close()
+        topics.cmd_topic(ns())
+        self.assertEqual(len(topics._runs('t')), 1)
+
+    def test_run_records_and_condenses(self):
+        self.add()
+        self.assertEqual(topics.cmd_topic(ns()), 0)
+        run = topics._runs('t')[-1]
+        self.assertTrue(run['ok'])
+        self.assertFalse(run['notify'])
+        self.assertTrue(run['context_updated'])
+        self.assertFalse(os.path.exists(topics._lock('t')))
+        # The next run's prompt carries what this one left.
+        self.assertIn('state after run', topics.prompt('t'))
+
+    def test_first_run_prompt(self):
+        self.add()
+        p = topics.prompt('t')
+        self.assertIn('first run', p)
+        self.assertIn(os.path.join(self.dir, 't', 'context.md'), p)
+
+    def test_lock_skips_a_second_run(self):
+        self.add()
+        with open(topics._lock('t'), 'w') as fh:
+            fh.write('%d x\n' % os.getpid())        # a live pid: this test process
+        topics.cmd_topic(ns())
+        self.assertEqual(topics._runs('t'), [])
+        with open(topics._lock('t'), 'w') as fh:
+            fh.write('999999999 x\n')               # a dead one is stale
+        self.assertIsNone(topics._running('t'))
+
+    def test_failure_is_recorded(self):
+        self.add()
+        os.environ['FAKE_RESULT'] = 'garbage'
+        topics.cmd_topic(ns())
+        run = topics._runs('t')[-1]
+        self.assertTrue(run['notify'])              # unparseable notifies, like a pass
+
+    def test_unknown_topic(self):
+        self.assertEqual(topics.cmd_topic(ns(name='nope')), 1)
+
+    def test_rm_keeps_folder(self):
+        self.add()
+        topics.cmd_topic(ns(action='rm'))
+        self.assertEqual(topics.jobs(settings.get('plugins.topics')), [])
+        self.assertTrue(os.path.isdir(os.path.join(self.dir, 't')))
+
+
+if __name__ == '__main__':
+    unittest.main()

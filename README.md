@@ -140,6 +140,7 @@ python3 -m zipper <command>          # --help lists everything
 | `run` / `restart [--when-idle]` | Supervise the relay, bot, dashboard and timers (containers) / reload the code without cutting a turn off |
 | `code start\|review\|propose\|prs` / `update` | Change the shared code as a PR: a tester agent tests it and, if it approves, it merges and restarts (`review`), or a person reviews it (`propose`) / take merged changes, rolling back if they break |
 | `msg <zipper> "text"` / `host <verb>` | Message another zipper (peers plugin) / ask the host daemon (host plugin) |
+| `topic list\|show\|run\|add\|rm` | Standing jobs for Claude: on a timer, a fresh session reads a topic's condensed context, works, and rewrites it (topics plugin) |
 
 ---
 

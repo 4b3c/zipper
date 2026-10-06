@@ -252,6 +252,18 @@ def main():
     s.add_argument('peer'); s.add_argument('text')
     s.set_defaults(fn=_needs('peers', _mod('plugins.peers', 'cmd_msg')))
 
+    s = sub.add_parser('topic', help='standing jobs for Claude: fresh sessions that carry a condensed context')
+    s.add_argument('action', choices=['list', 'show', 'run', 'add', 'rm', '_exec'])
+    s.add_argument('name', nargs='?')
+    s.add_argument('--every', type=int, help='add: minutes between runs')
+    s.add_argument('--gate', help='add: shell command in the topic folder; non-zero skips the run')
+    s.add_argument('--timeout', type=int, help='add: minutes a run may take (default 30)')
+    s.add_argument('--model', help='add: the model a run uses')
+    s.add_argument('--force', action='store_true', help='run: ignore the gate')
+    s.add_argument('--wait', action='store_true', help='run: in the foreground, not detached')
+    s.add_argument('--limit', type=int, default=5, help='show: how many runs')
+    s.set_defaults(fn=_needs('topics', _mod('plugins.topics', 'cmd_topic')))
+
     s = sub.add_parser('secret', help='put a secret into .env without it passing through a chat')
     s.add_argument('name'); s.add_argument('--check', action='store_true', help='say whether it is set')
     s.add_argument('--tty', action='store_true', help='hidden prompt in this terminal instead of a link')
