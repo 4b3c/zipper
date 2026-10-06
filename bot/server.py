@@ -231,6 +231,9 @@ async def handle_thread(request: web.Request) -> web.Response:
     ignores itself -- so a conversation that starts on this side has no thread
     unless one is made deliberately. That is what this is for: adopting a
     session that began in the terminal so it can be carried on from a phone.
+
+    `channel_id` puts it in another channel (a topic's own); replies in its
+    thread reach Zipper like any thread's, wherever the channel is.
     """
     try:
         body = await request.json()
@@ -241,9 +244,10 @@ async def handle_thread(request: web.Request) -> web.Response:
         if not client.is_ready():
             return web.json_response({"error": "discord client not ready"}, status=503)
         import bot.client as _client_mod
-        channel = client.get_channel(_client_mod.DISCORD_CHANNEL_ID)
+        channel_id = int(body.get("channel_id") or _client_mod.DISCORD_CHANNEL_ID)
+        channel = client.get_channel(channel_id)
         if channel is None:
-            return web.json_response({"error": "channel not found"}, status=404)
+            return web.json_response({"error": f"channel {channel_id} not found"}, status=404)
         msg = await channel.send(smart_split(message)[0])
         thread = await msg.create_thread(name=name, auto_archive_duration=1440)
         for chunk in smart_split(message)[1:]:

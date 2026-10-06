@@ -34,6 +34,14 @@ The run is detached from the schedule, which runs jobs one at a time: a
 thirty-minute topic must not hold up the hourly pull. A lock in the folder keeps
 one run per topic. Like a pass, the run's last message starts `NOTIFY: yes|no`,
 and yes opens a Discord thread attached to the session.
+
+**Each topic posts in its own channel** (`channel`, a Discord channel id), not the
+main one: a topic that notifies hourly buried every conversation there, and a
+channel per topic lets its notifications be muted or kept on their own. So `topic
+add` refuses a new topic without `--channel` while Discord is on, and refuses the
+main channel or one another topic has. A topic left without one still posts in the
+main channel rather than not at all. Replying in its thread continues the run's
+session, as anywhere.
 """
 import datetime, json, os, shutil, subprocess, sys, uuid
 
@@ -332,7 +340,7 @@ def _tell(topic, sid, message):
     from zipper import scheduled, conversations
     title = 'Topic %s · %s' % (topic, datetime.datetime.now().strftime('%a %-I%p').lower().capitalize())
     try:
-        tid = scheduled._open_thread(message, title)
+        tid = scheduled._open_thread(message, title, (_conf(topic) or {}).get('channel'))
         conversations.touch(tid, title=title, session_id=sid, session_fixed=True)
     except Exception as e:
         print('topic %s: could not post to Discord: %s' % (topic, e))
@@ -383,7 +391,8 @@ def _cmd_list(a):
         state = 'running' if _running(n) else ('last %s %s' % (
             last.get('start', '')[:16], 'skipped' if last.get('skipped') else
             'ok' if last.get('ok') else 'FAILED') if last else 'never run')
-        print('%-16s every %-5s %s%s%s' % (n, '%sm' % t['every'] if t.get('every') else '-', state,
+        print('%-16s every %-5s %s%s%s%s' % (n, '%sm' % t['every'] if t.get('every') else '-', state,
+                                           '  channel: %s' % (t.get('channel') or 'MAIN (none set)'),
                                            '  gate: %s' % t['gate'] if t.get('gate') else '',
                                            '  woken by: %s' % ', '.join(t['wake_on']) if t.get('wake_on') else ''))
     return 0
@@ -407,12 +416,35 @@ def _cmd_show(a):
     return 0
 
 
+def _channel_problem(topic, channel):
+    """Why `channel` can't be this topic's, or None. Its own: not main, not another's."""
+    if not channel.isdigit():
+        return 'a channel is a Discord channel id, digits only'
+    if channel in (str(core.cfg('DISCORD_CHANNEL_ID') or ''), str(settings.get('discord.channel') or '')):
+        return "that is the main channel; a topic gets its own"
+    for n, t in (settings.get('plugins.topics.topics') or {}).items():
+        if n != topic and str(t.get('channel') or '') == channel:
+            return 'topic %s already posts there; a topic gets its own' % n
+    return None
+
+
 def _cmd_add(a):
+    from zipper import plugins
     if not a.name.replace('-', '').replace('_', '').isalnum():
         print('topic: a name is letters, digits, - and _')
         return 1
     if a.every is None and not (_conf(a.name) or {}).get('every') and not a.wake_on:
         print('topic: say how it runs -- --every <minutes>, --wake-on <peer>, or both')
+        return 1
+    channel = (getattr(a, 'channel', None) or '').strip()
+    if channel:
+        why = _channel_problem(a.name, channel)
+        if why:
+            print('topic: %s' % why)
+            return 1
+    elif _conf(a.name) is None and plugins.is_enabled('discord'):
+        print('topic: a new topic needs --channel <id>: its own Discord channel, so its '
+              'threads stay out of the main one')
         return 1
     d = _dir(a.name)
     os.makedirs(d, exist_ok=True)
@@ -428,6 +460,8 @@ def _cmd_add(a):
     for k in ('gate', 'timeout', 'model'):
         if getattr(a, k) is not None:
             conf[k] = getattr(a, k)
+    if channel:
+        conf['channel'] = channel
     new = _conf(a.name) is None
     settings.put('plugins.topics.topics.%s' % a.name, conf)
     if new and conf.get('every'):

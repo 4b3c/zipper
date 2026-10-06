@@ -31,7 +31,7 @@ def tearDownModule():
 
 def ns(**kw):
     base = dict(action='run', name='t', every=None, gate=None, wake_on=None, timeout=None, model=None,
-                force=False, wait=True, limit=5)
+                channel=None, force=False, wait=True, limit=5)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -218,6 +218,37 @@ class Topics(unittest.TestCase):
         topics.cmd_topic(ns(action='rm'))
         self.assertEqual(topics.jobs(settings.get('plugins.topics')), [])
         self.assertTrue(os.path.isdir(os.path.join(self.dir, 't')))
+
+    def test_channel_is_its_own(self):
+        settings.put('plugins.discord.enabled', True)
+        settings.put('discord.channel', '100')
+        try:
+            self.assertEqual(topics.cmd_topic(ns(action='add', every=15)), 1)     # none given
+            self.assertEqual(topics.cmd_topic(ns(action='add', every=15, channel='100')), 1)  # main
+            self.assertEqual(topics.cmd_topic(ns(action='add', every=15, channel='abc')), 1)
+            self.add(channel='200')
+            self.assertEqual(settings.get('plugins.topics.topics.t.channel'), '200')
+            self.assertEqual(topics.cmd_topic(ns(action='add', name='u', every=15, channel='200')), 1)
+            # An existing topic is updated without repeating it.
+            self.add()
+            self.assertEqual(settings.get('plugins.topics.topics.t.channel'), '200')
+        finally:
+            settings.put('plugins.discord.enabled', False)
+            settings.put('discord.channel', '')
+
+    def test_notify_posts_in_the_topics_channel(self):
+        from zipper import scheduled, conversations, plugins
+        self.add(channel='200')
+        seen = []
+        saved = (scheduled._open_thread, conversations.touch, plugins.is_enabled)
+        scheduled._open_thread = lambda m, n, c=None: seen.append(c) or '1'
+        conversations.touch = lambda *a, **k: None
+        plugins.is_enabled = lambda name, *a, **k: True
+        try:
+            topics._tell('t', 'sid', 'hello')
+        finally:
+            scheduled._open_thread, conversations.touch, plugins.is_enabled = saved
+        self.assertEqual(seen, ['200'])
 
 
 if __name__ == '__main__':

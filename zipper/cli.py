@@ -261,6 +261,7 @@ def main():
     s.add_argument('--wake-on', action='append', help='add: a peer zipper whose messages start a run at once (repeatable)')
     s.add_argument('--timeout', type=int, help='add: minutes a run may take (default 30)')
     s.add_argument('--model', help='add: the model a run uses')
+    s.add_argument('--channel', help='add: the Discord channel id its threads open in (its own; required for a new topic)')
     s.add_argument('--force', action='store_true', help='run: ignore the gate')
     s.add_argument('--wait', action='store_true', help='run: in the foreground, not detached')
     s.add_argument('--limit', type=int, default=5, help='show: how many runs')
