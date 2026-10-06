@@ -24,6 +24,11 @@ gate or not; the run's prompt carries the messages and the inbox is emptied. A
 message that lands mid-run leaves a `pending` mark, and the run starts again once
 when it finishes, so nothing waits for the next tick.
 
+**Usage has a ceiling.** With `plugins.topics.max_usage` set (a percentage), a run
+that would start while the plan's 5-hour session or 7-day window is at or over it is
+skipped and logged instead; its messages stay in the inbox for the first run after
+the window resets. Unreadable usage does not block: the meters say so separately.
+
 The run is detached from the schedule, which runs jobs one at a time: a
 thirty-minute topic must not hold up the hourly pull. A lock in the folder keeps
 one run per topic. Like a pass, the run's last message starts `NOTIFY: yes|no`,
@@ -197,6 +202,18 @@ def prompt(topic, now=None, messages=()):
                      'messages': _messages_block(messages)}
 
 
+def over_limit():
+    """Why runs must wait (e.g. 'session 72% (resets 2026-10-06T07:20)'), or None."""
+    limit = settings.get('plugins.topics.max_usage')
+    if not limit:
+        return None
+    from zipper import usage
+    over = [m for m in (usage.read() or {}).get('meters', [])
+            if m.get('pct') is not None and float(m['pct']) >= float(limit)]
+    return ', '.join('%s %s%% (resets %s)' % (m.get('label', m.get('key')), m['pct'],
+                                               (m.get('resets') or '?')[:16]) for m in over) or None
+
+
 def _gate(topic, conf):
     """True when the topic should run. No gate means always."""
     cmd = conf.get('gate')
@@ -218,20 +235,32 @@ def _exec(topic):
     start = datetime.datetime.now()
     ctx_path = os.path.join(d, 'context.md')
     before = os.path.getmtime(ctx_path) if os.path.exists(ctx_path) else None
-    # Exclusive: a wake and a tick can start two children at the same moment.
-    for _ in range(2):
-        try:
-            fd = os.open(_lock(topic), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
-            break
-        except FileExistsError:
-            if _running(topic):
-                open(_pending(topic), 'w').close()
-                return 0
-            os.remove(_lock(topic))                 # stale: its run was killed
-    else:
-        return 1
-    with os.fdopen(fd, 'w') as fh:
+    why = over_limit()
+    if why:
+        _record(topic, {'start': start.isoformat(timespec='seconds'), 'ok': True,
+                        'skipped': 'usage: %s' % why})
+        print('topic %s: skipped, usage at or over the limit: %s' % (topic, why))
+        return 0
+    # Exclusive: a wake and a tick can start two children at the same moment. The lock
+    # appears with the pid already in it (link is atomic and refuses an existing name),
+    # so nobody can read an empty lock and take it for stale.
+    tmp = _lock(topic) + '.%d' % os.getpid()
+    with open(tmp, 'w') as fh:
         fh.write('%d %s\n' % (os.getpid(), sid))
+    try:
+        for _ in range(2):
+            try:
+                os.link(tmp, _lock(topic))
+                break
+            except FileExistsError:
+                if _running(topic):
+                    open(_pending(topic), 'w').close()
+                    return 0
+                os.remove(_lock(topic))             # stale: its run was killed
+        else:
+            return 1
+    finally:
+        os.remove(tmp)
     try:
         os.remove(_pending(topic))                  # this run will see what it marked
     except FileNotFoundError:
@@ -313,7 +342,8 @@ def _cmd_run(a):
     if pid:
         print('topic %s: already running (pid %d)' % (a.name, pid))
         return 0
-    if not a.force and not _gate(a.name, _conf(a.name)):
+    waiting = os.path.exists(_inbox(a.name))       # messages left by a skipped run
+    if not a.force and not waiting and not _gate(a.name, _conf(a.name)):
         print('topic %s: gate closed, nothing to do' % a.name)
         return 0
     if a.wait:
@@ -327,6 +357,9 @@ def _cmd_list(a):
     topics = settings.get('plugins.topics.topics') or {}
     if not topics:
         print('no topics. `zipper topic add <name> --every <minutes>`')
+    why = over_limit()
+    if why:
+        print('runs paused: %s' % why)
     for n, t in sorted(topics.items()):
         last = (_runs(n, 1) or [{}])[0]
         state = 'running' if _running(n) else ('last %s %s' % (
@@ -346,6 +379,9 @@ def _cmd_show(a):
     print('\n--- context.md\n%s' % (_read(os.path.join(d, 'context.md')).strip() or '(empty)'))
     print('\n--- last runs')
     for r in _runs(a.name, a.limit):
+        if r.get('skipped'):
+            print('%s  skipped  %s' % (r.get('start', '')[:16], r['skipped']))
+            continue
         print('%s  %s  ctx %s  %s' % (r.get('start', '')[:16], 'ok    ' if r.get('ok') else 'FAILED',
                                       'updated' if r.get('context_updated') else 'UNCHANGED',
                                       (r.get('message') or '').split('\n')[0][:100]))
@@ -373,7 +409,15 @@ def _cmd_add(a):
     for k in ('gate', 'timeout', 'model'):
         if getattr(a, k) is not None:
             conf[k] = getattr(a, k)
+    new = _conf(a.name) is None
     settings.put('plugins.topics.topics.%s' % a.name, conf)
+    if new and conf.get('every'):
+        # The first tick comes one interval from now, not at once: the purpose is
+        # still the template, and a run now would only write that down.
+        from zipper import supervise
+        st = supervise._load_state()
+        st['topic run %s' % a.name] = datetime.datetime.now().isoformat(timespec='seconds')
+        supervise._save_state(st)
     print('topic %s: %s%s, folder %s\nwrite its purpose in %s'
           % (a.name, 'every %d min' % conf['every'] if conf.get('every') else 'no timer',
              ', woken by %s' % ', '.join(conf['wake_on']) if conf.get('wake_on') else '', d, purpose))

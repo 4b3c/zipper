@@ -56,6 +56,13 @@ class PeerFiles(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.post(files=[{'name': '.hidden', 'data': b64(b'x')}])
 
+    def test_same_names_do_not_overwrite(self):
+        self.post(files=[{'name': 'a.png', 'data': b64(b'one')}, {'name': 'a.png', 'data': b64(b'two')}])
+        text = peers._load()['messages'][-1]['text']
+        paths = [l.split('saved here: ')[1] for l in text.splitlines() if 'saved here' in l]
+        self.assertEqual([os.path.basename(p) for p in paths], ['a.png', 'a-2.png'])
+        self.assertEqual(open(paths[1], 'rb').read(), b'two')
+
     def test_bad_base64_and_size_refused(self):
         with self.assertRaises(ValueError):
             self.post(files=[{'name': 'a.bin', 'data': 'not base64!!'}])

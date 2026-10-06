@@ -2,7 +2,8 @@
   "title": "Other zippers",
   "about": "messages to and from zippers on the same host, as queue rows",
   "defaults": {
-    "zippers": {}
+    "zippers": {},
+    "notify": true
   },
   "secrets": [
     "ZIPPER_COMMS_TOKEN"
