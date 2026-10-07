@@ -237,15 +237,7 @@ def build_views():
         empty='All applied.')
 
     # -- drift ---------------------------------------------------------------
-    # The three that follow all mean "this is going stale", and they disagree on
-    # purpose: one is about a missing plan, one about the note, one about the work.
-    V['drifting'] = _view(
-        'Drifting — active project, no open task', ['Project', 'Stage'],
-        [[_link(d['_title']), d.get('stage', '—')]
-         for d in active if not by.get(d['_title'])],
-        note='Active is a claim. An open task is the evidence.',
-        empty='Every active project has an open task.')
-
+    # These disagree on purpose: one is about the note, one about the work.
     stale = [(d, _days_since(str(d.get('note_updated', '')))) for d in active]
     V['stale_notes'] = _view(
         'Stale — claims active, note untouched 30+ days',
@@ -316,8 +308,8 @@ VIEW_PAGES = [
      ['scoreboard', 'all_built', 'graveyard']),
     ('school',    'School',   'Coursework and the internship pipeline.',
      ['classes', 'school_tasks', 'apps_by_status', 'apps_by_tier', 'apps_open']),
-    ('drift',     'Drift',    'Three different ways of going stale.',
-     ['drifting', 'absent_from_logs', 'stale_notes', 'open_loops',
+    ('drift',     'Drift',    'Different ways of going stale.',
+     ['absent_from_logs', 'stale_notes', 'open_loops',
       'decisions_due', 'cad', 'people']),
 ]
 

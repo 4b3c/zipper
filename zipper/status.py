@@ -41,14 +41,6 @@ def cmd_status(a):
                   cust, first(p)))
     L += ['', '**%d ventures, $%g total.**' % (len(rev), total), '']
 
-    # drifting
-    drift = [(p, d) for p, d in notes
-             if d.get('status') == 'active' and d.get('type') == 'project'
-             and not by.get(title_of(p))]
-    L += ['## Drifting — active project, no open task', '']
-    L += ['- [[%s]] (%s)' % (title_of(p), d.get('type', '?')) for p, d in drift] or ['- none']
-    L += ['']
-
     # stale
     stale = []
     for p, d in notes:
@@ -113,6 +105,6 @@ def cmd_status(a):
     L += ['', 'Related: [[Dashboard]] · [[Agenda]] · [[Review]] · [[Home]]', '']
     os.makedirs(METADIR, exist_ok=True)     # a new vault has no Meta/ until now
     open(os.path.join(METADIR, 'Status.md'), 'w', encoding='utf-8').write('\n'.join(L))
-    print('status -> Meta/Status.md  (%d ventures, %d drifting, %d stale, %d blocked)'
-          % (len(rev), len(drift), len(stale), len(blocked)))
+    print('status -> Meta/Status.md  (%d ventures, %d stale, %d blocked)'
+          % (len(rev), len(stale), len(blocked)))
     return 0

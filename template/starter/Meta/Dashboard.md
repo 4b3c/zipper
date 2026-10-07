@@ -29,11 +29,6 @@ SORT revenue_to_date DESC
 Everything meant to earn, and what it has earned. A `0` is a fact; a blank hides the row's
 honesty.
 
-## Drifting — active, no open task
-
-Dataview can't join notes to tasks; `zipper` flags an active project with no open task in
-`Tasks/`, on the brief and the Signals card.
-
 ## Stale — claims active, note untouched 30+ days
 
 ```dataview
