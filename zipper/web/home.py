@@ -485,7 +485,7 @@ li.hid{display:none}
 .em span{font:9px/1.2 var(--mono);color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
 .ems + .sub{margin:4px 0 12px}
 
-/* --- next actions and ventures ------------------------------------------ */
+/* --- next tasks and ventures ------------------------------------------ */
 .cols3{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start;margin-top:12px}
 @media(max-width:820px){.cols3{grid-template-columns:1fr}}
 .cols3 .panel{height:auto}
@@ -1021,11 +1021,11 @@ def metrics_block():
 
 
 def views_row():
-    """Next actions and ventures, from the saved queries. Full lists live under /views."""
+    """Next tasks and ventures, from the saved queries. Full lists live under /views."""
     vb = views_blob()
     v = vb.get('views', {})
     return ('<div class="cols3">'
-            '<div class="panel"><div class="ph">next actions<span class="tabs">'
+            '<div class="panel"><div class="ph">next tasks<span class="tabs">'
             '<a class="tabb" href="/views/now">all</a></span></div>'
             '<div class="pb">%s</div></div>'
             '<div class="panel"><div class="ph">ventures<span class="tabs">'

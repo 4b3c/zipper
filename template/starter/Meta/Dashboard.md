@@ -20,7 +20,7 @@ which DQL can't see. Full 14 days in [[Agenda]].
 ## The scoreboard
 
 ```dataview
-TABLE stage, revenue_to_date AS "$", paying_users, customers, next_action
+TABLE stage, revenue_to_date AS "$", paying_users, customers
 FROM "Projects"
 WHERE revenue_intent = true
 SORT revenue_to_date DESC
@@ -29,13 +29,10 @@ SORT revenue_to_date DESC
 Everything meant to earn, and what it has earned. A `0` is a fact; a blank hides the row's
 honesty.
 
-## Drifting — active, no next action
+## Drifting — active, no open task
 
-```dataview
-TABLE status, type
-FROM "Projects" OR "Areas"
-WHERE (status = "active" OR status = "ongoing") AND !next_action
-```
+Dataview can't join notes to tasks; `zipper` flags an active project with no open task in
+`Tasks/`, on the brief and the Signals card.
 
 ## Stale — claims active, note untouched 30+ days
 
@@ -49,7 +46,7 @@ SORT note_updated ASC
 ## Said active, but absent from the logs
 
 ```dataview
-TABLE last_touched, next_action
+TABLE last_touched
 FROM "Projects"
 WHERE status = "active" AND (!last_touched OR date(last_touched) < date(today) - dur(21 days))
 SORT last_touched ASC
@@ -61,7 +58,7 @@ The gap between what you call active and what you actually touch. `zipper sync` 
 ## Blocked and open loops
 
 ```dataview
-TABLE blocked_by, next_action, review
+TABLE blocked_by, review
 FROM "Projects"
 WHERE blocked_by OR open_loop = true
 ```

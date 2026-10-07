@@ -202,8 +202,12 @@ def flags(evrecs=None):
         if n is not None and n <= 7:
             logged_recently.update(x.strip() for x in LINK_RE.findall(
                 open(f, encoding='utf-8').read()))
+    by = views.next_tasks()
     for p, d in notes:
         t = title_of(p)
+        if d.get('type') == 'project' and d.get('status') == 'active' \
+           and not by.get(t):
+            out.append('%s is active with no open task in Tasks/' % t)
         if d.get('last_push') and _days_since(d['last_push']) is not None \
            and _days_since(d['last_push']) <= 7 and t not in logged_recently:
             out.append('%s was pushed to on %s but never appears in a log entry' %

@@ -28,16 +28,6 @@ WHERE !completed
 GROUP BY project
 ```
 
-## The next action on every active project
-
-The single most useful query in the vault. If a row is blank, that project is drifting.
-
-```dataview
-TABLE WITHOUT ID file.link AS Project, stage AS Stage, next_action AS "Next action"
-FROM "Projects"
-WHERE status = "active"
-SORT stage ASC
-```
 
 ## Blocked
 

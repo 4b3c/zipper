@@ -32,7 +32,6 @@ that nobody has edited in two months means the note or the project is stale.
 | `revenue_to_date` | USD. `0` is a fact, not a blank |
 | `revenue_intent` | `true`/`false` — meant to earn? Ventures vs builds |
 | `paying_users` / `customers` / `team_size` | Numbers |
-| `next_action` | **One** concrete physical action, not a goal |
 | `blocked_by` | What's actually in the way |
 | `open_loop` | `true` if deliberately left running long |
 | `people` / `domain` | `[Sam]` / `[robotics, cad]` |
@@ -44,7 +43,7 @@ that nobody has edited in two months means the note or the project is stale.
 ## Areas
 
 `horizon` (`months`/`years`), `target` + `target_by`, `role`, `open_problem`, plus
-`next_action`, `review`, `people`, `domain`.
+`review`, `people`, `domain`.
 
 ## People
 
@@ -62,8 +61,9 @@ picked up.
 
 ## Rules that keep this honest
 
-1. **`next_action` is a physical action.** "Land one B2B customer" is a goal; "email three
-   coffee shops the demo link" is an action. Goals go in the body.
+1. **Next steps are tasks, not fields.** Put them in `Tasks/` with `[project:: [[Note]]]`.
+   "Land one B2B customer" is a goal; "email three coffee shops the demo link" is a task.
+   Goals go in the body.
 2. **A `0` beats a blank.** Absent fields are invisible to queries.
 3. **`dormant` is a legitimate answer** — better than a note rotting as `active`.
 4. **A `review:` date is a promise.** Don't write one you won't keep.

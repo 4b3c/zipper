@@ -73,6 +73,23 @@ def vault_tasks():
                         'file': title_of(p)})
     return out
 
+def next_tasks(tasks=None):
+    """Open tasks per note, soonest first: {title: [task, ...]}. A project's
+    next step is whatever is first here -- there is no next_action field,
+    because a field nobody ticks goes stale without anyone noticing."""
+    out = {}
+    tasks = vault_tasks() if tasks is None else tasks
+    for i, t in enumerate(tasks):
+        if t['done'] or not t['project']:
+            continue
+        name = t['project'].split('|')[0].split('#')[0].strip()
+        out.setdefault(name, []).append((not t['next'], t['due'] or '9999', i, t))
+    return {k: [x[3] for x in sorted(v, key=lambda x: x[:3])] for k, v in out.items()}
+
+def _next(by, title):
+    v = by.get(title)
+    return v[0]['text'] if v else ''
+
 APP_RE = re.compile(r'^\s*-\s+(.+?)\s*(?=\[[a-z_]+::)')
 
 def applications():
@@ -104,6 +121,7 @@ def build_views():
     projects = [d for d in notes if d.get('type') == 'project']
     areas = [d for d in notes if d.get('type') == 'area']
     open_tasks = [t for t in tasks if not t['done']]
+    by = next_tasks(tasks)
     horizon = (core.TODAY + datetime.timedelta(days=30)).isoformat()
     V = {}
 
@@ -126,11 +144,12 @@ def build_views():
 
     active = [d for d in projects if d.get('status') == 'active']
     V['next_actions'] = _view(
-        'The next action on every active project',
-        ['Project', 'Stage', 'Next action'],
-        [[_link(d['_title']), d.get('stage', '—'), d.get('next_action', '')]
+        'The next task on every active project',
+        ['Project', 'Stage', 'Next task', 'Open'],
+        [[_link(d['_title']), d.get('stage', '—'), _next(by, d['_title']),
+          len(by.get(d['_title'], []))]
          for d in sorted(active, key=lambda d: d.get('stage', ''))],
-        note='The most useful view in the vault. A blank row is a project drifting.',
+        note='From Tasks/. A blank row is an active project with nothing to do.',
         empty='No active projects.')
 
     V['blocked'] = _view(
@@ -158,9 +177,9 @@ def build_views():
     ventures = sorted([d for d in projects if d.get('revenue_intent') == 'true'],
                       key=lambda d: -_num(d.get('revenue_to_date')))
     V['scoreboard'] = _view(
-        'The scoreboard', ['Venture', 'Stage', '$', 'Users', 'Next action'],
+        'The scoreboard', ['Venture', 'Stage', '$', 'Users', 'Next task'],
         [[_link(d['_title']), d.get('stage', '—'), d.get('revenue_to_date', '—'),
-          d.get('paying_users', d.get('customers', '—')), d.get('next_action', '')]
+          d.get('paying_users', d.get('customers', '—')), _next(by, d['_title'])]
          for d in ventures],
         note='%d ventures, $%g between them.'
              % (len(ventures), sum(_num(d.get('revenue_to_date')) for d in ventures)),
@@ -221,12 +240,11 @@ def build_views():
     # The three that follow all mean "this is going stale", and they disagree on
     # purpose: one is about a missing plan, one about the note, one about the work.
     V['drifting'] = _view(
-        'Drifting — active, with no next action', ['Note', 'Type', 'Status'],
-        [[_link(d['_title']), d.get('type', ''), d.get('status', '')]
-         for d in projects + areas
-         if d.get('status') in ('active', 'ongoing') and not d.get('next_action')],
-        note='Active is a claim. A next action is the evidence.',
-        empty='Everything active has a next action.')
+        'Drifting — active project, no open task', ['Project', 'Stage'],
+        [[_link(d['_title']), d.get('stage', '—')]
+         for d in active if not by.get(d['_title'])],
+        note='Active is a claim. An open task is the evidence.',
+        empty='Every active project has an open task.')
 
     stale = [(d, _days_since(str(d.get('note_updated', '')))) for d in active]
     V['stale_notes'] = _view(
@@ -241,18 +259,18 @@ def build_views():
         n = _months_since(d.get('last_touched'))
         if n is None or n > 21:
             absent.append([_link(d['_title']), d.get('last_touched', 'never'),
-                           n if n is not None else '—', d.get('next_action', '')])
+                           n if n is not None else '—', _next(by, d['_title'])])
     V['absent_from_logs'] = _view(
         'Said active, but absent from the logs',
-        ['Project', 'Last touched', 'Days', 'Next action'],
+        ['Project', 'Last touched', 'Days', 'Next task'],
         sorted(absent, key=lambda r: -(r[2] if isinstance(r[2], int) else 10**6)),
         note='`sync` fills last_touched from [[links]] in Log/, so this only tells '
              'the truth if you log.',
         empty='Everything active has recent evidence.')
 
     V['open_loops'] = _view(
-        'Blocked and open loops', ['Project', 'Blocked by', 'Next action', 'Review'],
-        [[_link(d['_title']), d.get('blocked_by', ''), d.get('next_action', ''),
+        'Blocked and open loops', ['Project', 'Blocked by', 'Next task', 'Review'],
+        [[_link(d['_title']), d.get('blocked_by', ''), _next(by, d['_title']),
           d.get('review', '')] for d in projects
          if d.get('blocked_by') or d.get('open_loop') == 'true'],
         empty='No open loops.')

@@ -83,10 +83,10 @@ the rest together and write it down in §8, so the next conversation doesn't rei
 
 **Frontmatter.** Every note starts with YAML frontmatter holding at least `type` and
 `status`. `zipper lint` checks it and lists the allowed values. A few fields do real work:
-`last_touched` (when work last happened — the drift flags read it), `next_action` (one
-concrete physical action, "email three coffee shops the demo link", not "get customers"),
-`review` (a date to revisit), and `repos:` (which GitHub repos are evidence for a project —
-mapped by hand, never guessed).
+`last_touched` (when work last happened — the drift flags read it), `review` (a date to
+revisit), and `repos:` (which GitHub repos are evidence for a project — mapped by hand,
+never guessed). There is no next-step field: a project's next step is its first open task
+in `Tasks/`, and an active project with none is flagged.
 
 ---
 
