@@ -86,7 +86,7 @@ the rest together and write it down in §8, so the next conversation doesn't rei
 `last_touched` (when work last happened — the drift flags read it), `review` (a date to
 revisit), and `repos:` (which GitHub repos are evidence for a project — mapped by hand,
 never guessed). There is no next-step field: a project's next step is its first open task
-in `Tasks/`, and an active project with none is flagged.
+in `Tasks/`. Not every active project has one, and that is fine.
 
 ---
 

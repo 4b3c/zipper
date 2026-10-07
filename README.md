@@ -96,7 +96,7 @@ status_verified: 2026-09-01   # "this status is right despite the evidence"
 ```
 
 - **No `next_action` field.** A project's next step is its first open task in `Tasks/`
-  (`[project:: [[Note]]]`); an active project with none is flagged. A field nobody ticks
+  (`[project:: [[Note]]]`). An active project with none is fine. A field nobody ticks
   goes stale without anyone noticing; an unticked task is visibly overdue.
 - **`status_verified` has a fuse.** It silences the stale-status flag, and the drift flag for
   45 days only. `stall_days_max` keeps counting regardless.
