@@ -66,10 +66,6 @@ def cmd_lint(a):
         if d.get('type') == 'project':
             if d.get('revenue_intent') == 'true' and 'revenue_to_date' not in d:
                 problems.append((name, 'revenue_intent=true but no revenue_to_date'))
-            if d.get('status') == 'active' and not d.get('next_action'):
-                problems.append((name, 'active project with no next_action'))
-        if d.get('next_action') and len(d['next_action'].split()) < 3:
-            problems.append((name, 'next_action looks too vague: "%s"' % d['next_action']))
     if not problems:
         print('lint: clean (%d notes)' % len(list(iter_notes())))
         return 0

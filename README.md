@@ -90,14 +90,14 @@ commits_mine: 3           # on an org repo: yours, where commits_recent is the t
 repos: [my-app, some-org/team-repo]      # hand-maintained; first is primary
 revenue_to_date: 0        # 0 is a fact; blank is invisible to queries
 revenue_intent: true      # ventures vs builds
-next_action: email three coffee shops the demo link   # ONE physical action
 blocked_by: waiting on the API token
 review: 2026-12-01
 status_verified: 2026-09-01   # "this status is right despite the evidence"
 ```
 
-- **`next_action` is an action, not a goal.** "Land a B2B customer" is a wish; "email three
-  coffee shops the demo link" can be done before lunch.
+- **No `next_action` field.** A project's next step is its first open task in `Tasks/`
+  (`[project:: [[Note]]]`); an active project with none is flagged. A field nobody ticks
+  goes stale without anyone noticing; an unticked task is visibly overdue.
 - **`status_verified` has a fuse.** It silences the stale-status flag, and the drift flag for
   45 days only. `stall_days_max` keeps counting regardless.
 - **Repo↔note mapping is by hand.** Guessing by name was removed: a wrong mapping moves
