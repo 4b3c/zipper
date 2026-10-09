@@ -61,6 +61,7 @@ server {
     location = /api/msg { return 404; }   # peers only, on 8898, where X-Real-IP is nginx's
     location ~ ^/(api/inputs/|api/canvas|api/hours|api/worklist$|api/done$|ext/|bookmarklet) {
         auth_basic off;
+        proxy_set_header X-Real-IP "";   # only 8898 may say who sent a message
         proxy_pass http://127.0.0.1:%(web)s;
     }
     location / {

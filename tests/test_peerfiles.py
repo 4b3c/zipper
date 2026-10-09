@@ -185,5 +185,27 @@ class Wake(unittest.TestCase):
         self.assertTrue(all(x.startswith(('Read(/', 'Grep(/', 'Glob(/')) for x in allow))
 
 
+class Route(unittest.TestCase):
+    """Only /api/msg reaches peers: the one path whose X-Real-IP is nginx's."""
+    def test_paths(self):
+        from zipper.web.http import input_name
+        self.assertEqual(input_name('/api/msg'), 'peers')
+        self.assertIsNone(input_name('/api/inputs/peers'))
+        self.assertIsNone(input_name('/api/msg/peers'))
+        self.assertEqual(input_name('/api/inputs/canvas'), 'canvas')
+        self.assertEqual(input_name('/api/hours'), 'hours')
+
+    def test_vault_under_home_stays_readable(self):
+        real = turn.core.VAULT
+        turn.core.VAULT = os.path.join(os.path.expanduser('~'), 'vault')
+        try:
+            a = turn.argv('claude', 'sid', False)
+        finally:
+            turn.core.VAULT = real
+        deny = a[a.index('--disallowedTools') + 1:a.index('--session-id')]
+        home = os.path.realpath(os.path.expanduser('~'))
+        self.assertNotIn('Read(/%s/**)' % home, deny)
+
+
 if __name__ == '__main__':
     unittest.main()

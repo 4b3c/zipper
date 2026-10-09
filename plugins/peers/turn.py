@@ -120,8 +120,10 @@ def _over_cap(peer):
 def argv(claude, session, resume):
     vault = os.path.realpath(core.VAULT)
     allow = ['Read(/%s/**)' % vault, 'Grep(/%s/**)' % vault, 'Glob(/%s/**)' % vault]
-    private = [os.path.dirname(os.path.realpath(core.ENV_FILE)), os.path.realpath(core.INBOX),
-               os.path.realpath(os.path.expanduser('~'))]
+    private = [os.path.dirname(os.path.realpath(core.ENV_FILE)), os.path.realpath(core.INBOX)]
+    home = os.path.realpath(os.path.expanduser('~'))
+    if not (vault + '/').startswith(home + '/'):     # deny wins: a vault under ~ stays readable
+        private.append(home)
     deny = (['Bash', 'Edit', 'Write', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Task', 'Agent']
             + ['%s(/%s/**)' % (t, d) for d in private for t in ('Read', 'Grep', 'Glob')])
     return ([claude, '-p', '--output-format', 'json', '--permission-mode', 'default',
