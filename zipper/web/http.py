@@ -509,7 +509,11 @@ class Handler(BaseHTTPRequestHandler):
             n = int(self.headers.get('Content-Length', 0))
             try:
                 before = snapshot_data()
-                res = inp.receive(json.loads(self.rfile.read(n).decode('utf-8')))
+                body = json.loads(self.rfile.read(n).decode('utf-8'))
+                if name == 'peers':     # who sent it: nginx's X-Real-IP, see docker/nginx.py
+                    res = inp.receive(body, source=self.headers.get('X-Real-IP'))
+                else:
+                    res = inp.receive(body)
                 emit_diff(before, snapshot_data())
                 publish('source', name)
                 self._send(200, json.dumps(res), 'application/json')
