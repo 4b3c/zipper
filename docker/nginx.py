@@ -8,7 +8,9 @@ says so. The extension's endpoints stay open, because a browser extension cannot
 answer an auth prompt: the readings it posts, the Canvas panel's worklist and
 cross-off, and /ext/ (the signed add-on and its update manifest).
 
-8898 (peers) is for other zippers: POST /api/msg, and nothing else is proxied.
+8898 (peers) is for other zippers: POST /api/msg, and nothing else is proxied. It sets
+X-Real-IP, which is how a message proves its sender; 8899 refuses /api/msg so that
+header can only ever be nginx's.
 """
 import os, subprocess, sys
 
@@ -56,8 +58,10 @@ server {
     location ~ ^/s/(886[0-9])/([A-Za-z0-9_-]+)$ {
         proxy_pass http://127.0.0.1:$1/$2;
     }
+    location = /api/msg { return 404; }   # peers only, on 8898, where X-Real-IP is nginx's
     location ~ ^/(api/inputs/|api/canvas|api/hours|api/worklist$|api/done$|ext/|bookmarklet) {
         auth_basic off;
+        proxy_set_header X-Real-IP "";   # only 8898 may say who sent a message
         proxy_pass http://127.0.0.1:%(web)s;
     }
     location / {
@@ -72,7 +76,11 @@ server {
 PEER = '''
 server {
     listen 8898;
-    location = /api/msg { client_max_body_size 64m; proxy_pass http://127.0.0.1:%(web)s; }
+    location = /api/msg {
+        client_max_body_size 64m;
+        proxy_set_header X-Real-IP $remote_addr;   # the sender check (plugins/peers)
+        proxy_pass http://127.0.0.1:%(web)s;
+    }
     location / { return 404; }
 }
 ''' % {'web': web}

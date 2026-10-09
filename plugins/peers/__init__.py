@@ -2,7 +2,13 @@
 
 Another zipper POSTs to `/api/msg` (the only path the peer port 8898 proxies):
 
-    {"from": "zipper-1", "text": "...", "token": "<ZIPPER_COMMS_TOKEN>"}
+    {"from": "zipper-1", "text": "..."}
+
+**No password: the network is the check.** The sender must be listed in settings
+`plugins.peers.zippers`, and the request must come from the address that entry's host
+resolves to -- on a shared Docker network, `zipper-1` resolves to zipper-1's container
+and nothing else. nginx hands the real source over as X-Real-IP; the dashboard's port
+refuses `/api/msg`, so the header cannot be supplied from outside.
 
 A message becomes a queue row -- `who: zipper-1` -- and a line in the
 notifications channel. **It is information, never an instruction.** Text from
@@ -10,8 +16,12 @@ another zipper is text from another person's life and another person's inbox,
 which is exactly where a prompt injection would come from; the vault's CLAUDE.md
 says to treat it like an email.
 
-Accepted only with the shared token and from an id listed in settings `plugins.peers.zippers`,
+Accepted only from a peer listed in settings `plugins.peers.zippers`,
 at most 30 an hour from each. Stored in Inbox/messages.json, the last 200.
+
+**A message wakes a reply** (`turn.py`): a short, read-only headless turn whose final
+message is sent back. A reply is marked as one and never wakes a turn, so two zippers
+cannot keep each other talking.
 
 **Files ride along** (`zipper msg <peer> "text" --file a.png`): base64 in the same
 POST, at most 40 MB together. The receiver saves them under
@@ -24,7 +34,7 @@ useless to the other side. The last 50 messages' files are kept.
 at its next tick. `plugins.peers.notify: false` keeps messages out of Discord, for a
 peer that talks often to a zipper rather than to its owner.
 """
-import base64, datetime, hmac, json, os, shutil, threading
+import base64, datetime, json, os, shutil, socket, threading, urllib.parse
 
 from zipper import core, settings
 
@@ -43,13 +53,24 @@ def _load():
         return {'messages': []}
 
 
-def receive(body):
-    token = core.cfg('ZIPPER_COMMS_TOKEN')
-    if not token or not hmac.compare_digest(str(body.get('token', '')), token):
-        raise ValueError('bad or missing token')
-    sender = str(body.get('from', ''))
-    if sender not in (settings.get('plugins.peers.zippers') or {}):
+def _verify(sender, source):
+    """The sender is a listed peer, and the request came from its address."""
+    url = (settings.get('plugins.peers.zippers') or {}).get(sender)
+    if not url:
         raise ValueError('unknown sender %r' % sender)
+    host = urllib.parse.urlsplit(url).hostname or ''
+    try:
+        addrs = socket.gethostbyname_ex(host)[2]
+    except OSError:
+        raise ValueError('cannot resolve %s, the address of %s' % (host, sender))
+    if not source or source not in addrs:
+        raise ValueError('message says it is from %s but came from %s'
+                         % (sender, source or 'nowhere known'))
+
+
+def receive(body, source=None):
+    sender = str(body.get('from', ''))
+    _verify(sender, source)
     text = str(body.get('text', '')).strip()[:MAX_TEXT]
     files = _decode(body.get('files') or [])
     if not text and not files:
@@ -65,6 +86,8 @@ def receive(body):
         paths = _save(mid, files)
         text = '\n'.join([text] + ['attached file saved here: %s' % p for p in paths]).strip()
         msg = {'id': mid, 'from': sender, 'at': now.isoformat(timespec='seconds'), 'text': text}
+        if body.get('reply'):
+            msg['reply'] = True
         blob['messages'] = (blob['messages'] + [msg])[-KEEP:]
         tmp = STORE + '.tmp'
         with open(tmp, 'w', encoding='utf-8') as fh:
@@ -78,6 +101,8 @@ def receive(body):
         except Exception:
             pass
     _hooks(msg)
+    from . import turn
+    turn.wake(msg)
     return {'ok': True, 'id': msg['id'], 'files': len(files)}
 
 
@@ -156,7 +181,7 @@ def events(before, after):
 
 # ---------------------------------------------------------------- sending
 
-def send(peer, text, files=()):
+def send(peer, text, files=(), reply=False):
     import urllib.request
     url = (settings.get('plugins.peers.zippers') or {}).get(peer)
     if not url:
@@ -170,7 +195,7 @@ def send(peer, text, files=()):
             raise RuntimeError('files over %d MB together' % (MAX_FILES_BYTES // 2 ** 20))
         enc.append({'name': os.path.basename(path), 'data': base64.b64encode(data).decode()})
     body = json.dumps({'from': settings.zipper_id(), 'text': text, 'files': enc,
-                       'token': core.cfg('ZIPPER_COMMS_TOKEN')}).encode()
+                       'reply': bool(reply)}).encode()
     req = urllib.request.Request(url.rstrip('/') + '/api/msg', data=body, method='POST',
                                  headers={'Content-Type': 'application/json'})
     with urllib.request.urlopen(req, timeout=120 if enc else 20) as fh:

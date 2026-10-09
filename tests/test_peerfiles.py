@@ -1,4 +1,4 @@
-"""Peers: files ride along with a message, and a message reaches on_peer_message.
+"""Peers: the sender check, files riding along, on_peer_message, and the reply turn's wake.
 
     python3 -m unittest tests.test_peerfiles -v
 """
@@ -9,13 +9,16 @@ for k in [k for k in os.environ if k.startswith(('ZIPPER_', 'DISCORD_', 'GITHUB_
     del os.environ[k]
 os.environ.update(ZIPPER_SETTINGS=os.path.join(TMP, 'settings.json'),
                   ZIPPER_ENV_FILE=os.path.join(TMP, 'env'),
-                  ZIPPER_VAULT=os.path.join(TMP, 'vault'),
-                  ZIPPER_COMMS_TOKEN='tok')
+                  ZIPPER_VAULT=os.path.join(TMP, 'vault'))
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from zipper import settings                                         # noqa: E402
 from plugins import peers                                           # noqa: E402
+from plugins.peers import turn                                      # noqa: E402
+
+SPAWNED = []
+turn._spawn = SPAWNED.append                # no test starts a real Claude
 
 
 def tearDownModule():
@@ -29,14 +32,16 @@ def b64(data):
 class PeerFiles(unittest.TestCase):
     def setUp(self):
         os.makedirs(os.path.join(TMP, 'vault', 'Inbox'), exist_ok=True)
-        settings.put('plugins.peers.zippers', {'studio': 'http://studio:8898'})
+        settings.put('plugins.peers.zippers', {'studio': 'http://127.0.0.1:8898'})
         settings.put('plugins.peers.notify', False)
         shutil.rmtree(peers.FILES, ignore_errors=True)
+        shutil.rmtree(turn._dir(), ignore_errors=True)
+        del SPAWNED[:]
 
-    def post(self, **kw):
-        body = {'from': 'studio', 'token': 'tok', 'text': 'frames'}
+    def post(self, source='127.0.0.1', **kw):
+        body = {'from': 'studio', 'text': 'frames'}
         body.update(kw)
-        return peers.receive(body)
+        return peers.receive(body, source=source)
 
     def test_file_is_saved_and_pointed_at(self):
         res = self.post(files=[{'name': 'sheet.png', 'data': b64(b'\x89PNG...')}])
@@ -103,6 +108,103 @@ class PeerFiles(unittest.TestCase):
         finally:
             plugins.enabled = real
         self.assertEqual(seen[0]['text'], 'wake up')
+
+
+
+class Sender(unittest.TestCase):
+    """No password: a message must come from the address its sender's name resolves to."""
+    def setUp(self):
+        PeerFiles.setUp(self)
+
+    post = PeerFiles.post
+
+    def test_from_its_own_address(self):
+        self.assertTrue(self.post()['ok'])
+
+    def test_from_elsewhere_refused(self):
+        with self.assertRaises(ValueError):
+            self.post(source='10.9.9.9')
+
+    def test_no_source_refused(self):
+        with self.assertRaises(ValueError):
+            self.post(source=None)
+
+    def test_unknown_sender_refused(self):
+        with self.assertRaises(ValueError):
+            self.post(**{'from': 'stranger'})
+
+    def test_unresolvable_peer_refused(self):
+        settings.put('plugins.peers.zippers', {'studio': 'http://no-such-host.invalid:8898'})
+        with self.assertRaises(ValueError):
+            self.post()
+
+
+class Wake(unittest.TestCase):
+    """A message wakes one reply; a reply wakes nothing."""
+    def setUp(self):
+        PeerFiles.setUp(self)
+
+    post = PeerFiles.post
+
+    def pending(self):
+        p = turn._path('studio', 'pending.jsonl')
+        return open(p).read().splitlines() if os.path.exists(p) else []
+
+    def test_message_wakes_a_turn(self):
+        self.post(text='what is due this week?')
+        self.assertEqual(SPAWNED, ['studio'])
+        self.assertEqual(len(self.pending()), 1)
+
+    def test_reply_wakes_nothing(self):
+        self.post(text='here you go', reply=True)
+        self.assertEqual(SPAWNED, [])
+        self.assertEqual(self.pending(), [])
+        self.assertTrue(peers._load()['messages'][-1]['reply'])
+
+    def test_answer_off(self):
+        settings.put('plugins.peers.answer', False)
+        try:
+            self.post()
+        finally:
+            settings.put('plugins.peers.answer', True)
+        self.assertEqual(SPAWNED, [])
+
+    def test_take_empties_the_file(self):
+        self.post(text='one')
+        self.post(text='two')
+        self.assertEqual([m['text'] for m in turn._take('studio')], ['one', 'two'])
+        self.assertEqual(turn._take('studio'), [])
+
+    def test_turn_cannot_act(self):
+        a = turn.argv('claude', 'sid', False)
+        deny = a[a.index('--disallowedTools') + 1:a.index('--session-id')]
+        for tool in ('Bash', 'Edit', 'Write', 'WebFetch'):
+            self.assertIn(tool, deny)
+        self.assertIn('--strict-mcp-config', a)
+        allow = a[a.index('--allowedTools') + 1:a.index('--disallowedTools')]
+        self.assertTrue(all(x.startswith(('Read(/', 'Grep(/', 'Glob(/')) for x in allow))
+
+
+class Route(unittest.TestCase):
+    """Only /api/msg reaches peers: the one path whose X-Real-IP is nginx's."""
+    def test_paths(self):
+        from zipper.web.http import input_name
+        self.assertEqual(input_name('/api/msg'), 'peers')
+        self.assertIsNone(input_name('/api/inputs/peers'))
+        self.assertIsNone(input_name('/api/msg/peers'))
+        self.assertEqual(input_name('/api/inputs/canvas'), 'canvas')
+        self.assertEqual(input_name('/api/hours'), 'hours')
+
+    def test_vault_under_home_stays_readable(self):
+        real = turn.core.VAULT
+        turn.core.VAULT = os.path.join(os.path.expanduser('~'), 'vault')
+        try:
+            a = turn.argv('claude', 'sid', False)
+        finally:
+            turn.core.VAULT = real
+        deny = a[a.index('--disallowedTools') + 1:a.index('--session-id')]
+        home = os.path.realpath(os.path.expanduser('~'))
+        self.assertNotIn('Read(/%s/**)' % home, deny)
 
 
 if __name__ == '__main__':

@@ -1,13 +1,12 @@
 {
   "title": "Other zippers",
-  "about": "messages to and from zippers on the same host, as queue rows",
+  "about": "messages to and from zippers on the same host, as queue rows; each one gets a read-only reply",
   "defaults": {
     "zippers": {},
-    "notify": true
+    "notify": true,
+    "answer": true
   },
-  "secrets": [
-    "ZIPPER_COMMS_TOKEN"
-  ],
+  "secrets": [],
   "env": {},
   "name": "peers"
 }

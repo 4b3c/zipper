@@ -499,9 +499,8 @@ class Handler(BaseHTTPRequestHandler):
             # A pushed input: the browser read something this machine cannot, and
             # hands it over. `/api/canvas` and `/api/hours` are the paths the
             # extension and bookmarklet already use, kept as aliases.
-            name = self.path.rsplit('/', 1)[-1]
-            name = {'msg': 'peers'}.get(name, name)     # /api/msg: another zipper
-            inp = inputs.get(name)
+            name = input_name(self.path)
+            inp = inputs.get(name) if name else None
             if not inp or not hasattr(inp, 'receive'):
                 self._send(404, json.dumps({'error': 'no input %r takes posts' % name}),
                            'application/json')
@@ -509,7 +508,11 @@ class Handler(BaseHTTPRequestHandler):
             n = int(self.headers.get('Content-Length', 0))
             try:
                 before = snapshot_data()
-                res = inp.receive(json.loads(self.rfile.read(n).decode('utf-8')))
+                body = json.loads(self.rfile.read(n).decode('utf-8'))
+                if name == 'peers':     # who sent it: nginx's X-Real-IP, see docker/nginx.py
+                    res = inp.receive(body, source=self.headers.get('X-Real-IP'))
+                else:
+                    res = inp.receive(body)
                 emit_diff(before, snapshot_data())
                 publish('source', name)
                 self._send(200, json.dumps(res), 'application/json')
@@ -517,6 +520,17 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, json.dumps({'error': str(e)}), 'application/json')
         else:
             self._send(404, 'not found', 'text/plain; charset=utf-8')
+
+
+def input_name(path):
+    """The input a POST path feeds, or None. Peers come in on `/api/msg` and nowhere
+    else: that is the one path nginx's peer port serves and sets X-Real-IP for, and
+    the sender check rests on that header (plugins/peers). `/api/inputs/peers` would
+    reach the same input from the dashboard's port, with a header the client chose."""
+    if path == '/api/msg':
+        return 'peers'
+    name = path.rsplit('/', 1)[-1]
+    return None if name == 'peers' else name
 
 
 BOOKMARKLET = (
