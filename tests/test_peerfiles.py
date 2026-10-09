@@ -35,7 +35,7 @@ class PeerFiles(unittest.TestCase):
         settings.put('plugins.peers.zippers', {'studio': 'http://127.0.0.1:8898'})
         settings.put('plugins.peers.notify', False)
         shutil.rmtree(peers.FILES, ignore_errors=True)
-        shutil.rmtree(os.path.join(TMP, 'vault', 'Inbox', 'peer-turns'), ignore_errors=True)
+        shutil.rmtree(turn._dir(), ignore_errors=True)
         del SPAWNED[:]
 
     def post(self, source='127.0.0.1', **kw):
