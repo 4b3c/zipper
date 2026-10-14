@@ -250,6 +250,23 @@ class Schedule(unittest.TestCase):
         self.assertEqual(self.due(now, {'update': '2026-09-29T11:15:00'}, jobs=jobs),
                          [('update', 'update')])
 
+    def test_queue_trigger(self):
+        now = datetime.datetime(2026, 9, 29, 12, 0)
+        jobs = [('pass', '09:00'), ('pass', 'queue:50')]
+        due = lambda st, n: supervise.due(now, st, jobs, queue_open=n)
+        self.assertEqual(due({}, 49), [])
+        self.assertEqual(due({}, 50), [('pass', 'pass@queue')])
+        # Any pass in the last two hours holds it: one that could not commit leaves
+        # the queue full, and must not be retried every tick.
+        self.assertEqual(due({'pass@09:00': '2026-09-29T11:00:00'}, 80), [])
+        self.assertEqual(due({'pass@queue': '2026-09-29T10:30:00'}, 80), [])
+        self.assertEqual(due({'pass@queue': '2026-09-29T09:59:00'}, 80), [('pass', 'pass@queue')])
+
+    def test_queue_trigger_yields_to_a_due_slot(self):
+        now = datetime.datetime(2026, 9, 29, 9, 1)
+        jobs = [('pass', '09:00'), ('pass', 'queue:50')]
+        self.assertEqual(supervise.due(now, {}, jobs, queue_open=60), [('pass', 'pass@09:00')])
+
     def test_nothing_to_do_without_due_pulls_or_jobs(self):
         now = datetime.datetime(2026, 9, 29, 12, 0)
         self.assertEqual(self.due(now, {}, jobs=[]), [])

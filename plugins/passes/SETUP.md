@@ -6,3 +6,4 @@ once they have a plugin that brings news in (GitHub, calendars). If they want it
 
     zipper plugin enable passes
     zipper settings set plugins.passes.times '["08:00", "20:00"]'   # if other times
+    zipper settings set plugins.passes.queue_trigger 50              # early pass at 50 unticked rows; 0 is off

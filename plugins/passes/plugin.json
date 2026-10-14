@@ -5,7 +5,8 @@
     "times": [
       "09:00",
       "21:00"
-    ]
+    ],
+    "queue_trigger": 50
   },
   "secrets": [],
   "env": {},

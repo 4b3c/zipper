@@ -310,6 +310,11 @@ thread in the main channel, attached to the pass's session (`session_fixed` on t
 row), so replying there continues the conversation that did the work. An unparseable answer
 counts as *yes*. `--dry-run` never posts; `--force` runs on an empty brief.
 
+Under `zipper run` a pass also starts early when the queue holds `plugins.passes.queue_trigger`
+unticked rows (default 50; 0 is off), at most once per two hours after any pass, so one a
+live conversation kept from committing is not retried every tick. systemd timers have no
+trigger.
+
 It never passes `--force` to `commit`. A conversation counts as live if it has a pane with
 Claude in it *or* a headless turn holding its lock (`convhead.turn_running`), so a pass
 cannot sweep up edits a Discord conversation is in the middle of.
