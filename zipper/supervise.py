@@ -32,6 +32,10 @@ from . import core, settings
 ROOT = settings.ROOT
 PIDFILE = os.path.join(ROOT, 'data', 'supervisor.pid')
 GRACE = datetime.timedelta(hours=2)
+# A queue trigger waits this long after any run of its job. A pass that could not
+# clear the queue (commit refuses while a conversation is live) leaves it full, and
+# without a cooldown the trigger would start another Claude every thirty seconds.
+QUEUE_COOLDOWN = datetime.timedelta(hours=2)
 
 
 def _state_path():
@@ -54,16 +58,31 @@ def _save_state(st):
     os.replace(tmp, _state_path())
 
 
-def due(now, st, jobs, pulls_due=False):
+def _last_run(st, job):
+    """When `job` last ran under any key -- a slot, a timer or a trigger."""
+    times = [datetime.datetime.fromisoformat(v) for k, v in st.items()
+             if k == job or k.startswith(job + '@')]
+    return max(times) if times else None
+
+
+def due(now, st, jobs, pulls_due=False, queue_open=0):
     """The jobs due at `now`, given what has run. Pure, so it can be tested.
 
     `pulls_due`: whether any plugin's own poll timer has run out (plugins.due());
     if so, one `zipper pull --due` pulls exactly those. `jobs`: [(job, spec)] from
-    the plugins -- spec 'HH:MM' (a slot, once a day) or 'every:N' (every N
-    minutes; `update` rides this, and waits by itself while a conversation is live).
+    the plugins -- spec 'HH:MM' (a slot, once a day), 'every:N' (every N
+    minutes; `update` rides this, and waits by itself while a conversation is live)
+    or 'queue:N' (when `queue_open`, the unticked rows, reaches N, and the job has
+    not run under any key for QUEUE_COOLDOWN).
     """
     out = [('pull --due', 'pull')] if pulls_due else []
     for job, spec in jobs:
+        if spec.startswith('queue:'):
+            last = _last_run(st, job)
+            if (queue_open >= int(spec.split(':', 1)[1]) and (not last or now - last >= QUEUE_COOLDOWN)
+                    and job not in (j for j, _ in out)):     # a slot due this tick already covers it
+                out.append((job, '%s@queue' % job))
+            continue
         if spec.startswith('every'):
             mins = int(spec.split(':', 1)[1]) if ':' in spec else 60
             last = st.get(job)
@@ -150,8 +169,10 @@ def _scheduler(stop):
             continue
         now = datetime.datetime.now()
         st = _load_state()
-        from . import plugins
-        jobs = due(now, st, plugins.jobs(), pulls_due=bool(plugins.due(now)))
+        from . import plugins, runqueue
+        planned = plugins.jobs()
+        n = len(runqueue.open_rows()) if any(s.startswith('queue:') for _, s in planned) else 0
+        jobs = due(now, st, planned, pulls_due=bool(plugins.due(now)), queue_open=n)
         if not jobs:
             continue
 
