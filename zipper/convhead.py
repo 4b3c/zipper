@@ -418,6 +418,27 @@ def _attempt(cmd, thread_id, text, timeout, out, on_echo=None):
     return out
 
 
+def _refused(thread_id, out):
+    """A Discord turn the API refused -- the usage limit, most often -- says so at
+    once, as a new message. Such a turn fires no Stop hook, so nothing else posts;
+    the status check would only edit its line a minute later, and Discord does not
+    notify on an edit. The status is removed, since nothing ran."""
+    if not str(thread_id).isdigit():
+        return
+    from . import chat, turnstatus
+    reason = turnstatus.api_error(thread_id)
+    if not reason:
+        return
+    out['refused'] = reason
+    chat.discord_status(False, thread_id, label='undelivered')     # bot/status.py UNDELIVERED
+    if 'limit' in reason.lower():
+        msg = ('⛔ **Out of Claude usage.** %s\nYour message was not answered. '
+               'Send it again after the reset.' % reason)
+    else:
+        msg = '⛔ **Claude refused this turn.** %s\nYour message was not answered.' % reason
+    chat.discord_send(msg, thread_id=thread_id)
+
+
 # How long to wait for the session to acknowledge a message, in `wait='echo'`.
 # Bounds the handover only; the turn behind it can run for as long as it likes.
 ECHO_TIMEOUT = float(os.environ.get('ZIPPER_HEAD_ECHO_TIMEOUT', 120))
@@ -477,6 +498,8 @@ def deliver(thread_id, text, wait='turn', timeout=None):
         try:
             _run_turn(thread_id, text, timeout, out, on_echo=echoed.set,
                       on_queue=queued)
+            if wait == 'echo':
+                _refused(thread_id, out)
         except Exception as e:                      # a thread dying silently is
             out['error'] = out['error'] or repr(e)  # how a message goes missing
         finally:
