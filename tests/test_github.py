@@ -82,6 +82,19 @@ class PushRows(unittest.TestCase):
         self.assertEqual(row['text'], 'pushed      secret  2026-10-14T10:06')
         self.assertEqual(row['who'], 'mate')
 
+    def test_branch_push_names_nothing(self):
+        # pushed_at moved but no default-branch commit is newer: a branch push.
+        repos = [{'name': 'zipper', 'commits': [
+            {'time': '2026-10-14T13:40', 'message': 'Merge #43', 'author': 'abe', 'mine': True}]}]
+        [row] = self.rows(repos, {'zipper': '2026-10-14T20:00:00'}, {'zipper': '2026-10-15T04:17:00'})
+        self.assertEqual(row['text'], 'pushed      zipper  2026-10-15T04:17')
+        self.assertNotIn('who', row)
+
+    def test_undated_record_falls_back_to_head(self):
+        repos = [{'name': 'r', 'commits': [{'message': 'Head', 'author': 'abe', 'mine': True}]}]
+        [row] = self.rows(repos, {'r': '2026-10-13T09:00:00'}, {'r': '2026-10-14T10:06:00'})
+        self.assertIn('Head', row['text'])
+
     def test_unknown_pusher_is_absent(self):
         [row] = self.rows([{'name': 'r', 'commits': []}], {'r': '1'}, {'r': '2'})
         self.assertNotIn('who', row)

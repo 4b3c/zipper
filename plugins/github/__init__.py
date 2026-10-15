@@ -67,13 +67,16 @@ def snapshot():
 
 def _pushed(name, since):
     """The commits a push brought in: committed after the previous push, newest
-    first. Falls back to the newest commit when none carry a time (a record written
-    before commits had one) -- better a known head than an empty row."""
+    first. Only the default branch is listed, but `pushed_at` moves on a push to
+    any branch -- so an empty answer is common and means "a branch push", and the
+    row then names neither commit nor pusher. Records written before commits had
+    a `time` can't be dated at all; for those the newest commit stands in."""
     for r in _repos():
         if r['name'] == name or r.get('key') == name:
             cs = r.get('commits') or []
-            new = [c for c in cs if c.get('time') and c['time'] > (since or '')[:16]]
-            return new or cs[:1]
+            if cs and not any(c.get('time') for c in cs):
+                return cs[:1]
+            return [c for c in cs if c.get('time') and c['time'] > (since or '')[:16]]
     return []
 
 
