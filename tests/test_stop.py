@@ -67,6 +67,38 @@ class Queue(unittest.TestCase):
             pass
 
 
+    def test_lock_freed_right_after_the_stop_still_drops_the_waiter(self):
+        # The turn lets go within one 0.25s poll of the stop -- the waiter gets the
+        # lock without ever failing to take it after the marker was written.
+        tid, got = 'q2', {}
+        held = threading.Event()
+        release = threading.Event()
+
+        def turn():
+            with convhead._turn_lock(tid):
+                held.set()
+                release.wait(5)
+        tt = threading.Thread(target=turn)
+        tt.start()
+        held.wait(2)
+
+        def waiter():
+            try:
+                with convhead._turn_lock(tid):
+                    got['ran'] = True
+            except RuntimeError as e:
+                got['error'] = str(e)
+        tw = threading.Thread(target=waiter)
+        tw.start()
+        time.sleep(0.4)
+        with mock.patch.object(stopturn, 'pids', return_value=[]):
+            stopturn.stop(tid)
+        release.set()                                  # freed 0ms after the marker
+        tt.join(3)
+        tw.join(3)
+        self.assertNotIn('ran', got)
+
+
 class Tree(unittest.TestCase):
     def test_tools_in_their_own_session_die_too(self):
         # A stand-in turn whose child lives in its own session, the way Claude
