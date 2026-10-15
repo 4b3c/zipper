@@ -81,7 +81,10 @@ def safe_next(target):
 
 
 def set_cookie(value, max_age=MAX_AGE):
-    return '%s=%s; Path=/; Max-Age=%d; HttpOnly; SameSite=Lax' % (COOKIE, value, max_age)
+    """`Secure`: the browser only ever sends it over HTTPS. Every way in from a
+    device is tailscale serve's HTTPS (the container is published on host loopback
+    only), and browsers treat http://localhost as secure, so nothing real loses it."""
+    return '%s=%s; Path=/; Max-Age=%d; HttpOnly; Secure; SameSite=Lax' % (COOKIE, value, max_age)
 
 
 def page(nxt='/', error=''):
