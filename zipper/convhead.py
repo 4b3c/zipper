@@ -183,9 +183,10 @@ def _turn_lock(thread_id, timeout=TURN_TIMEOUT, on_queue=None):
     within the turn it was already running; that is the one thing the box did
     that this does not, and it was considered and dropped on 2026-09-17 --
     a follow-up should land after the current turn rather than steer it. So
-    there is deliberately no interrupt and no mid-turn injection path: a
-    message is queued, in arrival order, and delivered when the conversation
-    is next free. `deliver` reports the wait as `queued_for` so a caller can
+    there is no mid-turn injection path: a message is queued, in arrival
+    order, and delivered when the conversation is next free. The one way to
+    cut in is the bare word `stop` (`stopturn`), which ends the turn and
+    drops the queue rather than steering either. `deliver` reports the wait as `queued_for` so a caller can
     say "queued behind a running turn" instead of going quiet.
 
     What this must never do is lose the message or report it delivered while it
@@ -193,8 +194,10 @@ def _turn_lock(thread_id, timeout=TURN_TIMEOUT, on_queue=None):
     conversation in a long tool-using turn and then sends into it.
     """
     os.makedirs(INBOX, exist_ok=True)
+    from . import stopturn
     fh = open(_lock_path(thread_id), 'a+')
     waited = 0.0
+    t0 = time.time()
     end = None if timeout is None else time.time() + timeout
     try:
         while True:
@@ -204,6 +207,10 @@ def _turn_lock(thread_id, timeout=TURN_TIMEOUT, on_queue=None):
             except OSError:
                 if waited == 0.0 and on_queue:
                     on_queue()          # safely waiting: that is a delivery answer
+                if stopturn.stopped_since(thread_id, t0):
+                    # `stop` in Discord: everything queued behind the stopped turn
+                    # is dropped, so what is sent next runs at once.
+                    raise RuntimeError('stopped by the operator before it ran')
                 if end is not None and time.time() >= end:
                     raise TimeoutError('another turn is still running')
                 time.sleep(0.25)

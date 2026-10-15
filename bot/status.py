@@ -109,8 +109,13 @@ def finished(row, outcome=''):
         if outcome:
             parts.append(outcome)
         return ' · '.join(parts + [span])
+    if outcome == STOPPED:
+        return '⏹️ Stopped after %s' % span
     return '✅ Took %s' % span
 
+
+# The outcome `/discord` passes when `stop` ended the turn.
+STOPPED = 'stopped'
 
 # The outcome `/discord` passes when a message never reached the conversation.
 # Nothing ran, so the status is deleted rather than closed: a "✅ Took" line over

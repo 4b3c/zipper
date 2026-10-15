@@ -19,7 +19,7 @@ from .feed import (SUBS, SUBS_LOCK, do_refresh, emit_diff, feed_load, feed_mark,
                    snapshot_data)
 from .render import _list_page, _views_page, views_blob
 from . import home
-from .. import turnstatus
+from .. import convhead, stopturn, turnstatus
 
 
 # ---------------------------------------------------------------- http
@@ -63,6 +63,21 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
         sys.stderr.write('%s %s\n' % (self.address_string(), fmt % args))
+
+    def _stop(self, tid):
+        """`stop` in a thread: end its turn and queue, then ask what to do instead.
+        With nothing running, say so and start nothing -- a bare "stop" is not a task."""
+        tid = str(tid)
+        if not (convhead.turn_running(tid) or turnstatus._turn_process(tid)):
+            chat.discord_send('Nothing is running, so there is nothing to stop.', thread_id=tid)
+            self._send(200, json.dumps({'ok': True, 'stopped': []}), 'application/json')
+            return
+        pids = stopturn.stop(tid)
+        chat.discord_typing(False, tid)
+        chat.discord_status(False, tid, label='stopped')    # bot/status.py STOPPED
+        chat.discord_send(stopturn.ASK, thread_id=tid)
+        publish('status', 'stopped     thread %s (%d process(es))' % (tid, len(pids)))
+        self._send(200, json.dumps({'ok': True, 'stopped': pids}), 'application/json')
 
     def _send(self, code, body, ctype='text/html; charset=utf-8'):
         raw = body.encode('utf-8') if isinstance(body, str) else body
@@ -475,6 +490,11 @@ class Handler(BaseHTTPRequestHandler):
                            'application/json')
                 return
 
+            if stopturn.is_stop(text):
+                self._stop(tid)
+                return
+            # The first message after a stop tells Claude its last turn was cut off.
+            text = stopturn.take_note(tid) + text
             chat.discord_typing(True, tid)
             chat.discord_status(True, tid)
             if not (conversations.load().get(str(tid)) or {}).get('title'):

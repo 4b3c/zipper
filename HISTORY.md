@@ -9,6 +9,16 @@ tense.
 
 ---
 
+## 2026-10-14 — `stop` from Discord
+
+- **"No interrupt" was decided on 2026-09-17** (a follow-up should land after the turn,
+  not steer it), and it held for queued messages. What it left out was a way to end a
+  turn from the phone: a wrong turn could only be waited out, or closed at a keyboard.
+  The bare word `stop` now ends the turn and drops its queue; anything else still waits.
+- **Signalling the turn's process group was not enough.** Claude Code starts each tool
+  in a group of its own, so in testing a `sleep 120` outlived the `claude` that ran it.
+  `stopturn` walks the process tree instead, read before anything is signalled.
+
 ## 2026-09-29 — one night: the core, plugins, cards, and setup by conversation
 
 Replaced, all through PRs #1–#9:
