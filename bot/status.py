@@ -123,10 +123,19 @@ STOPPED = 'stopped'
 UNDELIVERED = 'undelivered'
 
 
-def stopped(row):
+def stopped(row, reason=''):
+    """A dead turn's closing line. `reason` is the API's refusal when that is
+    what ended it (`turnstatus.api_error`): asking what happened would only
+    hit the same wall, so the line says it instead."""
+    if reason:
+        return '⚠️ Claude refused this turn (%s): %s' % (_clock(), _short(reason))
     what = 'The review stopped' if row['slot'] == 'review' else 'Stopped'
     return '⚠️ %s without answering (%s, after %s). Send it again, or ask what happened.' % (
         what, _clock(), _mins(row['started']))
+
+
+def _short(text, most=300):
+    return text if len(text) <= most else text[:most - 1] + '…'
 
 
 async def _message(row):
@@ -268,7 +277,9 @@ async def tick():
                 # The reply landed and only the closing edit was missed.
                 await msg.edit(content=finished(row))
             else:
-                await msg.edit(content=stopped(row))
+                reason = '' if row['slot'] == 'review' else await asyncio.to_thread(
+                    turnstatus.api_error, row['thread'])
+                await msg.edit(content=stopped(row, reason))
         except discord.NotFound:
             async with _lock:
                 state = _load()

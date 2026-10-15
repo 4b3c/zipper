@@ -738,7 +738,7 @@ class StatusMessage(unittest.TestCase):
         from zipper import turnstatus
         self.asyncio, self.status, self.turnstatus = asyncio, status, turnstatus
         self.saved = (status.PATH, status.resolve_thread, turnstatus.activity,
-                      type(status.client).__dict__.get('user'))
+                      turnstatus.api_error, type(status.client).__dict__.get('user'))
         status.PATH = os.path.join(TMP, 'discord-status-%s.json' % self.id().rsplit('.', 1)[-1])
         self.log, self.posted_after = [], []
         test = self
@@ -772,11 +772,13 @@ class StatusMessage(unittest.TestCase):
         status.GRACE = 0
         self.running = (True, 'running zipper lint')
         turnstatus.activity = lambda tid, slot: self.running
+        self.refused = ''
+        turnstatus.api_error = lambda tid: self.refused
         type(status.client).user = property(lambda c: test.me)
 
     def tearDown(self):
         (self.status.PATH, self.status.resolve_thread, self.turnstatus.activity,
-         user) = self.saved
+         self.turnstatus.api_error, user) = self.saved
         type(self.status.client).user = user
 
     def run_(self, coro):
@@ -894,6 +896,39 @@ class StatusMessage(unittest.TestCase):
         self.run_(s.tick())
         self.assertEqual([e[0] for e in self.log], ['send'])     # untouched
         self.assertIn('5:turn', s._load())
+
+    def test_refused_turn_says_why(self):
+        s = self.status
+        self.run_(s.start(5, 'turn'))
+        self.running = (False, '')
+        self.refused = "You've hit your session limit · resets 12am (America/Phoenix)"
+        self.run_(s.tick())
+        self.assertIn('session limit · resets 12am', self.log[-1][2])
+        self.assertNotIn('ask what happened', self.log[-1][2])
+
+    def test_api_error_reads_the_final_row_only(self):
+        from zipper import convhead
+        ts = self.turnstatus
+        api_error = self.saved[3]
+        path = os.path.join(TMP, 'refused.jsonl')
+        real = ts.load, convhead.transcript
+        ts.load = lambda: {'7': {'session_id': 'sid'}}
+        convhead.transcript = lambda sid: path
+        err = {'type': 'assistant', 'isApiErrorMessage': True, 'apiErrorStatus': 429,
+               'message': {'content': [{'type': 'text', 'text': 'Limit hit'}]}}
+        def write(*rows):
+            with open(path, 'w') as fh:
+                fh.write('\n'.join(json.dumps(r) for r in rows) + '\n')
+        try:
+            write({'type': 'user', 'message': {'content': 'hi'}}, err, {'type': 'last-prompt'})
+            self.assertEqual(api_error('7'), 'Limit hit')
+            write(err, {'type': 'user', 'message': {'content': 'again'}})
+            self.assertEqual(api_error('7'), '')          # a later prompt: not why it died
+            write({'type': 'assistant', 'message': {'content': [{'type': 'text', 'text': 'ok'}]}})
+            self.assertEqual(api_error('7'), '')
+            self.assertEqual(api_error('8'), '')          # no conversation
+        finally:
+            ts.load, convhead.transcript = real
 
     def test_doing_reads_the_last_tool_call(self):
         ts = self.turnstatus
