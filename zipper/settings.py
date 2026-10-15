@@ -345,7 +345,7 @@ def migrate(envfile):
     e = _env_file() if envfile is None else _read_env(envfile)
     data = _legacy(raw())
     moved = ['(rewrote the old layout)'] if is_legacy() else []
-    lists = {'plugins.github.orgs'}
+    lists = {'plugins.github.orgs', 'plugins.github.open'}
 
     def put_in(path, value):
         cur = data

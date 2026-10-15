@@ -54,7 +54,8 @@
     "github": {
       "enabled": true,
       "user": "your-login",
-      "orgs": []
+      "orgs": [],
+      "open": []
     },
     "host": {
       "enabled": false,
