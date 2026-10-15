@@ -50,6 +50,10 @@ DASH = '''
 map $http_upgrade $zipper_upgrade { default upgrade; '' close; }
 server {
     listen %(listen)s;
+    # Redirects stay relative. nginx would otherwise write its own scheme and port
+    # into them (http://host:8899/login), and the browser came in through
+    # tailscale serve's https on another port, where 8899 doesn't answer.
+    absolute_redirect off;
     %(auth)s
     location ~ ^/t/(88[0-9][0-9])(/.*)?$ {
         proxy_pass http://127.0.0.1:$1$request_uri;
