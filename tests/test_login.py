@@ -82,6 +82,9 @@ class Nginx(unittest.TestCase):
             self.skipTest('dashboard plugin off in this environment')
         self.assertIn('satisfy any;', conf)
         self.assertIn('absolute_redirect off;', conf)
+        # ttyd checks the same credential; nginx answers it for a cookie session
+        term = conf.split('location ~ ^/t/')[1].split('}')[0]
+        self.assertIn('proxy_set_header Authorization "Basic YWJlOnB3";', term)   # abe:pw
         self.assertIn('auth_request /_zipper_auth;', conf)
         self.assertIn('error_page 401 = @zipper_login;', conf)
         ext = conf.split('api/inputs/')[1].split('}')[0]
