@@ -81,6 +81,7 @@ class Nginx(unittest.TestCase):
         if 'listen' not in conf:
             self.skipTest('dashboard plugin off in this environment')
         self.assertIn('satisfy any;', conf)
+        self.assertIn('absolute_redirect off;', conf)
         self.assertIn('auth_request /_zipper_auth;', conf)
         self.assertIn('error_page 401 = @zipper_login;', conf)
         ext = conf.split('api/inputs/')[1].split('}')[0]
