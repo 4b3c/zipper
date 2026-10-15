@@ -18,7 +18,7 @@ from .feed import (SUBS, SUBS_LOCK, do_refresh, emit_diff, feed_load, feed_mark,
                    feed_mark_all, feed_rows, feed_watch, notes_watch, publish,
                    snapshot_data)
 from .render import _list_page, _views_page, views_blob
-from . import home
+from . import home, login
 from .. import convhead, stopturn, turnstatus
 
 
@@ -29,6 +29,7 @@ SRV = {'server': None, 'clients': 0, 'quit_timer': None, 'daemon': False, 'dashb
 # With the dashboard plugin off this process is only the core's relay: the bot hands
 # each Discord message in here, and plugins post readings. Everything else is a page.
 RELAY_GET = ('/api/conversations', '/health')
+LOGIN_LOCK = threading.Lock()
 RELAY_POST = ('/discord', '/api/canvas', '/api/hours', '/api/msg')
 
 
@@ -90,6 +91,48 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
+    def _redirect(self, where, cookie=None):
+        self.send_response(303)
+        self.send_header('Location', where)
+        if cookie:
+            self.send_header('Set-Cookie', cookie)
+        self.send_header('Content-Length', '0')
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+
+    def _login_get(self):
+        """/login, /logout and nginx's /auth/check. True if this request was one."""
+        path, _, query = self.path.partition('?')
+        if path == '/auth/check':
+            # nginx's auth_request: 204 lets the request through, 401 sends it to /login.
+            self._send(204 if login.valid(self.headers.get('Cookie')) else 401, b'')
+        elif path == '/login':
+            # nginx appends the original URI unescaped, so `next` is everything after
+            # it: a page with its own `&` query must come back whole.
+            nxt = query.split('next=', 1)[1] if query.startswith('next=') else '/'
+            self._send(200, login.page(nxt))
+        elif path == '/logout':
+            self._redirect('/login', login.set_cookie('', 0))
+        else:
+            return False
+        return True
+
+    def _login_post(self):
+        n = int(self.headers.get('Content-Length', 0) or 0)
+        form = urllib.parse.parse_qs(self.rfile.read(min(n, 8192)).decode('utf-8', 'replace'))
+        get = lambda k: (form.get(k) or [''])[0]
+        nxt = login.safe_next(get('next'))
+        # One check at a time, and a wrong one holds the line for a second: requests
+        # are served in parallel, so a sleep alone would not slow parallel guesses.
+        with LOGIN_LOCK:
+            ok = login.check(get('username'), get('password'))
+            if not ok:
+                time.sleep(1)
+        if ok:
+            self._redirect(nxt, login.set_cookie(login.make()))
+        else:
+            self._send(401, login.page(nxt, 'Wrong username or password.'))
+
     def _ext(self, name):
         """Serve a built extension artifact. Two filenames, nothing else.
 
@@ -131,6 +174,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if _relay_only_refuses('GET', self.path):
             self._send(404, 'the dashboard plugin is off', 'text/plain; charset=utf-8')
+            return
+        if self._login_get():
             return
         if self.path == '/' or self.path.startswith('/?'):
             # The front page. `?day=` selects which day the schedule draws;
@@ -282,6 +327,9 @@ class Handler(BaseHTTPRequestHandler):
         core.TODAY = datetime.date.today()
         if _relay_only_refuses('POST', self.path):
             self._send(404, 'the dashboard plugin is off', 'text/plain; charset=utf-8')
+            return
+        if self.path == '/login':
+            self._login_post()
             return
         if self.path.startswith('/api/card/'):
             # A card's button: /api/card/<card id>/<action>, JSON args in the body,
