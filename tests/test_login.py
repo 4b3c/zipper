@@ -54,7 +54,11 @@ class Login(unittest.TestCase):
 
     def test_next_stays_on_this_site(self):
         self.assertEqual(login.safe_next('/views?x=1&y=2'), '/views?x=1&y=2')
-        for bad in ('//evil.com', 'https://evil.com', '/\\evil.com', '%2F%2Fevil.com', ''):
+        self.assertEqual(login.safe_next('/p/Café'), '/p/Caf%C3%A9')     # ASCII only in the header
+        for bad in ('//evil.com', 'https://evil.com', '/\\evil.com', '%2F%2Fevil.com', '',
+                    '/\t/evil.com', '/%09/evil.com', '/%0a/evil.com', '/\n/evil.com',
+                    '/x%0d%0aSet-Cookie:%20pwn=1', '/x\r\nSet-Cookie: pwn=1', '/%7f/x',
+                    'javascript:alert(1)', '/%5C%5Cevil.com'):
             self.assertEqual(login.safe_next(bad), '/', bad)
 
     def test_form_is_one_a_password_manager_reads(self):

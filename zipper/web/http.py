@@ -29,6 +29,7 @@ SRV = {'server': None, 'clients': 0, 'quit_timer': None, 'daemon': False, 'dashb
 # With the dashboard plugin off this process is only the core's relay: the bot hands
 # each Discord message in here, and plugins post readings. Everything else is a page.
 RELAY_GET = ('/api/conversations', '/health')
+LOGIN_LOCK = threading.Lock()
 RELAY_POST = ('/discord', '/api/canvas', '/api/hours', '/api/msg')
 
 
@@ -106,10 +107,15 @@ class Handler(BaseHTTPRequestHandler):
         form = urllib.parse.parse_qs(self.rfile.read(min(n, 8192)).decode('utf-8', 'replace'))
         get = lambda k: (form.get(k) or [''])[0]
         nxt = login.safe_next(get('next'))
-        if login.check(get('username'), get('password')):
+        # One check at a time, and a wrong one holds the line for a second: requests
+        # are served in parallel, so a sleep alone would not slow parallel guesses.
+        with LOGIN_LOCK:
+            ok = login.check(get('username'), get('password'))
+            if not ok:
+                time.sleep(1)
+        if ok:
             self._redirect(nxt, login.set_cookie(login.make()))
         else:
-            time.sleep(1)       # a guess costs a second
             self._send(401, login.page(nxt, 'Wrong username or password.'))
 
     def _ext(self, name):

@@ -64,11 +64,20 @@ def check(user, pw):
 
 
 def safe_next(target):
-    """Only a path on this site: never `//elsewhere` or a full URL."""
+    """Only a path on this site, safe to put in a Location header.
+
+    Checked on what a browser would act on, not the raw string: browsers drop tabs
+    and newlines from URLs, so `/\t/evil.com` becomes `//evil.com`, and a CR or LF
+    would end the header and start a forged one. Any control character, a
+    backslash, or anything that parses with a scheme or host is refused outright;
+    what passes is percent-encoded, so nothing but ASCII reaches the header."""
     target = urllib.parse.unquote(target or '/')
-    if not target.startswith('/') or target.startswith('//') or '\\' in target:
+    if any(ord(ch) < 0x20 or ord(ch) == 0x7f for ch in target) or '\\' in target:
         return '/'
-    return target
+    parts = urllib.parse.urlsplit(target)
+    if parts.scheme or parts.netloc or not target.startswith('/') or target.startswith('//'):
+        return '/'
+    return urllib.parse.quote(target, safe="/?&=#%:@!$'()*+,;~-._")
 
 
 def set_cookie(value, max_age=MAX_AGE):
