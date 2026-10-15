@@ -51,6 +51,31 @@ def _commit(c, r):
         out['message'] = c['commit']['message'].split('\n')[0][:100]
     return out
 
+def _branches(r, cached, token):
+    """Keep the branch heads, and on a push say which branch moved and how.
+
+    Heads are fetched when the repo was pushed, or when there is no baseline yet
+    (the first run after this was added, or a repo seen for the first time).
+    `pushes` is this run's: empty unless `pushed_at` moved, so a queue row is never
+    built from an old push."""
+    from . import ghpush
+    r['pushes'] = []
+    old = cached.get('branches')
+    if old is not None and cached.get('pushed_at') == r['pushed_at']:
+        r['branches'] = old
+        return
+    open_ = not r['is_org'] or r['key'] in _open_repos()
+    api = lambda path, params: _api(path, token, params)
+    try:
+        r['branches'] = ghpush.heads(r, api, open_)
+    except Exception as e:
+        r['branch_error'] = str(e)
+        if old is not None:
+            r['branches'] = old
+        return
+    if cached.get('pushed_at') and cached['pushed_at'] != r['pushed_at']:
+        r['pushes'] = ghpush.pushes(r, old, r['branches'], api, _commit, open_)
+
 def _api(path, token, params=''):
     url = 'https://api.github.com' + path + params
     req = urllib.request.Request(url, headers={
@@ -104,6 +129,7 @@ def cmd_github(a):
               'language': (r.get('language') or ''),
               'private': r.get('private', False),
               'owner': (r.get('owner') or {}).get('login') or GH_USER,
+              'default_branch': r.get('default_branch') or 'main',
               'pushed_at': _utc_local(r.get('pushed_at'))} for r in repos]
     for r in repos:
         # their own repos keep bare names (back-compat with existing `repos:` fields);
@@ -127,17 +153,8 @@ def cmd_github(a):
         r['note'] = title_of(mapping[r['key']][0]) if r['key'] in mapping else None
         r['commits'] = []
         cached = prev.get(r['key'], {})
+        _branches(r, cached, token)
         if r['key'] not in mapping:
-            # Unmapped repos keep no history, but a push to one still becomes a queue
-            # row, and the row should say what was pushed and by whom. Only their own
-            # repos: an unmapped org repo never got this far.
-            if (not r['is_org'] and cached.get('pushed_at')
-                    and cached['pushed_at'] != r['pushed_at']):
-                try:
-                    r['commits'] = [_commit(c, r) for c in _api(
-                        '/repos/%s/%s/commits' % (r['owner'], r['name']), token, '?per_page=10')]
-                except Exception as e:
-                    r['commit_error'] = str(e)
             continue
         if (cached.get('pushed_at') == r['pushed_at'] and cached.get('note')
                 and not a.full):
