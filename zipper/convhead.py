@@ -215,6 +215,10 @@ def _turn_lock(thread_id, timeout=TURN_TIMEOUT, on_queue=None):
                     raise TimeoutError('another turn is still running')
                 time.sleep(0.25)
                 waited += 0.25
+        # Checked again with the lock in hand: a turn that exits within one poll
+        # of the stop frees the lock before a waiter has looked at the marker.
+        if waited and stopturn.stopped_since(thread_id, t0):
+            raise RuntimeError('stopped by the operator before it ran')
         yield waited
     finally:
         with contextlib.suppress(OSError):
