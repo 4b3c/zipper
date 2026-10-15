@@ -38,24 +38,24 @@ locks and pane status lines), and Discord is only told when the word changes.
 ## Status messages
 
 While a turn runs, its thread shows one message, edited every minute:
-*"⏳ Still working · 3m · 12:44 · running zipper lint"*. It is posted when `/discord`
+*"[Working] Ran for 3m 12s · Last edited: 12:44 · Session 44% · Context 404k · running zipper lint"*. It is posted when `/discord`
 takes the message. Right after the reply goes out, the Stop hook turns it into its closing
-line, *"✅ Took 4m (12:41 → 12:45)"*, and it **stays** as the divider above the reply.
+line, *"[Done] Ran for 4m 03s (12:41 → 12:45) · Session 45% · Context 410k"*, and it **stays** as the divider above the reply.
 The reply is its own new message, not an edit of the status, because Discord notifies on new
 messages and never on edits. A review (`zipper code review`) gets its own message in a second
-slot (*"🧪 Tester on PR #26…"*), closed with the outcome just before the verdict is delivered.
+slot (*"[Testing] Tester on PR #26…"*), closed with the outcome just before the verdict is delivered.
 
 Each minute `zipper.turnstatus` checks that the work is really running: the turn lock, or
 a headless `claude` whose environment names the thread, which survives a `zipper-web`
 restart that frees the lock. If it isn't running and nothing was posted after the status,
-the status changes to *"⚠️ Stopped without answering"* and stays. State lives in
+the status changes to *"[Stopped without answering]"* and stays. State lives in
 `Inbox/discord-status.json`, so a bot restart resumes the updates.
 
 ## Stop
 
 A message sent mid-turn queues behind it. The bare word **`stop`** doesn't: it ends the
 running turn and every tool under it, drops anything queued behind it, closes the status
-as *"⏹️ Stopped after 3m (…)"* and asks *"What would you like Zipper to do instead?"*. The
+as *"[Stopped] Ran for 3m 12s (…)"* and asks *"What would you like Zipper to do instead?"*. The
 next message runs at once, with a line telling Claude its last turn was cut off.
 `stop` with nothing running says so and starts nothing. See `zipper/stopturn.py`.
 

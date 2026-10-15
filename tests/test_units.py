@@ -775,8 +775,11 @@ class StatusMessage(unittest.TestCase):
         self.refused = ''
         turnstatus.api_error = lambda tid: self.refused
         type(status.client).user = property(lambda c: test.me)
+        self.saved_meters = status.meters
+        status.meters = lambda tid, slot='turn': 'Session 44% · Context 404k' if slot == 'turn' else 'Session 44%'
 
     def tearDown(self):
+        self.status.meters = self.saved_meters
         (self.status.PATH, self.status.resolve_thread, self.turnstatus.activity,
          self.turnstatus.api_error, user) = self.saved
         type(self.status.client).user = user
@@ -787,22 +790,22 @@ class StatusMessage(unittest.TestCase):
     def test_lifecycle_running_then_answered(self):
         s = self.status
         self.run_(s.start(5, 'turn'))
-        self.assertTrue(self.log[0][1].startswith('⏳ Got it, working on it ('))
+        self.assertTrue(self.log[0][1].startswith('[Working] Started '))
         self.run_(s.tick())
         self.assertEqual(self.log[-1][0], 'edit')
-        self.assertIn('Still working', self.log[-1][2])
-        self.assertIn('running zipper lint', self.log[-1][2])
+        self.assertRegex(self.log[-1][2], r'^\[Working\] Ran for \d+s · Last edited: \d\d:\d\d · '
+                                          r'Session 44% · Context 404k · running zipper lint$')
         self.run_(s.stop(5, 'turn'))
         self.assertEqual(self.log[-1][:2], ('edit', 1))         # stays, as a divider
-        self.assertTrue(self.log[-1][2].startswith('✅ Took <1m ('))
+        self.assertRegex(self.log[-1][2], r'^\[Done\] Ran for \d+s \(\d\d:\d\d → \d\d:\d\d\) · Session 44% · Context 404k$')
         self.assertEqual(s._load(), {})
 
     def test_an_undelivered_message_leaves_no_status(self):
         s = self.status
         self.run_(s.start(5, 'turn'))
         self.run_(s.stop(5, 'turn', s.UNDELIVERED))
-        self.assertEqual(self.log[-1][:2], ('delete', 1))       # nothing ran: no "✅ Took"
-        self.assertFalse(any('✅' in str(e) for e in self.log))
+        self.assertEqual(self.log[-1][:2], ('delete', 1))       # nothing ran: no "[Done]"
+        self.assertFalse(any('[Done]' in str(e) for e in self.log))
         self.assertEqual(s._load(), {})
 
     def test_follow_up_reuses_the_message(self):
@@ -818,7 +821,7 @@ class StatusMessage(unittest.TestCase):
         self.running = (False, '')
         self.run_(s.tick())
         self.assertEqual(self.log[-1][0], 'edit')
-        self.assertIn('Stopped without answering', self.log[-1][2])
+        self.assertIn('[Stopped without answering]', self.log[-1][2])
         self.assertEqual(s._load(), {})
 
     def test_missed_close_after_an_answer_closes(self):
@@ -828,18 +831,18 @@ class StatusMessage(unittest.TestCase):
         self.posted_after = [self.me]
         self.run_(s.tick())
         self.assertEqual(self.log[-1][0], 'edit')
-        self.assertIn('✅ Took', self.log[-1][2])
+        self.assertIn('[Done]', self.log[-1][2])
 
     def test_review_is_its_own_slot(self):
         s = self.status
         self.run_(s.start(5, 'turn'))
         self.run_(s.start(5, 'review', 'Tester on PR #7, round 1 of 3'))
         self.assertEqual([e[0] for e in self.log], ['send', 'send'])
-        self.assertIn('🧪 Tester on PR #7', self.log[-1][1])
+        self.assertIn('[Testing] Tester on PR #7', self.log[-1][1])
         self.run_(s.stop(5, 'turn'))
         self.assertEqual(list(s._load()), ['5:review'])
         self.run_(s.stop(5, 'review', 'approved, merged'))
-        self.assertTrue(self.log[-1][2].startswith('🧪 Tester on PR #7, round 1 of 3 · approved, merged · '))
+        self.assertTrue(self.log[-1][2].startswith('[Tested] Tester on PR #7, round 1 of 3 · approved, merged · Ran for '))
 
     def test_a_failed_close_is_retried(self):
         s = self.status
@@ -857,7 +860,7 @@ class StatusMessage(unittest.TestCase):
         self.assertNotIn('5:turn', s._load())      # the slot is free at once
         self.run_(s.tick())                         # the bot is back: it closes now
         self.assertEqual(self.log[-1][:2], ('edit', 1))
-        self.assertIn('✅ Took', self.log[-1][2])
+        self.assertIn('[Done]', self.log[-1][2])
         self.assertEqual(s._load(), {})
 
     def test_a_new_turn_after_a_failed_close_gets_its_own_status(self):
@@ -876,7 +879,7 @@ class StatusMessage(unittest.TestCase):
         self.assertNotIn('follow-up', self.log[-1][1])
         self.run_(s.tick())                         # old one closed, new one kept
         closes = [e for e in self.log if e[:2] == ('edit', 1)]
-        self.assertTrue(closes and '✅ Took' in closes[-1][2])
+        self.assertTrue(closes and '[Done]' in closes[-1][2])
         self.assertEqual([k for k in s._load()], ['5:turn'])
 
     def test_an_unreachable_thread_is_dropped(self):
@@ -903,8 +906,34 @@ class StatusMessage(unittest.TestCase):
         self.running = (False, '')
         self.refused = "You've hit your session limit · resets 12am (America/Phoenix)"
         self.run_(s.tick())
-        self.assertIn('session limit · resets 12am', self.log[-1][2])
+        self.assertTrue(self.log[-1][2].startswith('[Refused] You\'ve hit your session limit · resets 12am'))
         self.assertNotIn('ask what happened', self.log[-1][2])
+
+    def test_review_progress_separates_label_and_duration(self):
+        row = {'slot': 'review', 'started': 0, 'label': 'Tester on PR #54, round 1 of 3'}
+        line = self.status.progress(row, 'reading diff', 'Session 55%')
+        self.assertRegex(line, r'^\[Testing\] Tester on PR #54, round 1 of 3 · Ran for \S+ \S+ · '
+                               r'Last edited: \d\d:\d\d · Session 55% · reading diff$')
+        line = self.status.progress({'slot': 'review', 'started': 0}, '', '')
+        self.assertTrue(line.startswith('[Testing] Testing the change · Ran for '))
+
+    def test_exact_durations(self):
+        d = self.status._dur
+        self.assertEqual(d(1000, now=1048), '48s')
+        self.assertEqual(d(1000, now=1108), '1m 48s')
+        self.assertEqual(d(1000, now=1000 + 3600 + 125), '1h 02m')
+
+    def test_meters_leave_out_what_they_cannot_read(self):
+        from unittest import mock
+        from zipper import convstate, usage
+        m = self.saved_meters
+        with mock.patch.object(usage, 'read', return_value={'meters': [{'key': 'session', 'pct': 43.6}]}), \
+                mock.patch.object(convstate, 'context_tokens', return_value=404324):
+            self.assertEqual(m('5'), 'Session 44% · Context 404k')
+            self.assertEqual(m('5', 'review'), 'Session 44%')
+        with mock.patch.object(usage, 'read', side_effect=OSError), \
+                mock.patch.object(convstate, 'context_tokens', return_value=0):
+            self.assertEqual(m('5'), '')
 
     def test_api_error_reads_the_final_row_only(self):
         from zipper import convhead

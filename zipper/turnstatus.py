@@ -1,6 +1,6 @@
 """Is the work behind a Discord status message still happening, and what is it?
 
-The bot keeps one status message per thread and slot ("⏳ Still working · 3 min")
+The bot keeps one status message per thread and slot ("[Working] Ran for 3m 12s · …")
 and edits it every minute -- see `bot/status.py`. Before each edit it asks this
 module, because a status that only counts minutes is a clock, not a witness: it
 would keep saying "working" over a turn that had died. Read, never tracked.

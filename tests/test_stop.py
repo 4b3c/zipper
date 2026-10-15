@@ -132,13 +132,13 @@ class Refused(unittest.TestCase):
     def test_usage_limit_posts_a_new_message(self):
         out, sent = self.run_refused('123', "You've hit your session limit · resets 12am (America/Phoenix)")
         self.assertEqual(sent[0], ('status', 'undelivered'))
-        self.assertIn('Out of Claude usage', sent[1][1])
+        self.assertTrue(sent[1][1].startswith('[Out of usage] '))
         self.assertIn('resets 12am', sent[1][1])
         self.assertIn('refused', out)
 
     def test_other_refusal_says_so(self):
         _, sent = self.run_refused('123', 'API Error: overloaded')
-        self.assertIn('refused this turn', sent[1][1])
+        self.assertTrue(sent[1][1].startswith('[Refused] '))
 
     def test_a_normal_ending_posts_nothing(self):
         out, sent = self.run_refused('123', '')
@@ -156,8 +156,8 @@ class Status(unittest.TestCase):
         os.environ.setdefault('DISCORD_CHANNEL_ID', '1')
         from bot import status
         row = {'slot': 'turn', 'started': time.time() - 120}
-        self.assertTrue(status.finished(row, status.STOPPED).startswith('⏹️ Stopped after 2m'))
-        self.assertTrue(status.finished(row).startswith('✅ Took'))
+        self.assertTrue(status.finished(row, status.STOPPED).startswith('[Stopped] Ran for 2m '))
+        self.assertTrue(status.finished(row).startswith('[Done] Ran for 2m '))
 
 
 if __name__ == '__main__':
