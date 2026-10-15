@@ -55,15 +55,20 @@ def _turn_process(thread_id):
     thread in its environment.
     """
     for d in glob.glob('/proc/[0-9]*'):
-        pid = d.rsplit('/', 1)[-1]
-        argv = _cmdline(pid)
-        if not argv or b'claude' not in os.path.basename(argv[0]):
-            continue
-        if b'--input-format' not in argv:
-            continue
-        if _proc_env(pid).get('ZIPPER_DISCORD_THREAD') == str(thread_id):
+        if _is_turn(d.rsplit('/', 1)[-1], thread_id):
             return True
     return False
+
+
+def _is_turn(pid, thread_id):
+    """Is this pid a headless turn's `claude` for this thread? Also what
+    `stopturn` signals, so the two can never disagree about which process it is."""
+    argv = _cmdline(pid)
+    if not argv or b'claude' not in os.path.basename(argv[0]):
+        return False
+    if b'--input-format' not in argv:
+        return False
+    return _proc_env(pid).get('ZIPPER_DISCORD_THREAD') == str(thread_id)
 
 
 def _short(text):
