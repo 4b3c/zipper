@@ -118,6 +118,37 @@ class Tree(unittest.TestCase):
                          open('/proc/%d/stat' % kids[0]).read().split()[2] != 'Z')
 
 
+class Refused(unittest.TestCase):
+    def run_refused(self, tid, reason):
+        from zipper import chat, turnstatus
+        sent = []
+        with mock.patch.object(turnstatus, 'api_error', return_value=reason), \
+                mock.patch.object(chat, 'discord_status', side_effect=lambda *a, **k: sent.append(('status', k.get('label')))), \
+                mock.patch.object(chat, 'discord_send', side_effect=lambda m, **k: sent.append(('send', m))):
+            out = {}
+            convhead._refused(tid, out)
+        return out, sent
+
+    def test_usage_limit_posts_a_new_message(self):
+        out, sent = self.run_refused('123', "You've hit your session limit · resets 12am (America/Phoenix)")
+        self.assertEqual(sent[0], ('status', 'undelivered'))
+        self.assertIn('Out of Claude usage', sent[1][1])
+        self.assertIn('resets 12am', sent[1][1])
+        self.assertIn('refused', out)
+
+    def test_other_refusal_says_so(self):
+        _, sent = self.run_refused('123', 'API Error: overloaded')
+        self.assertIn('refused this turn', sent[1][1])
+
+    def test_a_normal_ending_posts_nothing(self):
+        out, sent = self.run_refused('123', '')
+        self.assertEqual((out, sent), ({}, []))
+
+    def test_only_discord_threads(self):
+        _, sent = self.run_refused('local-1-abc', 'limit')
+        self.assertEqual(sent, [])
+
+
 class Status(unittest.TestCase):
     def test_stopped_closing_line(self):
         # bot/__init__ reads these at import. Placeholders: nothing here logs in.

@@ -29,6 +29,7 @@ if not cred:
 
 listen = '8899'
 auth = ''
+ttyd_auth = ''
 if ':' in cred:
     user, pw = cred.split(':', 1)
     h = subprocess.run(['openssl', 'passwd', '-apr1', pw], capture_output=True,
@@ -38,6 +39,12 @@ if ':' in cred:
     # Either a session cookie from /login (zipper/web/login.py) or basic credentials.
     # A browser without either is redirected to the form rather than challenged:
     # the basic-auth dialog is invisible to password managers.
+    # ttyd asks for the same credential itself. A browser signed in by cookie has
+    # no basic credentials to answer with, so nginx -- which has already let the
+    # request through -- answers for it.
+    import base64
+    ttyd_auth = ('proxy_set_header Authorization "Basic %s";'
+                 % base64.b64encode(cred.encode('utf-8')).decode('ascii'))
     auth = ('satisfy any; '
             'auth_basic "zipper"; auth_basic_user_file /etc/nginx/zipper.htpasswd; '
             'auth_request /_zipper_auth; error_page 401 = @zipper_login;')
@@ -57,6 +64,7 @@ server {
     %(auth)s
     location ~ ^/t/(88[0-9][0-9])(/.*)?$ {
         proxy_pass http://127.0.0.1:$1$request_uri;
+        %(ttyd_auth)s
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $zipper_upgrade;
@@ -97,7 +105,7 @@ server {
         proxy_read_timeout 1h;
     }
 }
-''' % {'listen': listen, 'auth': auth, 'web': web}
+''' % {'listen': listen, 'auth': auth, 'web': web, 'ttyd_auth': ttyd_auth}
 PEER = '''
 server {
     listen 8898;
