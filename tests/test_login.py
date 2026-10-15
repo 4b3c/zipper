@@ -71,6 +71,27 @@ class Login(unittest.TestCase):
 
 
 class Nginx(unittest.TestCase):
+    def conf(self, public=None):
+        from zipper import settings
+        settings.put('plugins.dashboard.enabled', True)
+        settings.put('plugins.dashboard.public_url', public or '')
+        env = dict(os.environ, ZIPPER_TERM_CRED='abe:pw', PYTHONPATH=ROOT)
+        src = open(os.path.join(ROOT, 'docker', 'nginx.py')).read()
+        src = src.replace("sys.path.insert(0, '/zipper/code')", '').replace(
+            '/etc/nginx/zipper.htpasswd', os.path.join(TMP, 'htpasswd'))
+        return subprocess.run([sys.executable, '-c', src], env=env, capture_output=True,
+                              text=True, cwd=TMP).stdout
+
+    def test_plain_http_redirect_is_opt_in(self):
+        self.assertNotIn('$zipper_plain) {', self.conf())
+        conf = self.conf('https://box.example.ts.net:8443/')
+        self.assertIn('if ($zipper_plain) { return 302 https://box.example.ts.net:8443$request_uri; }', conf)
+        # tailscale serve's forwarded HTTPS and the box's own loopback are never redirected
+        m = conf.split('$zipper_plain {')[1].split('}')[0]
+        self.assertIn('"~^https "', m)
+        self.assertIn('127\\.0\\.0\\.1$', m)
+        self.assertNotIn('$zipper_plain) {', self.conf('http://box:8900'))   # only an https target
+
     def test_config_redirects_and_keeps_extension_open(self):
         env = dict(os.environ, ZIPPER_TERM_CRED='abe:pw', PYTHONPATH=ROOT)
         src = open(os.path.join(ROOT, 'docker', 'nginx.py')).read()

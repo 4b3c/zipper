@@ -29,6 +29,18 @@ if not cred:
 
 listen = '8899'
 auth = ''
+
+# `plugins.dashboard.public_url` (https://host:8443): where a plain-HTTP visit is sent.
+# tailscale serve forwards its HTTPS here as plain HTTP with X-Forwarded-Proto: https,
+# and the container's port is also reachable on the tailnet directly, unencrypted. A
+# request with neither that header nor a loopback source came in that second way.
+# Loopback is the box itself: tests/shot.py, sandboxes, health checks.
+from zipper import settings
+public = (settings.get('plugins.dashboard.public_url') or '').rstrip('/')
+plain = ''
+if public.startswith('https://'):
+    plain = '''
+    if ($zipper_plain) { return 302 %s$request_uri; }''' % public
 if ':' in cred:
     user, pw = cred.split(':', 1)
     h = subprocess.run(['openssl', 'passwd', '-apr1', pw], capture_output=True,
@@ -48,12 +60,17 @@ else:
 
 DASH = '''
 map $http_upgrade $zipper_upgrade { default upgrade; '' close; }
+map "$http_x_forwarded_proto $remote_addr" $zipper_plain {
+    default 1;
+    "~^https "        0;
+    "~ 127\\.0\\.0\\.1$" 0;
+}
 server {
     listen %(listen)s;
     # Redirects stay relative. nginx would otherwise write its own scheme and port
     # into them (http://host:8899/login), and the browser came in through
     # tailscale serve's https on another port, where 8899 doesn't answer.
-    absolute_redirect off;
+    absolute_redirect off;%(plain)s
     %(auth)s
     location ~ ^/t/(88[0-9][0-9])(/.*)?$ {
         proxy_pass http://127.0.0.1:$1$request_uri;
@@ -97,7 +114,7 @@ server {
         proxy_read_timeout 1h;
     }
 }
-''' % {'listen': listen, 'auth': auth, 'web': web}
+''' % {'listen': listen, 'auth': auth, 'web': web, 'plain': plain}
 PEER = '''
 server {
     listen 8898;
