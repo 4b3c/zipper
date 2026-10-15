@@ -9,6 +9,14 @@ tense.
 
 ---
 
+## 2026-10-14 — the dashboard's basic-auth dialog
+
+- **A browser's basic-auth prompt is not a page**, so no password manager can fill it:
+  every sign-in meant opening the vault and copying the password. The dashboard now
+  redirects to a `/login` form and keeps a session cookie; basic credentials still
+  work for scripts. `tests/shot.py` sends them up front, since nothing challenges a
+  browser any more and Playwright only answers a challenge.
+
 ## 2026-09-29 — one night: the core, plugins, cards, and setup by conversation
 
 Replaced, all through PRs #1–#9:

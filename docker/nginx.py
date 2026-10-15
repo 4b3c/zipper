@@ -35,7 +35,12 @@ if ':' in cred:
                        text=True, check=True).stdout.strip()
     with open('/etc/nginx/zipper.htpasswd', 'w') as fh:
         fh.write('%s:%s\n' % (user, h))
-    auth = 'auth_basic "zipper"; auth_basic_user_file /etc/nginx/zipper.htpasswd;'
+    # Either a session cookie from /login (zipper/web/login.py) or basic credentials.
+    # A browser without either is redirected to the form rather than challenged:
+    # the basic-auth dialog is invisible to password managers.
+    auth = ('satisfy any; '
+            'auth_basic "zipper"; auth_basic_user_file /etc/nginx/zipper.htpasswd; '
+            'auth_request /_zipper_auth; error_page 401 = @zipper_login;')
 else:
     listen = '127.0.0.1:8899'
     print('zipper: ZIPPER_TERM_CRED is unset -- the dashboard is loopback-only',
@@ -59,8 +64,24 @@ server {
         proxy_pass http://127.0.0.1:$1/$2;
     }
     location = /api/msg { return 404; }   # peers only, on 8898, where X-Real-IP is nginx's
+    location = /_zipper_auth {
+        internal;
+        proxy_pass http://127.0.0.1:%(web)s/auth/check;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+    }
+    location @zipper_login {
+        return 302 /login?next=$request_uri;
+    }
+    location ~ ^/(login|logout)$ {
+        auth_basic off;
+        auth_request off;
+        proxy_set_header X-Real-IP "";
+        proxy_pass http://127.0.0.1:%(web)s;
+    }
     location ~ ^/(api/inputs/|api/canvas|api/hours|api/worklist$|api/done$|ext/|bookmarklet) {
         auth_basic off;
+        auth_request off;
         proxy_set_header X-Real-IP "";   # only 8898 may say who sent a message
         proxy_pass http://127.0.0.1:%(web)s;
     }

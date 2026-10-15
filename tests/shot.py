@@ -6,7 +6,7 @@ Signs in with ZIPPER_TERM_CRED from .env (never printed), so terminal iframes lo
 Prints any JavaScript errors the page raised. Needs `pip install playwright` and
 `python3 -m playwright install --with-deps chromium`.
 """
-import argparse, os, sys
+import argparse, base64, os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from zipper import core
 from playwright.sync_api import sync_playwright
@@ -21,11 +21,13 @@ ap.add_argument('--base', default='http://127.0.0.1:8899', help='nginx, so /t/<p
 a = ap.parse_args()
 
 cred = core.cfg('ZIPPER_TERM_CRED')
-user, _, pw = cred.partition(':')
 with sync_playwright() as p:
     b = p.chromium.launch()
+    # Sent up front: nginx redirects a browser without a session to /login rather
+    # than challenging it, and Playwright only answers a challenge.
+    auth = {'Authorization': 'Basic ' + base64.b64encode(cred.encode()).decode()} if cred else {}
     ctx = b.new_context(viewport={'width': a.width, 'height': a.height},
-                        http_credentials={'username': user, 'password': pw} if cred else None)
+                        extra_http_headers=auth)
     pg = ctx.new_page()
     errs = []
     pg.on('pageerror', lambda e: errs.append(str(e)))
