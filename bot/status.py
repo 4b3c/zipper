@@ -124,12 +124,12 @@ def opening(slot, label):
 
 
 def progress(row, doing, meter=''):
+    rest = ['Ran for %s' % _dur(row['started']), 'Last edited: %s' % _clock(), meter,
+            'your follow-up is next' if row.get('queued') else '', doing]
     if row['slot'] == 'review':
-        head = '[Testing] ' + _label(row, 'Testing the change')
-    else:
-        head = '[Working]'
-    return head + ' ' + _join('Ran for %s' % _dur(row['started']), 'Last edited: %s' % _clock(),
-                              meter, 'your follow-up is next' if row.get('queued') else '', doing)
+        # The label is a part like any other, so it gets its separator.
+        return '[Testing] ' + _join(_label(row, 'Testing the change'), *rest)
+    return '[Working] ' + _join(*rest)
 
 
 def finished(row, outcome='', meter=''):

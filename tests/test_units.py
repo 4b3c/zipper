@@ -909,6 +909,14 @@ class StatusMessage(unittest.TestCase):
         self.assertTrue(self.log[-1][2].startswith('[Refused] You\'ve hit your session limit · resets 12am'))
         self.assertNotIn('ask what happened', self.log[-1][2])
 
+    def test_review_progress_separates_label_and_duration(self):
+        row = {'slot': 'review', 'started': 0, 'label': 'Tester on PR #54, round 1 of 3'}
+        line = self.status.progress(row, 'reading diff', 'Session 55%')
+        self.assertRegex(line, r'^\[Testing\] Tester on PR #54, round 1 of 3 · Ran for \S+ \S+ · '
+                               r'Last edited: \d\d:\d\d · Session 55% · reading diff$')
+        line = self.status.progress({'slot': 'review', 'started': 0}, '', '')
+        self.assertTrue(line.startswith('[Testing] Testing the change · Ran for '))
+
     def test_exact_durations(self):
         d = self.status._dur
         self.assertEqual(d(1000, now=1048), '48s')
