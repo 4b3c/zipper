@@ -27,6 +27,30 @@ def _token():
         pass
     return None
 
+def _open_repos():
+    """Org repos the operator has declared free of NDA (`plugins.github.open`)."""
+    try:
+        from . import settings
+        return set(settings.get('plugins.github.open') or [])
+    except Exception:
+        return set()
+
+def _commit(c, r):
+    """One commit as the vault may hold it. Its message is content, and an org repo's
+    content may be under NDA: unless the repo is listed open, the message is dropped
+    here, before it can reach github.json, a queue row or a note."""
+    login = (c.get('author') or {}).get('login') or ''
+    # `time` is when it was committed, which is what a push brings in; `date` stays
+    # the authoring day, which is what `last_touched` counts.
+    out = {'sha': c['sha'][:7],
+           'date': _utc_local(c['commit']['author']['date'])[:10],
+           'time': _utc_local((c['commit'].get('committer') or c['commit']['author'])['date'])[:16],
+           'author': login or (c['commit'].get('author') or {}).get('name') or '',
+           'mine': bool(login) and login.lower() == GH_USER.lower()}
+    if not r.get('is_org') or r['key'] in _open_repos():
+        out['message'] = c['commit']['message'].split('\n')[0][:100]
+    return out
+
 def _api(path, token, params=''):
     url = 'https://api.github.com' + path + params
     req = urllib.request.Request(url, headers={
@@ -102,22 +126,30 @@ def cmd_github(a):
     for r in repos:
         r['note'] = title_of(mapping[r['key']][0]) if r['key'] in mapping else None
         r['commits'] = []
-        if r['key'] not in mapping:
-            continue
         cached = prev.get(r['key'], {})
+        if r['key'] not in mapping:
+            # Unmapped repos keep no history, but a push to one still becomes a queue
+            # row, and the row should say what was pushed and by whom. Only their own
+            # repos: an unmapped org repo never got this far.
+            if (not r['is_org'] and cached.get('pushed_at')
+                    and cached['pushed_at'] != r['pushed_at']):
+                try:
+                    r['commits'] = [_commit(c, r) for c in _api(
+                        '/repos/%s/%s/commits' % (r['owner'], r['name']), token, '?per_page=10')]
+                except Exception as e:
+                    r['commit_error'] = str(e)
+            continue
         if (cached.get('pushed_at') == r['pushed_at'] and cached.get('note')
                 and not a.full):
             r['commits'] = cached.get('commits', [])
+            if r['is_org'] and r['key'] not in _open_repos():
+                for c in r['commits']:
+                    c.pop('message', None)
             continue
         try:
             cs = _api('/repos/%s/%s/commits' % (r['owner'], r['name']), token,
                       '?since=%s&per_page=100' % since)
-            r['commits'] = [{'sha': c['sha'][:7],
-                             'date': _utc_local(c['commit']['author']['date'])[:10],
-                             'message': c['commit']['message'].split('\n')[0][:100],
-                             'mine': ((c.get('author') or {}).get('login') or '').lower()
-                                     == GH_USER.lower()}
-                            for c in cs]
+            r['commits'] = [_commit(c, r) for c in cs]
             fetched += 1
         except Exception as e:
             r['commit_error'] = str(e)

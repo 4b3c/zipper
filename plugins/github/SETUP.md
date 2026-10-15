@@ -10,3 +10,6 @@ actually being worked on. Ask whether they write code on GitHub. If yes:
 Without a token it sees public repositories only. If they belong to organisations whose
 repos should count, `zipper settings set plugins.github.orgs '["org-a"]'` — and if any
 of those are under an NDA, write that into the rules below: only metadata, never contents.
+Commit messages from org repos are dropped at fetch, so a push row says only who pushed;
+list the ones that are not under NDA to keep theirs:
+`zipper settings set plugins.github.open '["org-a/repo"]'`.
