@@ -134,6 +134,42 @@ def doing(thread_id, limit=400_000):
     return ''
 
 
+def api_error(thread_id, limit=200_000):
+    """Why a dead turn died, when the API refused it: the text of a final
+    assistant row Claude Code synthesized from the error ("You've hit your
+    session limit · resets 12am"). '' for any other ending. Such a turn fires
+    no `Stop` hook, so without this the thread only learns that it stopped.
+    """
+    sid = (load().get(str(thread_id)) or {}).get('session_id') or ''
+    path = convhead.transcript(sid) if sid else ''
+    if not path:
+        return ''
+    try:
+        with open(path, 'rb') as fh:
+            if os.fstat(fh.fileno()).st_size > limit:
+                fh.seek(-limit, os.SEEK_END)
+                fh.readline()
+            rows = fh.read().splitlines()
+    except OSError:
+        return ''
+    for raw in reversed(rows):
+        try:
+            row = json.loads(raw)
+        except ValueError:
+            continue
+        if row.get('type') == 'user':
+            return ''
+        if row.get('type') != 'assistant':
+            continue
+        if not row.get('isApiErrorMessage'):
+            return ''
+        content = (row.get('message') or {}).get('content') or []
+        text = ' '.join(b.get('text', '') for b in content
+                        if isinstance(b, dict) and b.get('type') == 'text').strip()
+        return text or 'API error %s' % row.get('apiErrorStatus', '')
+    return ''
+
+
 def _review_job(thread_id):
     """The newest review job asked for from this thread, or None."""
     from . import review
