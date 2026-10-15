@@ -13,3 +13,8 @@ of those are under an NDA, write that into the rules below: only metadata, never
 Commit messages from org repos are dropped at fetch, so a push row says only who pushed;
 list the ones that are not under NDA to keep theirs:
 `zipper settings set plugins.github.open '["org-a/repo"]'`.
+
+Each push row names the branch that moved and whether it was a merge (`merged`, `pushed`,
+`force-pushed`). It works from branch heads kept between fetches, so the first push a repo
+sees after setup is a bare row. An NDA repo's branch names are kept hashed and shown as
+"a branch".

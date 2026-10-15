@@ -65,57 +65,40 @@ def snapshot():
     return {r['name']: r.get('pushed_at', '') for r in _repos()}
 
 
-def _pushed(name, since):
-    """The commits a push brought in: committed after the previous push, newest
-    first. Only the default branch is listed, but `pushed_at` moves on a push to
-    any branch -- so an empty answer is common and means "a branch push", and the
-    row then names neither commit nor pusher. Records written before commits had
-    a `time` can't be dated at all; for those the newest commit stands in."""
+def _record(name):
     for r in _repos():
         if r['name'] == name or r.get('key') == name:
-            cs = r.get('commits') or []
-            if cs and not any(c.get('time') for c in cs):
-                return cs[:1]
-            return [c for c in cs if c.get('time') and c['time'] > (since or '')[:16]]
-    return []
-
-
-def _who(commits):
-    """Who pushed: the owner by name when it was them, else the GitHub login (a
-    teammate, or the bot). Absent when nothing says -- never guessed."""
-    names = []
-    for c in commits:
-        n = OWNER if c.get('mine') else c.get('author')
-        if n and n not in names:
-            names.append(n)
-    return ', '.join(names) or None
+            return r
+    return {}
 
 
 def events(before, after):
+    """One row per branch that moved, saying which, and whether it was a merge.
+
+    With no baseline of branch heads, or if the heads couldn't be read, the row is
+    bare: the repo and the time, with no branch, message or pusher guessed."""
+    from zipper import ghpush
     out = []
     for repo, ts in sorted(after.items()):
         # A repo absent from `before` is newly visible, not newly pushed.
-        if before.get(repo) is not None and before[repo] != ts:
-            cs = _pushed(repo, before[repo])
-            # An NDA org repo's commits carry no message (gh._commit drops it), so its
-            # row says only that it was pushed.
-            msg = next((c['message'] for c in cs if c.get('message')), '')
-            if msg and len(cs) > 1:
-                msg += '  (+%d more)' % (len(cs) - 1)
-            row = {'system': 'github', 'action': 'push', 'when': ts[:16],
-                   # The time stays in the text: the queue keys a row by its text, and
-                   # two pushes can carry the same message.
-                   'text': ('pushed      %s  %s  %s' % (repo, ts[:16], msg)).rstrip()}
-            who = _who(cs)
+        if before.get(repo) is None or before[repo] == ts:
+            continue
+        recs = _record(repo).get('pushes') or []
+        for rec in recs:
+            text, who = ghpush.describe(rec, repo, ts[:16], OWNER)
+            row = {'system': 'github', 'action': 'push', 'when': ts[:16], 'text': text}
             if who:
                 row['who'] = who
             out.append(row)
+        if not recs:
+            out.append({'system': 'github', 'action': 'push', 'when': ts[:16],
+                        'text': 'pushed      %s  %s' % (repo, ts[:16])})
     return out
 
 
 def target(row, notes):
     """The note whose hand-maintained `repos:` names this repo. Never guessed."""
-    m = re.match(r'pushed\s+(\S+)', row.get('text', ''))
+    m = re.match(r'(?:pushed|merged|force-pushed)\s+(\S+)', row.get('text', ''))
     if not m:
         return None
     for title, d in notes:
