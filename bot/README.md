@@ -51,6 +51,14 @@ restart that frees the lock. If it isn't running and nothing was posted after th
 the status changes to *"⚠️ Stopped without answering"* and stays. State lives in
 `Inbox/discord-status.json`, so a bot restart resumes the updates.
 
+## Stop
+
+A message sent mid-turn queues behind it. The bare word **`stop`** doesn't: it ends the
+running turn and every tool under it, drops anything queued behind it, closes the status
+as *"⏹️ Stopped after 3m (…)"* and asks *"What would you like Zipper to do instead?"*. The
+next message runs at once, with a line telling Claude its last turn was cut off.
+`stop` with nothing running says so and starts nothing. See `zipper/stopturn.py`.
+
 ## Service
 
 ```bash
