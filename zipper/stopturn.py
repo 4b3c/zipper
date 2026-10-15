@@ -16,7 +16,7 @@ import glob, json, os, signal, time
 from .core import INBOX
 from . import turnstatus
 
-ASK = 'Stopped. What would you like Zipper to do instead?'
+ASK = '[Stopped] What would you like Zipper to do instead?'
 NOTE = ('[The operator stopped your previous turn before it finished; anything it '
         'was doing may be half-done. Do not resume it unless this asks you to. '
         'Their message:]\n\n')

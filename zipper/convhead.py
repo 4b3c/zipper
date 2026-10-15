@@ -432,10 +432,10 @@ def _refused(thread_id, out):
     out['refused'] = reason
     chat.discord_status(False, thread_id, label='undelivered')     # bot/status.py UNDELIVERED
     if 'limit' in reason.lower():
-        msg = ('⛔ **Out of Claude usage.** %s\nYour message was not answered. '
+        msg = ('[Out of usage] %s\nYour message was not answered. '
                'Send it again after the reset.' % reason)
     else:
-        msg = '⛔ **Claude refused this turn.** %s\nYour message was not answered.' % reason
+        msg = '[Refused] %s\nYour message was not answered.' % reason
     chat.discord_send(msg, thread_id=thread_id)
 
 

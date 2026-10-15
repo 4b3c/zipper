@@ -261,14 +261,14 @@ async def failure_notice(err: str):
     minutes later by the reply it said would never arrive.
     """
     if err == "no conversation":
-        return ("🗄️ This thread's conversation is gone — "
+        return ("[Gone] This thread's conversation is gone — "
                 "start a new one in the channel.")
 
     if err == "slow":
         # Held the request for POST_TIMEOUT and got nothing back. If the server
         # is answering, the handover is the slow part, not the connection.
         if await zipper_alive():
-            return (f"⏳ Zipper hasn't answered in {POST_TIMEOUT}s, but the service "
+            return (f"[Slow] Zipper hasn't answered in {POST_TIMEOUT}s, but the service "
                     "is up — the message is most likely still being delivered. "
                     "The reply will arrive on its own if it lands; resend if it "
                     "doesn't.")
@@ -277,22 +277,22 @@ async def failure_notice(err: str):
     if err in ("unreachable", ""):
         state = await unit_state()
         if state == "active":
-            return (f"⚠️ Zipper is unreachable — `{ZIPPER_UNIT}` is active but not "
+            return (f"[Unreachable] Zipper is unreachable — `{ZIPPER_UNIT}` is active but not "
                     f"accepting connections on {ZIPPER_URL}. It may be wedged or "
                     "mid-restart.")
         if state in ("activating", "deactivating", "reloading"):
-            return (f"🔄 Zipper is restarting — `{ZIPPER_UNIT}` is {state}. "
+            return (f"[Restarting] Zipper is restarting — `{ZIPPER_UNIT}` is {state}. "
                     "Send that again in a moment.")
         if state:
-            return (f"⚠️ Zipper's service isn't running — `{ZIPPER_UNIT}` is {state}, "
+            return (f"[Down] Zipper's service isn't running — `{ZIPPER_UNIT}` is {state}, "
                     "so nothing can be delivered until it's started again.")
-        return (f"⚠️ Can't reach Zipper at {ZIPPER_URL}, and systemd couldn't be "
+        return (f"[Unreachable] Can't reach Zipper at {ZIPPER_URL}, and systemd couldn't be "
                 f"asked about `{ZIPPER_UNIT}`.")
 
     # A running server that answered with a reason of its own: the connection
     # was fine and the *delivery* failed. Saying "disconnected" would send them
     # to look at systemd for a problem that is in the pane.
-    return f"⚠️ Couldn't deliver that: {err}"
+    return f"[Not delivered] Couldn't deliver that: {err}"
 
 
 async def resolve_thread(thread_id: int):
@@ -397,7 +397,7 @@ async def on_message(message: discord.Message):
         # forwarding posts to one, so a session started without a thread is one
         # whose answers cannot get back out.
         print(f"[discord] thread create failed: {e}")
-        await message.channel.send(f"⚠️ Couldn't open a thread for that: {e}")
+        await message.channel.send(f"[Not delivered] Couldn't open a thread for that: {e}")
         return
 
     ok, err = await post_to_zipper(prompt, thread.id, opening=True)

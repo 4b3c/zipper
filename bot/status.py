@@ -4,15 +4,15 @@ The typing indicator says "busy" for ten seconds at a time and nothing else; on 
 phone it is easy to miss and it cannot say how long, or whether anything is still
 happening. So a message that Zipper received lands in the thread at once --
 
-    ⏳ Got it, working on it (12:41)
+    [Working] Started 12:41
 
 -- is edited every minute while the work goes on --
 
-    ⏳ Still working · 3m · 12:44 · running zipper lint
+    [Working] Ran for 3m 12s · Last edited: 12:44 · Session 44% · Context 404k · running zipper lint
 
 -- and when the reply arrives it becomes its closing line and stays:
 
-    ✅ Took 4m (12:41 → 12:45)
+    [Done] Ran for 4m 03s (12:41 → 12:45) · Session 45% · Context 410k
 
 It stays above the reply as a divider, so a thread reads working, answer, testing,
 verdict. The reply is still its own new message, never edited into the status:
@@ -25,7 +25,7 @@ is its own message rather than a relabel of the turn's.
 
 **A status that only counts is a clock.** Each minute asks `zipper.turnstatus`
 whether the work is actually running. When it is not and nothing was posted after
-the status, the status says so and stops: "⚠️ Stopped without answering". When
+the status, the status says so and stops: "[Stopped without answering]". When
 something was posted, the reply landed and only the closing edit was missed (the
 bot was down when it was asked), so it gets its closing line now.
 
@@ -76,62 +76,91 @@ def _clock(ts=None):
     return time.strftime('%H:%M', time.localtime(ts or time.time()))
 
 
-def _mins(started):
-    m = int((time.time() - started) // 60)
-    if m < 1:
-        return '<1m'
-    return '%dm' % m if m < 60 else '%dh %02dm' % (m // 60, m % 60)
+def _dur(started, now=None):
+    """Exact: `48s`, `1m 48s`, `1h 02m`."""
+    sec = max(0, int((now or time.time()) - started))
+    if sec < 60:
+        return '%ds' % sec
+    if sec < 3600:
+        return '%dm %02ds' % (sec // 60, sec % 60)
+    return '%dh %02dm' % (sec // 3600, sec % 3600 // 60)
+
+
+def meters(thread_id, slot='turn'):
+    """`Session 44% · Context 404k`: the plan's 5-hour window, and how much this
+    conversation's next message would carry. Blocking (a cached HTTP call and a
+    transcript read), so callers run it off the event loop. Either part is left
+    out when it can't be read -- a blank beats a wrong number."""
+    from zipper import convstate, usage
+    parts = []
+    try:
+        s = next((m for m in usage.read().get('meters') or [] if m.get('key') == 'session'), None)
+        if s and s.get('pct') is not None:
+            parts.append('Session %d%%' % round(s['pct']))
+    except Exception:
+        pass
+    if slot == 'turn':
+        try:
+            n = convstate.context_tokens(str(thread_id))
+            if n:
+                parts.append('Context %s' % convstate.fmt_tokens(n))
+        except Exception:
+            pass
+    return ' · '.join(parts)
+
+
+def _join(*parts):
+    return ' · '.join(p for p in parts if p)
+
+
+def _label(row, default):
+    return row.get('label') or default
 
 
 def opening(slot, label):
     if slot == 'review':
-        return '🧪 %s (%s)' % (label or 'Testing the change', _clock())
-    return '⏳ Got it, working on it (%s)' % _clock()
+        return _join('[Testing] ' + (label or 'Testing the change'), 'Started %s' % _clock())
+    return '[Working] Started %s' % _clock()
 
 
-def progress(row, doing):
-    head = '🧪 ' + (row.get('label') or 'Testing the change') if row['slot'] == 'review' \
-        else '⏳ Still working'
-    parts = [head, _mins(row['started']), _clock()]
-    if row.get('queued'):
-        parts.append('your follow-up is next')
-    if doing:
-        parts.append(doing)
-    return ' · '.join(parts)
+def progress(row, doing, meter=''):
+    if row['slot'] == 'review':
+        head = '[Testing] ' + _label(row, 'Testing the change')
+    else:
+        head = '[Working]'
+    return head + ' ' + _join('Ran for %s' % _dur(row['started']), 'Last edited: %s' % _clock(),
+                              meter, 'your follow-up is next' if row.get('queued') else '', doing)
 
 
-def finished(row, outcome=''):
+def finished(row, outcome='', meter=''):
     """What a status becomes once it is answered. It stays in the thread, above
     the reply, so the thread reads as working / answer / testing / verdict."""
-    span = '%s (%s → %s)' % (_mins(row['started']), _clock(row['started']), _clock())
+    span = 'Ran for %s (%s → %s)' % (_dur(row['started']), _clock(row['started']), _clock())
     if row['slot'] == 'review':
-        parts = ['🧪 ' + (row.get('label') or 'Tested the change')]
-        if outcome:
-            parts.append(outcome)
-        return ' · '.join(parts + [span])
+        return _join('[Tested] ' + _label(row, 'Tested the change'), outcome, span)
     if outcome == STOPPED:
-        return '⏹️ Stopped after %s' % span
-    return '✅ Took %s' % span
+        return '[Stopped] ' + _join(span, meter)
+    return '[Done] ' + _join(span, meter)
 
 
 # The outcome `/discord` passes when `stop` ended the turn.
 STOPPED = 'stopped'
 
 # The outcome `/discord` passes when a message never reached the conversation.
-# Nothing ran, so the status is deleted rather than closed: a "✅ Took" line over
+# Nothing ran, so the status is deleted rather than closed: a "[Done]" line over
 # the bot's failure notice would claim work that never happened.
 UNDELIVERED = 'undelivered'
 
 
-def stopped(row, reason=''):
+def stopped(row, reason='', meter=''):
     """A dead turn's closing line. `reason` is the API's refusal when that is
     what ended it (`turnstatus.api_error`): asking what happened would only
     hit the same wall, so the line says it instead."""
     if reason:
-        return '⚠️ Claude refused this turn (%s): %s' % (_clock(), _short(reason))
-    what = 'The review stopped' if row['slot'] == 'review' else 'Stopped'
-    return '⚠️ %s without answering (%s, after %s). Send it again, or ask what happened.' % (
-        what, _clock(), _mins(row['started']))
+        return '[Refused] ' + _join(_short(reason), 'Last edited: %s' % _clock(), meter)
+    what = '[Review stopped]' if row['slot'] == 'review' else '[Stopped without answering]'
+    return what + ' ' + _join('Ran for %s' % _dur(row['started']), 'Last edited: %s' % _clock(), meter) + \
+        '. Send it again, or ask what happened.'
 
 
 def _short(text, most=300):
@@ -178,7 +207,7 @@ async def start(thread_id, slot='turn', label=''):
 
 
 async def stop(thread_id, slot='turn', outcome=''):
-    """The work is answered: the status becomes its closing line ("✅ Took 4m
+    """The work is answered: the status becomes its closing line ("[Done] Ran for 4m 03s
     (13:59 → 14:03)") and stays, as the divider above the reply. A message
     that was never delivered (`UNDELIVERED`) has nothing to close, so its
     status is deleted instead.
@@ -195,7 +224,10 @@ async def stop(thread_id, slot='turn', outcome=''):
         row = _load().get(k)
     if not row:
         return {'ok': True, 'had': False}
-    final = None if outcome == UNDELIVERED else finished(row, outcome)
+    if outcome == UNDELIVERED:
+        final = None
+    else:
+        final = finished(row, outcome, await asyncio.to_thread(meters, row['thread'], row['slot']))
     settled = await _settle(row, final)
     async with _lock:
         state = _load()
@@ -263,8 +295,9 @@ async def tick():
                     state.pop(k, None)
                     _save(state)
                 continue
+            meter = await asyncio.to_thread(meters, row['thread'], row['slot'])
             if running:
-                await msg.edit(content=progress(row, doing))
+                await msg.edit(content=progress(row, doing, meter))
                 continue
             answered = await _answered_since(thread, row['message_id'])
             async with _lock:
@@ -275,11 +308,11 @@ async def tick():
                 _save(state)
             if answered:
                 # The reply landed and only the closing edit was missed.
-                await msg.edit(content=finished(row))
+                await msg.edit(content=finished(row, '', meter))
             else:
                 reason = '' if row['slot'] == 'review' else await asyncio.to_thread(
                     turnstatus.api_error, row['thread'])
-                await msg.edit(content=stopped(row, reason))
+                await msg.edit(content=stopped(row, reason, meter))
         except discord.NotFound:
             async with _lock:
                 state = _load()
