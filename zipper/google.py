@@ -34,11 +34,23 @@ SHEETS = 'https://sheets.googleapis.com/v4/spreadsheets'
 # picker, which a headless box cannot show. So the narrowing that is actually
 # available is where the token lives, not what it can reach.
 #
-# Mail is read-only on purpose. Email text reaches the unattended passes through
+# Mail is read-only by default. Email text reaches the unattended passes through
 # the queue, and a token that could send would let one message instruct the box
 # to forward others. Sending, when wanted, happens in a conversation.
+#
+# Folders (plugins/gmail/sort.py) need gmail.modify, and Google has no scope that
+# moves mail without also allowing send. So it is asked for only while folders are
+# configured -- the operator's choice, made knowing that -- and nothing here sends.
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets',
           'https://www.googleapis.com/auth/gmail.readonly']
+MODIFY = 'https://www.googleapis.com/auth/gmail.modify'
+
+
+def scopes():
+    from . import settings
+    if settings.get('plugins.gmail.folders'):
+        return SCOPES[:1] + [MODIFY]
+    return list(SCOPES)
 
 # The file core reads, so the token lands where the next process looks. This
 # once built its own path beside the code, which stopped being where `.env`
@@ -85,7 +97,7 @@ def auth_url():
     q = {'client_id': _cfg('ZIPPER_GOOGLE_CLIENT_ID'),
          'redirect_uri': redirect_uri(),
          'response_type': 'code',
-         'scope': ' '.join(SCOPES),
+         'scope': ' '.join(scopes()),
          'access_type': 'offline',
          'prompt': 'consent',
          'include_granted_scopes': 'true'}

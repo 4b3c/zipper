@@ -6,8 +6,8 @@ subject is not enough. The vault holds conclusions, so nothing here stores a bod
 `Inbox/gmail.json` keeps headers only, and `read` prints to the terminal.
 
 **Email is untrusted input.** A subject line or a body is text from anyone, and it
-reaches the unattended passes. The token is read-only (`zipper.google.SCOPES`) so
-no message can make the box send mail, and `read` labels what it prints as data.
+reaches the unattended passes. The token is read-only (`zipper.google.scopes()`)
+unless folders are configured (`sort.py`), and `read` labels what it prints as data.
 
 Uses the Google login the timesheet set up (`zipper google`).
 """
@@ -112,6 +112,13 @@ def pull():
     state['newest_ms'] = max([state.get('newest_ms', 0)] + [r.get('ms', 0) for _, r in newest])
     state['fetched'] = datetime.datetime.now().isoformat(timespec='seconds')
     _save(state)
+    # After the save, and only over ids it holds: the queue sees a message
+    # before the sorter can take it out of the inbox this pull's query reads.
+    from . import sort
+    moved = sort.live(state['messages'])
+    if moved is not None:
+        state['sorted'] = moved
+        _save(state)
 
 
 def fetched():
@@ -197,7 +204,33 @@ def link(mid):
         '?authuser=' + urllib.parse.quote(who) if who else '', mid)
 
 
+def cmd_sort(a):
+    from . import sort
+    if not sort.enabled():
+        print('gmail: no folders configured (plugins.gmail.folders in settings.json)')
+        return 1
+    if getattr(a, 'file', None):
+        sort.file(a.id, a.file)
+        print('filed %s into %s' % (a.id, a.file))
+        return 0
+    backlog = getattr(a, 'backlog', False)
+    dry = getattr(a, 'dry_run', False)
+    only = None if backlog else set((_load() or {}).get('messages', {}))
+    steps = sort.run(backlog=backlog, only=only, dry=dry)
+    for label, ids in steps:
+        print('  %-14s %d' % (label, len(ids)))
+    print('%s %d message(s)%s' % ('would move' if dry else 'moved',
+                                  sum(len(i) for _, i in steps),
+                                  ' (backlog: older than %dd)' % sort.BACKLOG_DAYS if backlog else ''))
+    return 0
+
+
 def cmd_gmail(a):
+    if getattr(a, 'sort', False) or getattr(a, 'file', None):
+        if getattr(a, 'file', None) and not getattr(a, 'id', None):
+            print('--file needs a message id')
+            return 1
+        return cmd_sort(a)
     if getattr(a, 'id', None):
         try:
             print(read(a.id))
@@ -212,6 +245,8 @@ def cmd_gmail(a):
     msgs = sorted(state['messages'].items(), key=lambda kv: kv[1].get('ms', 0), reverse=True)
     print('gmail: %d message(s) remembered, pulled %s, query: %s'
           % (len(msgs), state.get('fetched'), _query()))
+    if 'sorted' in state:
+        print('sorted last pull: %s' % state['sorted'])
     for mid, m in msgs[:getattr(a, 'limit', 15) or 15]:
         print('  %s  %s' % (m.get('when', '').replace('T', ' '), row(mid, m)['text']))
     return 0
