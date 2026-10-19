@@ -12,3 +12,8 @@ it. It uses the same Google login as the timesheet, so first make sure
 Read-only on purpose. Email reaches the unattended passes, and a token that could send
 would let one message tell the box to forward others. The first pull is a baseline: mail
 already there is not news, so it adds no rows.
+
+**Folders (optional).** `plugins.gmail.folders` is a list of `{label, query}` Gmail-search
+rules; once set, each pull moves matching inbox mail into those labels, and
+`zipper gmail --sort --backlog` files the old mail. It needs `gmail.modify`, which can also
+send, so ask before setting it, then re-run `zipper google --auth`. See `sort.py`.

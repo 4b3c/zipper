@@ -83,6 +83,10 @@ def main():
     s = sub.add_parser('gmail', help='recent mail the queue saw, or read one message')
     s.add_argument('id', nargs='?', help='a message id from a queue row (#...)')
     s.add_argument('--limit', type=int, default=15)
+    s.add_argument('--sort', action='store_true', help='file inbox mail by the folder rules')
+    s.add_argument('--backlog', action='store_true', help='with --sort: all old mail, holds ignored')
+    s.add_argument('--dry-run', action='store_true', help='with --sort: count, move nothing')
+    s.add_argument('--file', metavar='LABEL', help='move message <id> into LABEL, out of the inbox')
     s.set_defaults(fn=_needs('gmail', _mod('plugins.gmail', 'cmd_gmail')))
 
     s = sub.add_parser('hours', help='the timesheet ledger')
