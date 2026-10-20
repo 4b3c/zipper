@@ -618,10 +618,11 @@ def conversation_reaper():
     operator asked to know that before they type, not after -- which is why the
     notice goes out at `IDLE_NOTICE`, while answering is still cheap, and the
     close follows at `IDLE_EXPIRY`. `reap` returns only what it closed; the
-    warnings announce themselves in the thread.
+    warnings announce themselves in the thread, appended to its last message so
+    they don't notify.
     """
     def notify(tid, text):
-        chat.discord_send(text, thread_id=tid)
+        chat.discord_append(text, thread_id=tid)
     while True:
         time.sleep(120)
         try:
