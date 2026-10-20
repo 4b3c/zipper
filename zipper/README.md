@@ -251,7 +251,7 @@ One conversation per Discord thread, headless: `claude -p` over streaming JSON
 | Forwarding the reply | `hooks/forward_reply.py` on `Stop` |
 | Opening a thread | `bot/client.py`, `on_message` |
 | Typing indicator | `chat.py` → the bot's `/typing` |
-| CLI | `zipper conversations [--close THREAD]` |
+| CLI | `zipper conversations [--close THREAD]`, `zipper extras on\|off\|status` |
 
 - **The session id is derived:** `uuid5(NS, thread_id)`. Nothing to fall out of sync; losing
   `conversations.json` costs timers and titles, not conversations. `--session-id` starts,
@@ -259,6 +259,9 @@ One conversation per Discord thread, headless: `claude -p` over streaming JSON
 - **`ZIPPER_DISCORD_THREAD`** is set for Discord conversations only;
   **`ZIPPER_CONVERSATION`** for all. Panes use `local-` ids and never get a thread.
 - **Registry writes go through `convcore.mutate()`** (flock'd).
+- **Connectors and synced plugins are off by default** (Claude's user settings) and opted into
+  per conversation: `zipper extras on|off|status [--thread]`, a registry flag that adds a
+  `--settings` overlay (`extras.py`). Headless: from the next message. Pane: on reopen.
 
 ### Forwarding replies
 

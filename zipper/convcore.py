@@ -9,7 +9,7 @@ what lets this file be read on its own.
 Split out of `zipper/conversations.py` on 2026-09-07 (857 lines).
 Import it as `zipper.conversations`, which re-exports all three.
 """
-import os, re, json, time, uuid, fcntl, shutil, signal, hashlib, subprocess, datetime
+import os, re, json, time, uuid, fcntl, shutil, signal, hashlib, subprocess, datetime, shlex
 import contextlib
 import threading
 
@@ -337,7 +337,9 @@ def start(thread_id, prompt=None):
     resumed = os.path.exists(transcript(thread_id))
     flag = ['--resume', sid] if resumed else ['--session-id', sid]
     mode = os.environ.get('ZIPPER_PERMISSION_MODE', 'auto')
-    inner = ' '.join(['exec', 'claude'] + flag + ['--permission-mode', mode])
+    from . import extras         # imports this module; see zipper/extras.py
+    inner = ' '.join(['exec', 'claude'] + flag + [shlex.quote(f) for f in extras.flags(thread_id)]
+                     + ['--permission-mode', mode])
     env = dict(os.environ)
     env['ZIPPER_VAULT'] = VAULT
     env.setdefault('HOME', '/root')
