@@ -49,7 +49,7 @@ regression net.
 import os, json, glob, time, fcntl, shutil, select, threading, subprocess, contextlib
 
 from .core import *          # noqa: F401,F403 -- the shared vocabulary
-from . import convcore
+from . import convcore, extras
 
 # `--verbose` is not optional. `--output-format stream-json` under `-p` refuses
 # to start without it ("requires --verbose") -- it is how the CLI distinguishes
@@ -319,7 +319,8 @@ def _run_turn(thread_id, text, timeout, out, on_echo=None, on_queue=None):
                 flags, sid, resumed = _resume_flags(thread_id, force_resume=force)
                 out.update(session_id=sid, resumed=resumed, error='')
                 err = _attempt(
-                    [_claude()] + BASE_FLAGS + flags + ['--permission-mode', mode],
+                    [_claude()] + BASE_FLAGS + flags + extras.flags(thread_id)
+                    + ['--permission-mode', mode],
                     thread_id, text, timeout, out, on_echo)
                 if out['echoed'] or force or not _collision(err):
                     break
