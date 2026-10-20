@@ -145,6 +145,7 @@ async def handle_history(request: web.Request) -> web.Response:
                 "author": msg.author.display_name,
                 "content": msg.content,
                 "timestamp": msg.created_at.isoformat(),
+                "mine": msg.author == client.user,
             }
             if msg.thread:
                 entry["thread_id"] = str(msg.thread.id)

@@ -163,6 +163,26 @@ def discord_send(message, file_path=None, thread_id=None):
                 pass
     return r
 
+def discord_append(message, thread_id):
+    """Add to the thread's last message instead of posting a new one.
+
+    Discord notifies on a new message and never on an edit, so this is how the
+    machinery says something in a thread without buzzing a phone about it -- the
+    idle warning used to arrive an hour after every conversation, as a
+    notification for a chat they had already walked away from. Only Zipper's own
+    message is edited, and only while the result still fits; otherwise -- they
+    spoke last, the thread is empty, the reply is near the limit -- it is sent.
+    """
+    if not discord_on():
+        return dict(OFF)
+    last = (discord_history(limit=1, thread_id=thread_id) or [None])[0]
+    if last and last.get('mine') and last.get('content'):
+        text = last['content'].rstrip() + '\n\n' + message
+        if len(text) <= 2000:
+            return _bot('/edit', {'message_id': last['id'], 'thread_id': thread_id,
+                                  'content': text})
+    return discord_send(message, thread_id=thread_id)
+
 def discord_history(limit=5, thread_id=None):
     if not discord_on():
         return []

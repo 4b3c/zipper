@@ -69,5 +69,32 @@ class Reap(unittest.TestCase):
         self.assertTrue(convcore.load()[self.TID]['closed'])
 
 
+class Append(unittest.TestCase):
+    """The idle warning edits Zipper's last message rather than notifying."""
+
+    def run_with(self, last):
+        from zipper import chat
+        calls = []
+        with mock.patch.object(chat, 'discord_on', return_value=True), \
+             mock.patch.object(chat, 'discord_history', return_value=[last] if last else []), \
+             mock.patch.object(chat, '_bot', side_effect=lambda p, b: calls.append((p, b)) or {}), \
+             mock.patch.object(chat, 'discord_send', side_effect=lambda m, thread_id: calls.append(('/send', m)) or {}):
+            chat.discord_append('warn', thread_id='1')
+        return calls
+
+    def test_edits_own_message(self):
+        calls = self.run_with({'id': '5', 'mine': True, 'content': 'the reply'})
+        self.assertEqual(calls, [('/edit', {'message_id': '5', 'thread_id': '1',
+                                            'content': 'the reply\n\nwarn'})])
+
+    def test_sends_when_they_spoke_last(self):
+        calls = self.run_with({'id': '5', 'mine': False, 'content': 'hi'})
+        self.assertEqual(calls, [('/send', 'warn')])
+
+    def test_sends_when_edit_would_overflow(self):
+        calls = self.run_with({'id': '5', 'mine': True, 'content': 'x' * 1999})
+        self.assertEqual(calls, [('/send', 'warn')])
+
+
 if __name__ == '__main__':
     unittest.main()
