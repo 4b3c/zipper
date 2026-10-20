@@ -309,6 +309,24 @@ async def handle_threadrename(request: web.Request) -> web.Response:
         return web.json_response({"error": f"{type(e).__name__}: {e}"}, status=500)
 
 
+async def handle_threadarchive(request: web.Request) -> web.Response:
+    """Archive a thread: it leaves the active list without a notification, and
+    the next message posted in it -- by either side -- brings it back."""
+    try:
+        body = await request.json()
+        thread_id = body.get("thread_id")
+        if thread_id is None:
+            return web.json_response({"error": "thread_id required"}, status=400)
+        thread = await resolve_thread(int(thread_id))
+        if thread is None:
+            return web.json_response({"error": "thread not found"}, status=404)
+        if not getattr(thread, "archived", False):
+            await thread.edit(archived=True)
+        return web.json_response({"ok": True})
+    except Exception as e:
+        return web.json_response({"error": f"{type(e).__name__}: {e}"}, status=500)
+
+
 async def handle_status(request: web.Request) -> web.Response:
     """Show or clear a thread's status message (bot/status.py)."""
     from bot import status
@@ -343,3 +361,4 @@ def setup_routes(app: web.Application):
     app.router.add_post("/thread", handle_thread)
     app.router.add_post("/threadinfo", handle_threadinfo)
     app.router.add_post("/threadrename", handle_threadrename)
+    app.router.add_post("/threadarchive", handle_threadarchive)

@@ -170,18 +170,28 @@ def discord_append(message, thread_id):
     machinery says something in a thread without buzzing a phone about it -- the
     idle warning used to arrive an hour after every conversation, as a
     notification for a chat they had already walked away from. Only Zipper's own
-    message is edited, and only while the result still fits; otherwise -- they
-    spoke last, the thread is empty, the reply is near the limit -- it is sent.
+    message is edited; if they spoke last or the thread is empty, it is sent.
+    A reply too long to take the addition loses its tail, marked with an
+    ellipsis -- the operator's call: a buzz costs more than the reply's last line.
     """
     if not discord_on():
         return dict(OFF)
     last = (discord_history(limit=1, thread_id=thread_id) or [None])[0]
     if last and last.get('mine') and last.get('content'):
-        text = last['content'].rstrip() + '\n\n' + message
-        if len(text) <= 2000:
-            return _bot('/edit', {'message_id': last['id'], 'thread_id': thread_id,
-                                  'content': text})
+        tail = '\n\n' + message
+        body = last['content'].rstrip()
+        if len(body) + len(tail) > 2000:
+            body = body[:2000 - len(tail) - 1].rstrip() + '…'
+        return _bot('/edit', {'message_id': last['id'], 'thread_id': thread_id,
+                              'content': body + tail})
     return discord_send(message, thread_id=thread_id)
+
+def discord_archive(thread_id):
+    """Archive a thread once its conversation closes. No notification; a new
+    message in it unarchives it, and the conversation resumes as before."""
+    if not discord_on() or str(thread_id).startswith('local-'):
+        return dict(OFF)
+    return _bot('/threadarchive', {'thread_id': thread_id})
 
 def discord_history(limit=5, thread_id=None):
     if not discord_on():

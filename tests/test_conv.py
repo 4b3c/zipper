@@ -91,9 +91,12 @@ class Append(unittest.TestCase):
         calls = self.run_with({'id': '5', 'mine': False, 'content': 'hi'})
         self.assertEqual(calls, [('/send', 'warn')])
 
-    def test_sends_when_edit_would_overflow(self):
+    def test_trims_the_reply_when_edit_would_overflow(self):
         calls = self.run_with({'id': '5', 'mine': True, 'content': 'x' * 1999})
-        self.assertEqual(calls, [('/send', 'warn')])
+        text = calls[0][1]['content']
+        self.assertEqual(calls[0][0], '/edit')
+        self.assertEqual(len(text), 2000)
+        self.assertTrue(text.endswith('x…\n\nwarn'))
 
 
 if __name__ == '__main__':

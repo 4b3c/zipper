@@ -619,7 +619,7 @@ def conversation_reaper():
     notice goes out at `IDLE_NOTICE`, while answering is still cheap, and the
     close follows at `IDLE_EXPIRY`. `reap` returns only what it closed; the
     warnings announce themselves in the thread, appended to its last message so
-    they don't notify.
+    they don't notify, and a closed conversation's thread is archived.
     """
     def notify(tid, text):
         chat.discord_append(text, thread_id=tid)
@@ -634,6 +634,12 @@ def conversation_reaper():
                 # for a while, which meant the one channel that is supposed to
                 # be "things needing a decision" carried housekeeping too.
                 publish('status', 'conversation %s closed (idle)' % tid)
+                try:
+                    chat.discord_archive(tid)
+                except Exception as e:
+                    # Once closed, reap never returns it again, so a failed
+                    # archive is not retried; Discord's own 24h archive catches it.
+                    print('[reaper] archive %s: %s' % (tid, e))
         except Exception as e:
             print('[reaper] %s' % e)
 
