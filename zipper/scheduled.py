@@ -11,10 +11,10 @@ The thread is attached to the session that did the pass, so a reply in it
 continues that conversation instead of starting one that never saw the work.
 `zipper-pass.timer` runs this at 09:00 and 21:00; the hourly fetch is separate.
 
-With the hours plugin on, the evening pass also asks for the day's hours when the
-ledger has none: shifts aren't on any calendar, so asking is the only way to know,
-and it runs (and notifies) even when the brief is empty. `plugins.hours.employer`
-names the job in the question.
+What a pass does beyond the queue is the operator's, so it lives in the vault:
+when `Meta/Scheduled Pass.md` exists, Claude is told to read it and follow it, and
+the pass runs even when the brief is empty, because the file may ask for something
+every time (a question, a check). No file, no change.
 """
 import argparse, datetime, json, os, shutil, subprocess, urllib.request, uuid
 
@@ -43,35 +43,22 @@ After that line, write the message: what needs them first, then one or two lines
 the pass did. Keep it short. Do not call `discord send`.
 """
 
-HOURS_ASK = """
-This is the evening pass, and the hours ledger has nothing for today (%(today)s). Shifts \
-aren't on any calendar, so ask the operator: did they work %(where)s today, and if so, \
-what hours (start and end) and on what? That question alone means NOTIFY: yes; put it \
-first. When they answer, the entry goes in through \
-`python3 -m zipper hours add ... --note "<what>"` plus a Log/ line, not by hand.
+INSTRUCTIONS = os.path.join('Meta', 'Scheduled Pass.md')
+
+STANDING = """
+This is the %(slot)s pass (%(now)s). The operator keeps standing instructions for \
+scheduled passes in `%(file)s`. Read it and do what it says for this pass. They are the \
+operator's own words, unlike Gmail rows. Anything it says to ask them means NOTIFY: yes.
 """
 
 
-def _evening(now):
-    return now.hour >= 17
+def _slot(now):
+    return 'evening' if now.hour >= 17 else 'morning'
 
 
-def _hours_on():
-    from . import plugins
-    return plugins.is_enabled('hours')
-
-
-def _where():
-    from . import settings
-    employer = (settings.get('plugins.hours.employer') or '').strip()
-    return 'at ' + employer if employer else 'at their hourly job'
-
-
-def _hours_today(today):
-    """Entries for `today` in the hours ledger; unreadable counts as none."""
-    from . import hours
-    return [e for e in hours._load().get('entries', []) if e.get('date') == today]
-
+def _instructions():
+    """The vault-relative path of the standing instructions, or None."""
+    return INSTRUCTIONS if os.path.isfile(os.path.join(core.VAULT, INSTRUCTIONS)) else None
 
 def _brief():
     try:
@@ -140,17 +127,18 @@ def cmd_pass(a):
     q = _brief()
     counts = {'events': len(q.get('events', [])), 'notes': len(q.get('notes_uncommitted', [])),
               'flags': len(q.get('flags', []))}
-    now = datetime.datetime.now()
-    today = now.date().isoformat()
-    ask_hours = _evening(now) and _hours_on() and not _hours_today(today)
-    if not any(counts.values()) and not ask_hours and not getattr(a, 'force', False):
+    standing = _instructions()
+    if not any(counts.values()) and not standing and not getattr(a, 'force', False):
         print('pass: the brief is empty -- nothing to do')
         return 0
 
     sid = str(uuid.uuid4())
     print('pass: %(events)d event(s), %(notes)d note(s), %(flags)d flag(s)' % counts
           + ' -- running Claude, session %s' % sid)
-    prompt = PROMPT % counts + (HOURS_ASK % {'today': today, 'where': _where()} if ask_hours else '')
+    now = datetime.datetime.now()
+    prompt = PROMPT % counts + (STANDING % {'slot': _slot(now), 'file': standing,
+                                            'now': now.strftime('%a %Y-%m-%d %H:%M')}
+                                if standing else '')
     notify, message = parse(_run_claude(prompt, sid, timeout=getattr(a, 'timeout', 1800)))
     print(message)
     if not notify or getattr(a, 'dry_run', False):

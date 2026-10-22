@@ -5,7 +5,6 @@
     "poll_minutes": 60,
     "sheet": "",
     "metric": "hours_worked",
-    "employer": "",
     "google_account": "",
     "google_client_id": ""
   },
