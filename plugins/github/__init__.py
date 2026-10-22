@@ -3,7 +3,7 @@ and the issues assigned to them in `plugins.github.issues`, as `Tasks/GitHub.md`
 
 The fetching lives in `zipper.gh` and `zipper.ghissues`; this is their face as an input.
 """
-import argparse, json, re
+import argparse, json, re, sys
 
 from zipper import core, gh, ghissues, settings
 from zipper.plugins import OWNER, blob_fetched, as_list
@@ -41,9 +41,15 @@ def pull_issues():
 def cmd(a):
     """`zipper github`: fetch, then write the facts. The CLI's face of pull()."""
     rc = gh.cmd_github(a)
-    pull_issues()
     from zipper import writer
     writer.apply(facts(), source=name)
+    # After the facts, and caught: a bad issues setting must not cost the push
+    # evidence, the same as in a scheduled pull. Said, and the exit code says so.
+    try:
+        pull_issues()
+    except Exception as e:
+        print('issues: %s' % e, file=sys.stderr)
+        return rc or 1
     return rc
 
 

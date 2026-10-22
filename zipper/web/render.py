@@ -137,6 +137,15 @@ def _obsidian(note):
 # to something scannable -- and scannable is the whole requirement, because the
 # question being answered is "what is this and who does it", not "render Canvas
 # faithfully".
+def _open_label(it):
+    """Where a row's link goes, named. Canvas rows were once the only ones with a url."""
+    if it.get('source') == 'canvas':
+        return 'open in Canvas'
+    if '://github.com/' in it.get('url', ''):
+        return 'open on GitHub'
+    return 'open'
+
+
 def _detail_html(it):
     """What a row expands into. Empty string when there is nothing to add."""
     bits = []
@@ -152,8 +161,8 @@ def _detail_html(it):
             bits.append('<p>%s</p>' % esc(txt[:1200]))
     acts = []
     if it.get('url'):
-        acts.append('<a href="%s" target="_blank" rel="noopener">open in Canvas</a>'
-                    % esc(it['url']))
+        acts.append('<a href="%s" target="_blank" rel="noopener">%s</a>'
+                    % (esc(it['url']), _open_label(it)))
     if it.get('course'):
         acts.append('<a href="%s/courses/%s/assignments" target="_blank" rel="noopener">'
                     'course assignments</a>'
