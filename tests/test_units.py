@@ -347,8 +347,10 @@ class Plugins(unittest.TestCase):
             for var, key in m['env'].items():
                 self.assertIn(key, m['defaults'], '%s: env %s -> %s' % (name, var, key))
 
-    def test_only_the_dashboard_is_on_by_default(self):
-        self.assertEqual(plugins.names(), ['dashboard'])
+    def test_only_the_dashboard_and_code_updates_are_on_by_default(self):
+        # Code updates too: every zipper must hear about merged changes, or a fix
+        # one zipper lands never reaches the others.
+        self.assertEqual(plugins.names(), ['dashboard', 'upstream'])
 
     def test_enable_and_disable(self):
         cmd = plugins.cmd_plugin
@@ -362,6 +364,8 @@ class Plugins(unittest.TestCase):
         cmd(A)
         self.assertFalse(plugins.is_enabled('github'))
         A.name = 'dashboard'
+        cmd(A)
+        A.name = 'upstream'
         cmd(A)
         self.assertEqual(plugins.names(), [])
 
@@ -650,12 +654,36 @@ class QueueRows(unittest.TestCase):
         self.assertEqual(rows[0]['who'], 'zipper-a')
         self.assertNotIn('\n', rows[0]['text'])
 
-    def test_upstream_rows_only_for_new_commits(self):
-        before = {'a' * 40: ['2026-09-29T20:00', 'dev', 'old']}
-        after = dict(before, **{'b' * 40: ['2026-09-29T21:00', 'dev', 'new']})
-        rows = upstream.events(before, after)
-        self.assertEqual(len(rows), 1)
-        self.assertIn('new', rows[0]['text'])
+    def test_upstream_parse_skips_own_merges(self):
+        raw = ('a\x1f2026-10-21T10:00:00Z\x1fAbram\x1fMerge pull request #60 from 4b3c/zipper-0/x'
+               '\x1fMine\n\x1e\n'
+               'b\x1f2026-10-21T11:00:00Z\x1fAbram\x1fMerge pull request #61 from 4b3c/zipper-1/y'
+               '\x1fTheirs\nmore body\n\x1e\n'
+               'c\x1f2026-10-21T12:00:00Z\x1fdev\x1fdirect commit\x1f\x1e\n')
+        got = upstream.parse(raw, 'zipper-0')
+        self.assertNotIn('a', got)
+        self.assertEqual(got['b'], ['2026-10-21T11:00', 'zipper-1', 'Theirs', '61'])
+        self.assertEqual(got['c'][1:3], ['dev', 'direct commit'])
+
+    def test_upstream_reports_what_update_already_fetched(self):
+        # `zipper update` fetched (and took) the change before this pull looked, so
+        # before == after; the row must still come, once, and the watermark move.
+        real = upstream.SEEN
+        upstream.SEEN = os.path.join(TMP, 'upstream.json')
+        try:
+            snap = {'origin': 'f' * 40,
+                    'new': {'b' * 40: ['2026-10-21T11:00', 'zipper-1', 'Theirs', '61']}}
+            rows = upstream.events(snap, snap)
+            self.assertEqual(len(rows), 1)
+            self.assertIn('#61', rows[0]['text'])
+            self.assertIn('zipper update', rows[0]['text'])
+            self.assertEqual(upstream._seen(), 'f' * 40)
+            self.assertEqual(upstream.events({}, {}), [])
+        finally:
+            upstream.SEEN = real
+
+    def test_upstream_on_by_default(self):
+        self.assertTrue(plugins.manifests()['upstream'].get('default_on'))
 
 
 class Presence(unittest.TestCase):
