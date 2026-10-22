@@ -1,6 +1,7 @@
 {
   "title": "Code updates",
-  "about": "a queue row when a change to the shared Zipper code is merged, and (optionally) taking it automatically",
+  "about": "a queue row, in every zipper, when a change to the shared Zipper code is merged, saying to run zipper update; and (optionally) taking it automatically",
+  "default_on": true,
   "defaults": {
     "poll_minutes": 60,
     "auto_update": true
