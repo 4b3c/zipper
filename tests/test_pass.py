@@ -15,7 +15,7 @@ os.environ.update(ZIPPER_SETTINGS=os.path.join(TMP, 'settings.json'),
                   ZIPPER_VAULT=os.path.join(TMP, 'vault'))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from zipper import scheduled, runqueue, conversations   # noqa: E402
+from zipper import scheduled, runqueue, conversations, settings   # noqa: E402
 
 
 def tearDownModule():
@@ -27,7 +27,8 @@ class EveningHours(unittest.TestCase):
         self.prompts, self.threads = [], []
         self.saved = (runqueue.cmd_pull, scheduled._brief, scheduled._run_claude,
                       scheduled._open_thread, conversations.touch, scheduled._evening,
-                      scheduled._hours_today)
+                      scheduled._hours_today, scheduled._hours_on)
+        scheduled._hours_on = lambda: True
         runqueue.cmd_pull = lambda a: 0
         scheduled._brief = lambda: {}
         scheduled._run_claude = lambda p, sid, timeout: self.prompts.append(p) or 'NOTIFY: yes\nhi'
@@ -36,7 +37,9 @@ class EveningHours(unittest.TestCase):
 
     def tearDown(self):
         (runqueue.cmd_pull, scheduled._brief, scheduled._run_claude, scheduled._open_thread,
-         conversations.touch, scheduled._evening, scheduled._hours_today) = self.saved
+         conversations.touch, scheduled._evening, scheduled._hours_today,
+         scheduled._hours_on) = self.saved
+        settings.put('plugins.hours.employer', '')
 
     def run_pass(self, evening, logged):
         scheduled._evening = lambda now: evening
@@ -46,8 +49,18 @@ class EveningHours(unittest.TestCase):
     def test_evening_without_hours_asks_even_with_an_empty_brief(self):
         self.run_pass(evening=True, logged=[])
         self.assertEqual(len(self.prompts), 1)
-        self.assertIn('Luminosity', self.prompts[0])
+        self.assertIn('at their hourly job', self.prompts[0])
         self.assertEqual(self.threads, ['hi'])
+
+    def test_the_employer_comes_from_settings(self):
+        settings.put('plugins.hours.employer', 'Acme Lab')
+        self.run_pass(evening=True, logged=[])
+        self.assertIn('did they work at Acme Lab today', self.prompts[0])
+
+    def test_no_hours_plugin_no_question(self):
+        scheduled._hours_on = lambda: False
+        self.run_pass(evening=True, logged=[])
+        self.assertEqual(self.prompts, [])
 
     def test_logged_hours_or_morning_stay_silent(self):
         self.run_pass(evening=True, logged=[{'date': 'x'}])
@@ -57,7 +70,7 @@ class EveningHours(unittest.TestCase):
     def test_morning_pass_does_not_ask(self):
         scheduled._brief = lambda: {'flags': [1]}
         self.run_pass(evening=False, logged=[])
-        self.assertNotIn('Luminosity', self.prompts[0])
+        self.assertNotIn('hours ledger', self.prompts[0])
 
 
 if __name__ == '__main__':
