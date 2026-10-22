@@ -210,8 +210,10 @@ class Actions(unittest.TestCase):
 
 class Pulls(unittest.TestCase):
     def test_each_plugin_is_due_on_its_own_timer(self):
+        # upstream is on by default; off here so only the two timers under test exist.
         settings.save({'plugins': {'calendar': {'enabled': True, 'poll_minutes': 15},
-                                   'github': {'enabled': True, 'poll_minutes': 60}}})
+                                   'github': {'enabled': True, 'poll_minutes': 60},
+                                   'upstream': {'enabled': False}}})
         import datetime
         now = datetime.datetime(2026, 9, 29, 12, 0)
         with open(plugins.PULLS, 'w') as fh:
@@ -219,7 +221,8 @@ class Pulls(unittest.TestCase):
         self.assertEqual(plugins.due(now), [])
         later = datetime.datetime(2026, 9, 29, 12, 6)
         self.assertEqual(plugins.due(later), ['calendar'])
-        settings.save({'plugins': {'calendar': {'enabled': True, 'poll_minutes': 0}}})
+        settings.save({'plugins': {'calendar': {'enabled': True, 'poll_minutes': 0},
+                                   'upstream': {'enabled': False}}})
         self.assertEqual(plugins.due(later), [])         # 0: only by hand
 
 
