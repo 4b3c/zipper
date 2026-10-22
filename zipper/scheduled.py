@@ -10,6 +10,10 @@ something needs the operator.
 The thread is attached to the session that did the pass, so a reply in it
 continues that conversation instead of starting one that never saw the work.
 `zipper-pass.timer` runs this at 09:00 and 21:00; the hourly fetch is separate.
+
+The evening pass also asks for the day's Luminosity hours when the ledger has none:
+shifts aren't on any calendar, so asking is the only way to know, and it runs (and
+notifies) even when the brief is empty.
 """
 import argparse, datetime, json, os, shutil, subprocess, urllib.request, uuid
 
@@ -37,6 +41,24 @@ exactly `NOTIFY: yes` if anything needs them, or `NOTIFY: no` if the pass was ro
 After that line, write the message: what needs them first, then one or two lines on what \
 the pass did. Keep it short. Do not call `discord send`.
 """
+
+HOURS_ASK = """
+This is the evening pass, and the hours ledger has nothing for today (%(today)s). Shifts \
+at Luminosity Lab aren't on any calendar, so ask the operator: did they work at \
+Luminosity today, and if so, what hours (start and end) and on what? That question \
+alone means NOTIFY: yes; put it first. When they answer, the entry goes in through \
+`python3 -m zipper hours add ... --note "<what>"` plus a Log/ line, not by hand.
+"""
+
+
+def _evening(now):
+    return now.hour >= 17
+
+
+def _hours_today(today):
+    """Entries for `today` in the hours ledger; unreadable counts as none."""
+    from . import hours
+    return [e for e in hours._load().get('entries', []) if e.get('date') == today]
 
 
 def _brief():
@@ -106,14 +128,18 @@ def cmd_pass(a):
     q = _brief()
     counts = {'events': len(q.get('events', [])), 'notes': len(q.get('notes_uncommitted', [])),
               'flags': len(q.get('flags', []))}
-    if not any(counts.values()) and not getattr(a, 'force', False):
+    now = datetime.datetime.now()
+    today = now.date().isoformat()
+    ask_hours = _evening(now) and not _hours_today(today)
+    if not any(counts.values()) and not ask_hours and not getattr(a, 'force', False):
         print('pass: the brief is empty -- nothing to do')
         return 0
 
     sid = str(uuid.uuid4())
     print('pass: %(events)d event(s), %(notes)d note(s), %(flags)d flag(s)' % counts
           + ' -- running Claude, session %s' % sid)
-    notify, message = parse(_run_claude(PROMPT % counts, sid, timeout=getattr(a, 'timeout', 1800)))
+    prompt = PROMPT % counts + (HOURS_ASK % {'today': today} if ask_hours else '')
+    notify, message = parse(_run_claude(prompt, sid, timeout=getattr(a, 'timeout', 1800)))
     print(message)
     if not notify or getattr(a, 'dry_run', False):
         print('pass: %s' % ('dry run, nothing sent' if notify else 'routine, nothing sent'))
