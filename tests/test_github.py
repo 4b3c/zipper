@@ -317,5 +317,23 @@ class Issues(unittest.TestCase):
         self.assertEqual(t['url'], 'https://github.com/Org/open/issues/9')
 
 
+class Cli(unittest.TestCase):
+    def test_a_bad_issues_setting_still_writes_the_facts(self):
+        from zipper import writer
+        order = []
+        with mock.patch.object(gh, 'cmd_github', return_value=0), \
+                mock.patch.object(writer, 'apply', side_effect=lambda *a, **k: order.append('facts')), \
+                mock.patch.object(ghp, 'pull_issues', side_effect=RuntimeError('not open')):
+            self.assertEqual(ghp.cmd(None), 1)
+        self.assertEqual(order, ['facts'])
+
+    def test_link_label_names_where_it_goes(self):
+        from zipper.web import render
+        self.assertEqual(render._open_label({'source': 'canvas', 'url': 'https://x/c'}),
+                         'open in Canvas')
+        self.assertEqual(render._open_label(
+            {'source': 'task', 'url': 'https://github.com/Org/open/issues/9'}), 'open on GitHub')
+
+
 if __name__ == '__main__':
     unittest.main()
