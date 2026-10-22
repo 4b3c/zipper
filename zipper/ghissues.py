@@ -166,13 +166,13 @@ def render(items, notes):
 
 
 def _boxes(text):
-    """{task text: ticked} for the file's task lines."""
+    """{task text: (ticked, the whole line)} for the file's task lines."""
     out = {}
     for line in text.splitlines():
         m = core.TASK_RE.match(line)
         if m:
             out[re.sub(r'\[[a-z_]+::[^\]]*\]+|✅.*', '', m.group(2)).strip()] = \
-                m.group(1).lower() == 'x'
+                (m.group(1).lower() == 'x', line)
     return out
 
 
@@ -181,8 +181,14 @@ def describe_edit(was, now):
     if now is None:
         return 'the file was deleted'
     a, b = _boxes(was), _boxes(now)
-    bits = ['ticked "%s"' % t for t in b if b[t] and not a.get(t, False)]
-    bits += ['unticked "%s"' % t for t in b if not b[t] and a.get(t)]
+    bits = []
+    for t, (box, line) in b.items():
+        if t not in a:
+            bits.append('added "%s"' % t)
+        elif box != a[t][0]:
+            bits.append('%s "%s"' % ('ticked' if box else 'unticked', t))
+        elif line != a[t][1]:
+            bits.append('changed "%s"' % t)       # a re-date, a #next, a renamed project
     bits += ['removed "%s"' % t for t in a if t not in b]
     return '; '.join(bits[:3]) or 'edited by hand'
 
@@ -235,7 +241,8 @@ def snapshot():
     s = load()
     return {'items': {i['key']: (i['title'], i['closed'], i['due'], i['status'])
                       for i in s.get('items') or []},
-            'undone': s.get('undone') or {}}
+            'undone': s.get('undone') or {},
+            'fetched': s.get('fetched', '')}
 
 
 def events(before, after):
@@ -248,6 +255,8 @@ def events(before, after):
     if u.get('n', 0) > (before.get('undone') or {}).get('n', 0):
         row('edit', 'undone      Tasks/%s  %s -- GitHub owns these; change it there'
             % (FILE, u.get('what', '')))
+    if not before.get('fetched'):
+        return out       # the first read is a baseline: these were assigned before, not now
     before, after = before.get('items') or {}, after.get('items') or {}
     for k, (title, closed, due, _) in sorted(after.items()):
         was = before.get(k)

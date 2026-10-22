@@ -139,7 +139,9 @@ def target(row, notes):
         re.match(r'(?:pushed|merged|force-pushed)\s+(\S+)', row.get('text', ''))
     if not m:
         return None
+    # Issue rows name `owner/repo`, push rows the bare repo; `repos:` may hold either.
+    name = m.group(1).split('/')[-1]
     for title, d in notes:
-        if m.group(1) in (str(r).split('/')[-1].strip() for r in as_list(d.get('repos'))):
+        if name in (str(r).split('/')[-1].strip() for r in as_list(d.get('repos'))):
             return title
     return None

@@ -275,8 +275,29 @@ class Issues(unittest.TestCase):
         a = {'items': {'Org/open#1': ('A', '', '2026-10-30', 'Ready'),
                        'Org/open#2': ('B', '2026-10-21', '', 'Done'),
                        'Org/open#5': ('E', '', '', 'Ready')}}
+        b['fetched'] = '2026-10-21T18:00:00'
         texts = sorted(r['text'].split()[0] for r in ghissues.events(b, a))
         self.assertEqual(texts, ['+', '-', 'closed', 'redated'])
+
+    def test_the_first_pull_is_a_baseline(self):
+        before = ghissues.snapshot()
+        ghissues.write(self.items(), NOTES)
+        self.assertEqual(ghissues.events(before, ghissues.snapshot()), [])
+
+    def test_a_hand_redate_is_named(self):
+        ghissues.write(self.items(), NOTES)
+        p = ghissues.path()
+        text = open(p).read().replace('[due:: 2026-10-30]', '[due:: 2026-11-30]', 1)
+        open(p, 'w').write(text)
+        undone, _ = ghissues.write(self.items(), NOTES)
+        self.assertEqual(undone, 'changed "Fix the editor (issue 71) (now)"')
+
+    def test_issue_rows_land_on_their_note(self):
+        for repos in ('[Org/open]', '[open]'):
+            notes = [('Orbit', {'repos': repos})]
+            for text in ('+ issue     Org/open#9  Fix', 'closed      Org/open#9  Fix',
+                         'pushed      open \u2192 main  2026-10-21T18:00'):
+                self.assertEqual(ghp.target({'text': text}, notes), 'Orbit', (repos, text))
 
     def test_a_partial_read_raises_rather_than_writing(self):
         with mock.patch.object(ghissues, '_gql', side_effect=RuntimeError('rate limited')):
