@@ -203,17 +203,25 @@ def _item_li(it, show_score=True, detail=False):
     if det:
         meta.append('<span class="more">details</span>')
     return ('<li class="row %s%s" title="priority %d">'
-            '<button class="tick" data-key="%s" aria-label="cross off">%s</button>'
+            '<button class="tick%s" data-key="%s" aria-label="cross off"%s>%s</button>'
             '<span class="rowbody"><span class="rowtitle">%s</span>'
             '<span class="rowmeta">%s</span>%s</span>%s</li>'
             % ('crossed' if it.get('done') else '', ' has-det' if det else '',
-               it['score'], esc(it['key']),
+               it['score'], ' ghost' if it.get('readonly') else '', esc(it['key']),
+               ' title="read-only: change it on GitHub"' if it.get('readonly') else '',
                '&#10003;' if it.get('done') else '', title,
                ' &middot; '.join(meta), det,
-               # delete is for tasks only; a Canvas row belongs to Canvas
-               '<button class="del" data-key="%s" aria-label="delete task" '
-               'title="delete: not doing it, or done but not by me">&times;</button>'
-               % esc(it['key']) if str(it['key']).startswith('task:') else ''))
+               del_button(it)))
+
+
+def del_button(it):
+    """Delete, for a task only: Canvas rows belong to Canvas, and a read-only task
+    to the source that writes its file."""
+    if not str(it.get('key', '')).startswith('task:') or it.get('readonly'):
+        return ''
+    return ('<button class="del" data-key="%s" aria-label="delete task" '
+            'title="delete: not doing it, or done but not by me">&times;</button>'
+            % esc(it['key']))
 
 
 def _side(items, empty, detail=False):

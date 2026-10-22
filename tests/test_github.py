@@ -196,5 +196,105 @@ class BranchBaseline(unittest.TestCase):
         self.assertEqual((r['branches'], r['pushes']), ({'main': 'm2'}, []))
 
 
+# ---------------------------------------------------------------- assigned issues
+
+from zipper import core, ghissues           # noqa: E402
+
+
+def issues_settings(**plug):
+    g = {'user': 'abe', 'open': ['Org/open'], 'issues': ['Org/open']}
+    g.update(plug)
+    os.makedirs(os.path.dirname(settings.PATH), exist_ok=True)
+    json.dump({'plugins': {'github': g}}, open(settings.PATH, 'w'))
+
+
+def node(n, title, state='OPEN', closed=None, status='In Progress', due='2026-10-30'):
+    vals = [{'name': status, 'field': {'name': 'Status'}},
+            {'date': due, 'field': {'name': 'Target date'}}]
+    return {'number': n, 'title': title, 'state': state, 'closedAt': closed,
+            'url': 'https://github.com/Org/open/issues/%d' % n, 'parent': None,
+            'projectItems': {'nodes': [{'fieldValues': {'nodes': vals}}]}}
+
+
+NOTES = [('Orbit', {'repos': '[Org/open, Org/other]'})]
+
+
+class Issues(unittest.TestCase):
+    def setUp(self):
+        issues_settings()
+        shutil.rmtree(core.VAULT, ignore_errors=True)
+        os.makedirs(core.INBOX, exist_ok=True)
+        if os.path.exists(ghissues.STORE):
+            os.remove(ghissues.STORE)
+
+    def items(self):
+        return [ghissues.item('Org/open', node(9, 'Fix the editor (#71) [now]'), 'Target date'),
+                ghissues.item('Org/open', node(4, 'Old one', 'CLOSED', '2026-10-20T18:00:00Z'),
+                              'Target date')]
+
+    def test_org_repo_must_be_listed_open(self):
+        issues_settings(issues=['Org/open', 'Org/secret', 'abe/mine'])
+        self.assertEqual(ghissues.repos(), (['Org/open', 'abe/mine'], ['Org/secret']))
+
+    def test_render_reads_as_tasks(self):
+        text = ghissues.render(self.items(), NOTES)
+        self.assertIn('generated: github', text)
+        self.assertIn('- [ ] Fix the editor (issue 71) (now) [project:: [[Orbit]]] '
+                      '[due:: 2026-10-30] [issue:: Org/open#9]', text)
+        self.assertIn('  In Progress on the board.', text)
+        self.assertRegex(text, r'- \[x\] Old one .*\[issue:: Org/open#4\] ✅ 2026-10-2')
+
+    def test_a_hand_tick_is_undone_and_reported(self):
+        ghissues.write(self.items(), NOTES)
+        before = ghissues.snapshot()
+        p = ghissues.path()
+        t = open(p).read().replace('- [ ] Fix', '- [x] Fix')
+        open(p, 'w').write(t)
+        undone, why = ghissues.write(self.items(), NOTES)
+        self.assertEqual(why, '')
+        self.assertIn('ticked "Fix the editor', undone)
+        self.assertIn('- [ ] Fix', open(p).read())
+        rows = ghissues.events(before, ghissues.snapshot())
+        self.assertEqual([r['text'][:6] for r in rows], ['undone'])
+
+    def test_rewriting_its_own_file_is_not_an_edit(self):
+        ghissues.write(self.items(), NOTES)
+        self.assertEqual(ghissues.write(self.items(), NOTES), ('', ''))
+
+    def test_a_file_it_did_not_write_is_left_alone(self):
+        os.makedirs(os.path.dirname(ghissues.path()), exist_ok=True)
+        open(ghissues.path(), 'w').write('---\ntype: tasks\n---\n- [ ] mine\n')
+        undone, why = ghissues.write(self.items(), NOTES)
+        self.assertIn('left alone', why)
+        self.assertEqual(open(ghissues.path()).read(), '---\ntype: tasks\n---\n- [ ] mine\n')
+
+    def test_events(self):
+        b = {'items': {'Org/open#1': ('A', '', '2026-10-23', 'Ready'),
+                       'Org/open#2': ('B', '', '', 'Ready'),
+                       'Org/open#3': ('C', '', '', 'Ready')}}
+        a = {'items': {'Org/open#1': ('A', '', '2026-10-30', 'Ready'),
+                       'Org/open#2': ('B', '2026-10-21', '', 'Done'),
+                       'Org/open#5': ('E', '', '', 'Ready')}}
+        texts = sorted(r['text'].split()[0] for r in ghissues.events(b, a))
+        self.assertEqual(texts, ['+', '-', 'closed', 'redated'])
+
+    def test_a_partial_read_raises_rather_than_writing(self):
+        with mock.patch.object(ghissues, '_gql', side_effect=RuntimeError('rate limited')):
+            with self.assertRaises(RuntimeError):
+                ghissues.fetch('tok', 'abe')
+        self.assertFalse(os.path.exists(ghissues.path()))
+
+    def test_dashboard_refuses_to_tick_or_delete(self):
+        from zipper.web import data
+        ghissues.write(self.items(), NOTES)
+        key = 'task:Orbit|Fix the editor (issue 71) (now)'
+        self.assertEqual(data.generated(ghissues.path()), 'github')
+        self.assertFalse(data.toggle_done(key)['ok'])
+        self.assertFalse(data.delete_task(key)['ok'])
+        t = [t for t in data.open_tasks() if t['text'].startswith('Fix')][0]
+        self.assertTrue(t['readonly'])
+        self.assertEqual(t['url'], 'https://github.com/Org/open/issues/9')
+
+
 if __name__ == '__main__':
     unittest.main()
