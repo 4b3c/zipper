@@ -192,6 +192,7 @@ def open_tasks():
     out = []
     for p in sorted(glob.glob(os.path.join(core.VAULT, 'Tasks', '*.md'))):
         cur = None
+        ro = generated(p)
         for line in core.defenced(open(p, encoding='utf-8')):
             m = core.TASK_RE.match(line)
             if m:
@@ -211,7 +212,11 @@ def open_tasks():
                     n = n.strip()
                     if n and n not in links:
                         links.append(n)
+                issue = re.search(r'\[issue::\s*([\w.-]+/[\w.-]+)#(\d+)\]', raw)
                 cur = {'text': task_text(raw), 'desc': '',
+                       'readonly': ro,
+                       'url': ('https://github.com/%s/issues/%s' % issue.groups()
+                               if issue else ''),
                        'due': due.group(1) if due else '',
                        'project': proj.group(1) if proj else '',
                        'links': links,
@@ -271,7 +276,8 @@ def ranked(limit=10):
         items.append(it)
     for t in open_tasks():
         items.append({'source': 'task', 'title': t['text'], 'due': t['due'],
-                      'tag': t['project'], 'url': '', 'points': 0,
+                      'tag': t['project'], 'url': t['url'], 'points': 0,
+                      'readonly': t['readonly'],
                       'desc': t['desc'], 'kind': '', 'links': t['links'],
                       # Canvas assignments are what a class-backed task is
                       # actually about, so the course page is the link it wants
@@ -306,6 +312,19 @@ def override_key(it):
     # target and drop the display alias.
     return 'task:%s|%s' % (str(it['tag'] or '').split('|')[0], it['title'])
 
+def generated(p):
+    """A Tasks/ file a plugin writes (`generated: <plugin>` in its frontmatter). Its
+    source owns the checkboxes, so nothing here may tick, untick or delete them."""
+    try:
+        head = open(p, encoding='utf-8').read(600)
+    except OSError:
+        return ''
+    if not head.startswith('---'):
+        return ''
+    m = re.search(r'^generated:\s*(\S+)\s*$', head.split('\n---', 1)[0], re.M)
+    return m.group(1) if m else ''
+
+
 def toggle_done(key):
     """Cross something off by hand.
 
@@ -317,6 +336,8 @@ def toggle_done(key):
         p, lines, i = _find_task(key)
         if p is None:
             return {'ok': False, 'error': 'task not found'}
+        if generated(p):
+            return {'ok': False, 'error': 'read-only: change it on %s' % generated(p)}
         done = core.TASK_RE.match(lines[i]).group(1).lower() == 'x'
         lines[i] = lines[i].replace('[x]' if done else '[ ]',
                                     '[ ]' if done else '[x]', 1)
@@ -358,6 +379,8 @@ def delete_task(key):
     p, lines, i = _find_task(key)
     if p is None:
         return {'ok': False, 'error': 'task not found'}
+    if generated(p):
+        return {'ok': False, 'error': 'read-only: change it on %s' % generated(p)}
     j = i + 1
     while j < len(lines) and lines[j].strip() and lines[j][:1] in (' ', '\t') \
             and not core.TASK_RE.match(lines[j]):

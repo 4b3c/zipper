@@ -1,10 +1,11 @@
-"""GitHub: pushes and commits, from the operator's repos and any orgs in ZIPPER_GH_ORGS.
+"""GitHub: pushes and commits, from the operator's repos and any orgs in ZIPPER_GH_ORGS,
+and the issues assigned to them in `plugins.github.issues`, as `Tasks/GitHub.md`.
 
-The fetching lives in `zipper.gh`; this is its face as an input.
+The fetching lives in `zipper.gh` and `zipper.ghissues`; this is their face as an input.
 """
 import argparse, json, re
 
-from zipper import core, gh
+from zipper import core, gh, ghissues, settings
 from zipper.plugins import OWNER, blob_fetched, as_list
 
 name = 'github'
@@ -12,11 +13,35 @@ name = 'github'
 
 def pull():
     gh.cmd_github(argparse.Namespace(since_days=30, full=False))
+    pull_issues()
+
+
+def pull_issues():
+    """Rewrite `Tasks/GitHub.md` from GitHub. Off while `plugins.github.issues` is
+    empty. A refused repo or a failed read raises, so the pull records the error;
+    the file is only ever written from a complete read."""
+    ok, refused = ghissues.repos()
+    if refused:
+        raise RuntimeError('issues: not reading %s -- an org repo must also be in '
+                           'plugins.github.open' % ', '.join(refused))
+    if not ok:
+        return
+    token = gh._token()
+    if not token:
+        raise RuntimeError('issues: no GitHub token')
+    items = ghissues.fetch(token, gh.GH_USER,
+                           settings.get('plugins.github.due_field') or 'Target date')
+    notes = [(core.title_of(p), core.fm_dict(core.read_note(p)[0]))
+             for p in core.iter_notes()]
+    _, why = ghissues.write(items, notes)
+    if why:
+        raise RuntimeError('issues: ' + why)
 
 
 def cmd(a):
     """`zipper github`: fetch, then write the facts. The CLI's face of pull()."""
     rc = gh.cmd_github(a)
+    pull_issues()
     from zipper import writer
     writer.apply(facts(), source=name)
     return rc
@@ -62,7 +87,8 @@ def _repos():
 
 
 def snapshot():
-    return {r['name']: r.get('pushed_at', '') for r in _repos()}
+    return {'repos': {r['name']: r.get('pushed_at', '') for r in _repos()},
+            'issues': ghissues.snapshot()}
 
 
 def _record(name):
@@ -72,13 +98,23 @@ def _record(name):
     return {}
 
 
+def _split(snap):
+    """(repo heads, issues) from a snapshot. A bare {repo: pushed_at} is the shape
+    from before issues were added, and still means repos alone."""
+    snap = snap or {}
+    if isinstance(snap.get('repos'), dict):
+        return snap['repos'], snap.get('issues') or {}
+    return snap, {}
+
+
 def events(before, after):
     """One row per branch that moved, saying which, and whether it was a merge.
 
     With no baseline of branch heads, or if the heads couldn't be read, the row is
     bare: the repo and the time, with no branch, message or pusher guessed."""
     from zipper import ghpush
-    out = []
+    (before, was), (after, now) = _split(before), _split(after)
+    out = ghissues.events(was, now)
     for repo, ts in sorted(after.items()):
         # A repo absent from `before` is newly visible, not newly pushed.
         if before.get(repo) is None or before[repo] == ts:
@@ -98,10 +134,14 @@ def events(before, after):
 
 def target(row, notes):
     """The note whose hand-maintained `repos:` names this repo. Never guessed."""
-    m = re.match(r'(?:pushed|merged|force-pushed)\s+(\S+)', row.get('text', ''))
+    m = re.match(r'(?:\+ issue|- issue|closed|reopened|redated)\s+(\S+)#\d+',
+                 row.get('text', '')) or \
+        re.match(r'(?:pushed|merged|force-pushed)\s+(\S+)', row.get('text', ''))
     if not m:
         return None
+    # Issue rows name `owner/repo`, push rows the bare repo; `repos:` may hold either.
+    name = m.group(1).split('/')[-1]
     for title, d in notes:
-        if m.group(1) in (str(r).split('/')[-1].strip() for r in as_list(d.get('repos'))):
+        if name in (str(r).split('/')[-1].strip() for r in as_list(d.get('repos'))):
             return title
     return None

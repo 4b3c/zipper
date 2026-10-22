@@ -1,10 +1,12 @@
 {
   "title": "GitHub",
-  "about": "pushes and commit counts from your repos, as evidence a project is alive",
+  "about": "pushes and commit counts from your repos, as evidence a project is alive; issues assigned to you, as a read-only Tasks/GitHub.md",
   "defaults": {
     "poll_minutes": 60,
     "user": "",
-    "orgs": []
+    "orgs": [],
+    "issues": [],
+    "due_field": "Target date"
   },
   "secrets": [
     "GITHUB_TOKEN"

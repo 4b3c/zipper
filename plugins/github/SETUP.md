@@ -18,3 +18,13 @@ Each push row names the branch that moved and whether it was a merge (`merged`, 
 `force-pushed`). It works from branch heads kept between fetches, so the first push a repo
 sees after setup is a bare row. An NDA repo's branch names are kept hashed and shown as
 "a branch".
+
+**Assigned issues, as a todo list.** Ask whether they track work in GitHub issues. If yes,
+name the repos: `zipper settings set plugins.github.issues '["org-a/repo"]'`. An org repo
+must also be in `open`, since titles are content. Each pull writes `Tasks/GitHub.md`: every
+open issue assigned to them, with its board's *Target date* as `[due::]` (another date field:
+`plugins.github.due_field`), the board's Status on the line below, and closed ones ticked for
+two weeks. The file is **read-only**: GitHub owns it. The dashboard draws its boxes as
+ghosts, and a hand edit is undone on the next pull with a queue row saying so. The token
+needs the `read:project` scope (`gh auth refresh -s read:project`); without it the pull
+fails with GitHub's scope error and the file is left as it was.

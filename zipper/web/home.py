@@ -33,7 +33,7 @@ from .live import LIVE_JS, live_sig
 from .cards import CARD_CSS, CARD_JS
 from .data import (work_items, flags, monday_of, open_tasks,
                    priority, ranked, today_split, week_canvas)
-from .render import _gcal_link, _join_link, _lanes, _view_html, esc, views_blob
+from .render import _gcal_link, _join_link, _lanes, _view_html, del_button, esc, views_blob
 
 
 DOW = ('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')
@@ -178,7 +178,9 @@ def done_task_rows():
     """
     from .data import task_text
     out = []
+    from .data import generated
     for p in sorted(glob.glob(os.path.join(core.VAULT, 'Tasks', '*.md'))):
+        ro = bool(generated(p))
         for line in core.defenced(open(p, encoding='utf-8')):
             m = core.TASK_RE.match(line)
             if not m or m.group(1).lower() != 'x':
@@ -191,6 +193,7 @@ def done_task_rows():
             out.append({'source': 'task', 'title': text, 'tag': tag,
                         'due': due.group(1) if due else '', 'done': True,
                         'overdue': False, 'points': 0, 'url': '', 'at': '',
+                        'readonly': ro,
                         # Same alias trap as `data.override_key` -- the tag must
                         # not contain the delimiter or the title cannot be read
                         # back out of the key.
@@ -812,23 +815,17 @@ def _row(it, showat=True, showdue=False, pill=False):
     if it.get('source') == 'canvas' and len(d) > 140:
         d = ''
     desc = '<span class="rowdesc">%s</span>' % esc(plain(d)) if d else ''
-    return ('<li class="row%s%s"><button class="tick" data-key="%s"%s>%s</button>'
+    return ('<li class="row%s%s"><button class="tick%s" data-key="%s"%s>%s</button>'
             '<span class="rowbody"><span class="rowtitle">%s</span>%s'
             '<span class="rowmeta">%s</span></span>%s%s</li>'
             % (' crossed' if it.get('done') else '', ' has' if desc else '',
-               esc(it['key']),
-               ' disabled title="submitted in Canvas"' if it.get('submitted') else '',
+               ' ghost' if it.get('readonly') else '', esc(it['key']),
+               ' disabled title="submitted in Canvas"' if it.get('submitted')
+               else ' title="read-only: change it on GitHub"' if it.get('readonly') else '',
                '&#10003;' if it.get('done') else '', title, desc,
                ' &middot; '.join(meta), tag, del_button(it)))
 
 
-def del_button(it):
-    """Delete, for a task only: Canvas rows belong to Canvas and cannot be."""
-    if not str(it.get('key', '')).startswith('task:'):
-        return ''
-    return ('<button class="del" data-key="%s" aria-label="delete task" '
-            'title="delete: not doing it, or done but not by me">&times;</button>'
-            % esc(it['key']))
 
 
 def _day_state(day):
