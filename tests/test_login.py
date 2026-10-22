@@ -52,6 +52,11 @@ class Login(unittest.TestCase):
         self.assertFalse(login.check('', ''))
         self.assertFalse(login.valid('%s=:1:x' % login.COOKIE))
 
+    def test_cookie_is_https_only(self):
+        for c in (login.set_cookie(login.make()), login.set_cookie('', 0)):
+            for flag in ('HttpOnly', 'Secure', 'SameSite=Lax', 'Path=/'):
+                self.assertIn(flag, c)
+
     def test_next_stays_on_this_site(self):
         self.assertEqual(login.safe_next('/views?x=1&y=2'), '/views?x=1&y=2')
         self.assertEqual(login.safe_next('/p/Café'), '/p/Caf%C3%A9')     # ASCII only in the header
