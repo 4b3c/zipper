@@ -29,8 +29,8 @@ def tearDownModule():
 class FakeGmail:
     """Answers `search` from a table of query -> ids, and records moves."""
 
-    def __init__(self, inbox, matches, held=()):
-        self.inbox, self.matches, self.held = list(inbox), matches, set(held)
+    def __init__(self, inbox, matches, held=(), unread=()):
+        self.inbox, self.matches, self.held, self.unread = list(inbox), matches, set(held), set(unread)
         self.moves, self.labels = [], {'INBOX': 'INBOX'}
 
     def search(self, q):
@@ -38,6 +38,8 @@ class FakeGmail:
         for key, hits in self.matches.items():
             if '(%s)' % key in q:
                 ids = [i for i in ids if i in hits]
+        if '-is:unread' in q:
+            ids = [i for i in ids if i not in self.unread]
         if '-(HOLD)' in q:
             ids = [i for i in ids if i not in self.held]
         return ids
@@ -74,6 +76,15 @@ class Sort(unittest.TestCase):
         self.assertIn('h1', steps['Login codes'])              # always: hold ignored
         self.fake.matches['CODE'] = {'c1'}
         self.assertNotIn('h1', dict(sort.plan())['Newsletters'])   # held
+
+    def test_unread_never_moves(self):
+        self.fake.unread = {'c1', 'p1', 'x1'}
+        for backlog in (False, True):
+            moved = [i for _, ids in sort.plan(backlog=backlog) for i in ids]
+            self.assertNotIn('c1', moved)                      # not even an `always` rule
+            self.assertNotIn('p1', moved)
+            self.assertNotIn('x1', moved)                      # nor the fallback
+            self.assertIn('p2', moved)
 
     def test_live_only_touches_seen(self):
         steps = dict(sort.plan(only={'p1'}))

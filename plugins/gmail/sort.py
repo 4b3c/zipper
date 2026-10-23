@@ -10,6 +10,10 @@ their senders, so they are the operator's, never a default here:
 
 A rule with `"always": true` ignores `hold` (a login code is never a task).
 
+Only mail he has opened moves: every query carries `-is:unread`, so the
+organizer never files something he hasn't seen. `--file` is explicit and moves
+whatever it is given.
+
 Rules run in order and the first match wins: filing removes INBOX, so a later
 rule's `in:inbox` no longer sees it. "Moving" is a label plus leaving the inbox;
 nothing is deleted.
@@ -34,6 +38,7 @@ API = 'https://gmail.googleapis.com/gmail/v1/users/me'
 BACKLOG_DAYS = 14
 BATCH = 1000                 # batchModify's limit
 LIST_CAP = 20000             # a runaway query stops here
+OPENED = '-is:unread'        # unread mail stays in the inbox
 
 
 def rules():
@@ -90,7 +95,7 @@ def plan(backlog=False, only=None):
     """[(label, [ids])] in rule order, each id once. `only` limits live sorting to
     ids the pull has recorded."""
     hold = (settings.get('plugins.gmail.hold') or '').strip()
-    scope = 'in:inbox older_than:%dd' % BACKLOG_DAYS if backlog else 'in:inbox'
+    scope = ('in:inbox older_than:%dd' % BACKLOG_DAYS if backlog else 'in:inbox') + ' ' + OPENED
     taken, out = set(), []
     for r in rules():
         q = '%s (%s)' % (scope, r['query'])
