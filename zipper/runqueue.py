@@ -196,6 +196,7 @@ def flags(evrecs=None):
         evrecs = resolve_events(fix=False)
     out = inputs.flags()
     notes = [(p, fm_dict(read_note(p)[0])) for p in iter_notes()]
+    linked = sync.log_latest()
     logged_recently = set()
     for f in glob.glob(os.path.join(LOGDIR, '*.md')):
         n = _days_since(title_of(f))
@@ -209,19 +210,19 @@ def flags(evrecs=None):
             out.append('%s was pushed to on %s but never appears in a log entry' %
                        (t, d['last_push']))
         if d.get('type') == 'project' and d.get('status') == 'active':
-            lt = d.get('last_touched')
-            if not lt:
-                out.append('%s is active with no last_touched at all' % t)
-            elif lt < (core.TODAY - datetime.timedelta(days=45)).isoformat()[:7]:
+            # Ignoring a project is fine; a month of it is worth one mention.
+            n = sync.ignored_for(d, linked.get(t, ''))
+            if n is None:
+                out.append('%s is active with no evidence of work at all' % t)
+            elif n > sync.IGNORED_DAYS:
                 # status_verified is the owner confirming the status despite the
                 # evidence, so it suppresses this too -- but only for 45 days,
                 # or a single confirmation would hide the drift permanently.
                 sv = d.get('status_verified', '')
-                if sv and _days_since(sv) is not None and _days_since(sv) <= 45:
-                    pass
-                else:
-                    out.append('%s is active but untouched since %s%s'
-                               % (t, lt, ' (last verified %s)' % sv if sv else ''))
+                if not (sv and _days_since(sv) is not None and _days_since(sv) <= 45):
+                    out.append('%s is active but ignored for %d days (last work %s)%s'
+                               % (t, n, sync.last_work(d, linked.get(t, '')),
+                                  ' (last verified %s)' % sv if sv else ''))
         if d.get('repos') and d.get('last_push') and d.get('status') in (
                 'dormant', 'idea', 'archived', 'retired'):
             n = _days_since(d['last_push'])
