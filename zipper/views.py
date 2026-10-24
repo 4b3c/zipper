@@ -48,6 +48,7 @@ def note_index():
         d['_title'] = title_of(p)
         d['_folder'] = os.path.relpath(os.path.dirname(p), VAULT).split(os.sep)[0]
         d['_path'] = rel(p)
+        d['note_updated'] = note_written(p, d)
         out.append(d)
     return out
 

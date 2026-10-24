@@ -13,7 +13,9 @@ def cmd_status(a):
     notes = []
     for p in iter_notes():
         pairs, _ = read_note(p)
-        notes.append((p, fm_dict(pairs)))
+        d = fm_dict(pairs)
+        d['note_updated'] = note_written(p, d)
+        notes.append((p, d))
 
     L = ['---', 'tags: [meta, view]', 'type: view', 'view_kind: generated',
          'status: living', 'source: zipper status',

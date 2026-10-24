@@ -159,6 +159,16 @@ def title_of(p):
 def rel(p):
     return os.path.relpath(p, VAULT)
 
+def note_written(p, d):
+    """When the note was last written: the later of its `note_updated` field and
+    the file's mtime. Nothing on the box sets the field, so edits made here would
+    otherwise leave a freshly edited note looking untouched."""
+    try:
+        m = datetime.date.fromtimestamp(os.path.getmtime(p)).isoformat()
+    except OSError:
+        m = ''
+    return max(str(d.get('note_updated') or ''), m) or None
+
 def set_field(pairs, key, value):
     for i, (k, _) in enumerate(pairs):
         if k == key:
@@ -348,7 +358,7 @@ __all__ = [
     'METADIR', 'METCSV', 'TODAY', 'SKIP_DIRS', 'SKIP_FILES', 'ENUMS',
     'DATE_RE', 'EVT_DT_RE', 'MONTH_RE', 'DATE_FIELDS', 'MONTH_FIELDS',
     'NUM_FIELDS', 'BOOL_FIELDS', 'parse_fm', 'fm_dict', 'as_list', 'dump_fm',
-    'iter_notes', 'read_note', 'write_note', 'title_of', 'rel', 'set_field',
+    'iter_notes', 'read_note', 'write_note', 'title_of', 'rel', 'note_written', 'set_field',
     '_dt', '_fmt_dt', '_days_since', '_utc_local', '_split_repo',
     '_norm_title', '_months_ago', '_median', '_hhmm', '_dur', '_snip',
     '_place', 'TASK_RE', 'defenced', '_all_md', 'GH_JSON', 'CAL_CFG', 'LEDGER',
