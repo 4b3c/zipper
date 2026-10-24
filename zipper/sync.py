@@ -40,15 +40,21 @@ IGNORED_DAYS = 30
 
 def last_work(d, linked=''):
     """The newest evidence of work on a note, YYYY-MM-DD, or '' with none: its newest
-    log link, its last push, or a hand-set `last_touched` month taken at its *last*
-    day. A month only proves work somewhere inside it, and ignoring a project is
-    fine -- so the doubt goes to not raising it early."""
+    log link, its last push, or a hand-set `last_touched` read at the *last* day it
+    could mean (a year at Dec 31, a month at its last day). A coarse date only proves
+    work somewhere inside it, and ignoring a project is fine -- so the doubt goes to
+    not raising it early."""
     dates = [linked or '', str(d.get('last_push') or '')[:10]]
     lt = str(d.get('last_touched') or '')
     if MONTH_RE.match(lt):
-        y, m = int(lt[:4]), int(lt[5:7])
-        nxt = datetime.date(y + m // 12, m % 12 + 1, 1)
-        dates.append((nxt - datetime.timedelta(days=1)).isoformat())
+        if len(lt) == 4:
+            dates.append(lt + '-12-31')
+        elif len(lt) == 7:
+            y, m = int(lt[:4]), int(lt[5:7])
+            nxt = datetime.date(y + m // 12, m % 12 + 1, 1)
+            dates.append((nxt - datetime.timedelta(days=1)).isoformat())
+        else:
+            dates.append(lt)
     return max(dates)
 
 
