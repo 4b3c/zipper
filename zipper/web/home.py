@@ -26,8 +26,7 @@ arithmetic behind it perfectly correct.
 from .base import *
 from .base import box, core, canvas, events, metrics, usage
 from .feed import feed_load, feed_rows, note_rows
-from .js import TERM_JS, TICKJS
-from .css import TERM_CSS
+from .js import TICKJS
 from .conv import _queue_prompt, current_conversation
 from .live import LIVE_JS, live_sig
 from .cards import CARD_CSS, CARD_JS
@@ -959,12 +958,10 @@ def page(day=None):
             % (NAV, esc(d.strftime('%A %d %B')), esc(label),
                '' if is_today else '<a class="back" href="/">back to today &rarr;</a>',
                cards.body(day)))
-    state = ('<script>window.__session=%s;window.__queueready=%s;window.__mounted=false;'
-             'window.__sig=%s;</script>' % (json.dumps(bool(current_conversation())),
-                                            json.dumps(bool(_queue_prompt())),
-                                            json.dumps(live_sig(day))))
-    return _page('Zipper', CSS + TERM_CSS + CARD_CSS, body + state,
-                 PAGE_JS + TERM_JS + LIVE_JS + CARD_JS)
+    state = '<script>window.__sig=%s;</script>' % json.dumps(live_sig(day))
+    card_css, card_js = cards.assets()
+    return _page('Zipper', CSS + CARD_CSS + card_css, body + state,
+                 PAGE_JS + LIVE_JS + CARD_JS + card_js)
 
 
 def claude_panel():
