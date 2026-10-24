@@ -21,5 +21,6 @@ def page(key):
             '<a class="back" href="/">&larr; dashboard</a></div>%s</div>'
             % (NAV, esc(p['title']), esc(p['about']), cards.body(None, key)))
     state = '<script>window.__sig=%s;</script>' % json.dumps(live_sig(None, key))
-    return _page('%s · Zipper' % p['title'], CSS + CARD_CSS, body + state,
-                 PAGE_JS + LIVE_JS + CARD_JS)
+    card_css, card_js = cards.assets(key)
+    return _page('%s · Zipper' % p['title'], CSS + CARD_CSS + card_css, body + state,
+                 PAGE_JS + LIVE_JS + CARD_JS + card_js)

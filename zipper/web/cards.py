@@ -38,6 +38,8 @@ also name a built-in renderer, e.g. "dashboard:list".
     act_<name>(args, ctx) -> str a button's backend; the string is shown briefly
     sig(ctx) -> str              optional cheap fingerprint for live updates
     TITLE, WIDTH                 defaults for the frame and a plain row
+    CSS, JS                      optional strings the page includes only while the card
+                                 is in the layout, once however many times it appears
     panel(ctx) -> str            instead of data/render: the whole panel's markup, for a
                                  card that must look exactly as it does (it should carry
                                  data-live="<ctx.card_id>" to update live)
@@ -317,6 +319,19 @@ def body(day, page=''):
             parts.append('<div class="cardrow" style="--cols:%s">%s</div>'
                          % (html.escape(cols), ''.join(drawn)))
     return ''.join(parts)
+
+
+def assets(page=''):
+    """(css, js) that the cards on `page` bring with them, each backend's once."""
+    css, js, seen = [], [], set()
+    for _s, _r, cs in rows(page):
+        for c in cs:
+            if c.backend is None or id(c.backend) in seen:
+                continue
+            seen.add(id(c.backend))
+            css.append(getattr(c.backend, 'CSS', '') or '')
+            js.append(getattr(c.backend, 'JS', '') or '')
+    return ''.join(css), ''.join(js)
 
 
 def _width(c):
