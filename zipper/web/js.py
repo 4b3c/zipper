@@ -424,6 +424,9 @@ function syncSession(rows){
   return rows;
 }
 document.addEventListener('DOMContentLoaded',()=>{
+  // A layout without the Claude card loads this script anyway; without the card
+  // there is nothing to poll for, and each poll is a capture-pane per conversation.
+  if(!document.getElementById('termcard')) return;
   drawTerm();
   // 6s: the dot is the only thing saying whether Claude is working, and a light
   // that lags is worse than none. Each poll is a capture-pane per conversation.
