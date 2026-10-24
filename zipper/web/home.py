@@ -465,14 +465,6 @@ li.hid{display:none}
    readout takes the same slot -- one line of furniture, never two. */
 .spark:hover .skt,.spark.live .skt{opacity:1}
 .spark:hover .skv,.spark.live .skv{opacity:0}
-.svcs{display:flex;flex-wrap:wrap;gap:5px;margin-top:11px;padding-top:10px;
-  border-top:1px solid var(--line)}
-.svc{font:9.5px/1 var(--mono);padding:4px 7px;border-radius:99px;
-  border:1px solid var(--line);color:var(--dim);letter-spacing:.05em}
-.svc.up{color:var(--accent);border-color:currentColor}
-.svc.down,.svc.stale{color:var(--warn);border-color:currentColor}
-.svc em{font-style:normal;opacity:.75}
-
 /* --- the Claude row ----------------------------------------------------- */
 .termp{margin-top:12px;height:auto}
 .termp .pb{overflow:visible;padding:4px 14px 14px}
@@ -759,18 +751,6 @@ def system_panel():
                 % (_gb(mem and mem['used']), _gb(mem and mem['total']),
                    _gb(dsk and (dsk['total'] - dsk['used'])), (b.get('load') or [0])[0]))
 
-    # A unit that started before its code was last edited is running something
-    # other than what is on disk. That exact combination cost an afternoon on
-    # 2026-09-17 and nothing said so; this is the surface that says so.
-    svc = []
-    for un in b.get('units', []):
-        cls = 'up' if un['state'] == 'active' else 'down'
-        note = ''
-        if un['stale']:
-            cls, note = 'stale', ' <em>old code</em>'
-        svc.append('<span class="svc %s">%s%s</span>'
-                   % (cls, esc(un['name'].replace('zipper-', '')), note))
-    bits.append('<div class="svcs">%s</div>' % ''.join(svc))
     bits.append('<p class="sub">up %s &middot; %d cpu</p>'
                 % (_dur(b.get('uptime')), b.get('cpus') or 1))
     return ''.join(bits)
