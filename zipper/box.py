@@ -1,31 +1,16 @@
 """zipper.box
 
-What the machine itself is doing: CPU, memory, disk, uptime, and whether the
-services are running the code that is checked in.
+What the machine itself is doing: CPU, memory, disk and uptime.
 
 Reads `/proc` directly; psutil would add a dependency for five numbers. Every
 number here is read at call time and cached for a few seconds; nothing is
 written to the vault, because none of it is a conclusion about anything. It is
 the box's vital signs, and a vital sign is only worth reading live.
-
-The one judgement in this file is `stale`: a unit whose process started *before
-the code it runs was last edited*. On 2026-09-17 exactly that combination --
-`zipper-web` restarted thirty seconds before the change it needed -- cost an
-afternoon, and nothing on any surface said so. Now something does.
-
-**Against file mtimes, not the commit.** The first version compared the start
-time to HEAD's timestamp, which is a different question and gets the common case
-backwards: the normal order here is edit, restart, verify, commit, so HEAD lands
-seconds *after* a restart that already picked the change up, and every commit
-lit the flag on a process running exactly the right code. Committing changes no
-code. Editing does.
 """
-import os, json, time, shutil, subprocess, threading
+import os, json, time, shutil, threading
 
 from .core import INBOX
 
-CODE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-UNITS = ('zipper-web', 'zipper-discord', 'zipper-fetch.timer')
 
 # A day of samples at a minute each. The file is machine state -- `Inbox/` is
 # gitignored, and losing it costs a day of history and nothing else.
@@ -49,14 +34,6 @@ _CACHE = {'at': 0.0, 'data': None}
 # been since someone last opened the dashboard rather than the minute it claims.
 _CPU = {'at': 0.0, 'idle': 0.0, 'total': 0.0}          # the live card
 _CPU_SERIES = {'at': 0.0, 'idle': 0.0, 'total': 0.0}   # the minute series
-
-
-def _run(*cmd):
-    try:
-        return subprocess.run(cmd, capture_output=True, text=True,
-                              timeout=4).stdout.strip()
-    except Exception:
-        return ''
 
 
 def _cpu_sample():
@@ -139,54 +116,6 @@ def uptime():
         return None
 
 
-def code_epoch(root=CODE):
-    """When the source this box runs was last written.
-
-    `.py` under the package and the hooks -- the files a running process has
-    already imported and will not pick up again. `__pycache__` is skipped: it is
-    written *by* the import, so counting it would make every start look stale
-    against itself.
-    """
-    newest = None
-    for base, dirs, files in os.walk(root):
-        dirs[:] = [d for d in dirs
-                   if d not in ('__pycache__', '.git', 'node_modules')]
-        for fn in files:
-            if not fn.endswith('.py'):
-                continue
-            try:
-                m = os.path.getmtime(os.path.join(base, fn))
-            except OSError:
-                continue
-            if newest is None or m > newest:
-                newest = m
-    return None if newest is None else int(newest)
-
-
-def _unit(name, code_at):
-    """One service: is it up, since when, and is that before the code it runs.
-
-    `ActiveEnterTimestampMonotonic` would be the precise field, but it is
-    measured from boot and would have to be converted back against
-    `/proc/uptime` to compare with a commit; the wall-clock field is already in
-    the units the question is asked in.
-    """
-    state = _run('systemctl', 'is-active', name) or 'unknown'
-    started = None
-    raw = _run('systemctl', 'show', name, '-p', 'ActiveEnterTimestamp')
-    _, _, val = raw.partition('=')
-    val = val.strip()
-    if val:
-        out = _run('date', '-d', val, '+%s')
-        if out.isdigit():
-            started = int(out)
-    # A timer is not a long-lived process holding imported code, so the
-    # question does not apply to it.
-    stale = bool(started and code_at and code_at > started
-                 and name != 'zipper-fetch.timer')
-    return {'name': name, 'state': state, 'started': started, 'stale': stale}
-
-
 def read(force=False):
     with _LOCK:
         return _read(force)
@@ -196,11 +125,9 @@ def _read(force):
     now = time.time()
     if not force and _CACHE['data'] and now - _CACHE['at'] < TTL:
         return _CACHE['data']
-    code_at = code_epoch()
     data = {'at': now, 'cpu': cpu_pct(), 'mem': meminfo(), 'disk': disk(),
             'uptime': uptime(), 'load': list(os.getloadavg()),
-            'cpus': os.cpu_count() or 1, 'code_at': code_at,
-            'units': [_unit(u, code_at) for u in UNITS]}
+            'cpus': os.cpu_count() or 1}
     _CACHE.update(at=now, data=data)
     return data
 
