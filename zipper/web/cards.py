@@ -326,7 +326,7 @@ def assets(page=''):
     css, js, seen = [], [], set()
     for _s, _r, cs in rows(page):
         for c in cs:
-            if c.backend is None or id(c.backend) in seen:
+            if c.error or c.backend is None or id(c.backend) in seen:
                 continue
             seen.add(id(c.backend))
             css.append(getattr(c.backend, 'CSS', '') or '')
