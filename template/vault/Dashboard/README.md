@@ -21,5 +21,8 @@ the rest of the page. Without a frontend, `{"frontend": "dashboard:list"}` draws
 A button calls `act_<action>(args, ctx)` in the backend; whatever string it returns is
 shown briefly in the card's header. `recent/` is a small working example.
 
+A backend may also set `CSS` and `JS` strings. The page includes them only while the
+card is in the layout, so removing a card from the settings removes its script too.
+
 A card that crashes shows its error inside its own frame, and one that takes longer
 than four seconds is skipped for a minute; the rest of the page is never affected.
