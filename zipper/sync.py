@@ -9,14 +9,8 @@ from . import core
 
 
 
-def log_facts():
-    """{note title: {'last_touched': YYYY-MM}} from the newest log entry linking each note.
-
-    Only a fact, like any input's: `zipper.writer` decides what is written, and it
-    moves `last_touched` forward only. Log evidence can prove a note was touched,
-    never that it wasn't -- an unconditional write once dragged dates that `github`
-    had set back to whatever the newest log mention happened to say.
-    """
+def log_latest():
+    """{note title: YYYY-MM-DD} of the newest log entry linking each note."""
     latest = {}
     for lp in sorted(glob.glob(os.path.join(LOGDIR, '*.md'))):
         stem = title_of(lp)
@@ -28,7 +22,46 @@ def log_facts():
             link = link.strip()
             if link > '' and (link not in latest or stem > latest[link]):
                 latest[link] = stem
-    return {t: {'last_touched': d[:7]} for t, d in latest.items()}
+    return latest
+
+
+def log_facts():
+    """{note title: {'last_touched': YYYY-MM}} from the newest log entry linking each note.
+
+    Only a fact, like any input's: `zipper.writer` decides what is written, and it
+    moves `last_touched` forward only. Log evidence can prove a note was touched,
+    never that it wasn't -- an unconditional write once dragged dates that `github`
+    had set back to whatever the newest log mention happened to say.
+    """
+    return {t: {'last_touched': d[:7]} for t, d in log_latest().items()}
+
+
+IGNORED_DAYS = 30
+
+def last_work(d, linked=''):
+    """The newest evidence of work on a note, YYYY-MM-DD, or '' with none: its newest
+    log link, its last push, or a hand-set `last_touched` read at the *last* day it
+    could mean (a year at Dec 31, a month at its last day). A coarse date only proves
+    work somewhere inside it, and ignoring a project is fine -- so the doubt goes to
+    not raising it early."""
+    dates = [linked or '', str(d.get('last_push') or '')[:10]]
+    lt = str(d.get('last_touched') or '')
+    if MONTH_RE.match(lt):
+        if len(lt) == 4:
+            dates.append(lt + '-12-31')
+        elif len(lt) == 7:
+            y, m = int(lt[:4]), int(lt[5:7])
+            nxt = datetime.date(y + m // 12, m % 12 + 1, 1)
+            dates.append((nxt - datetime.timedelta(days=1)).isoformat())
+        else:
+            dates.append(lt)
+    return max(dates)
+
+
+def ignored_for(d, linked=''):
+    """Days since the last evidence of work, or None with no evidence at all."""
+    lw = last_work(d, linked)
+    return _days_since(lw) if lw else None
 
 
 def cmd_sync(a):

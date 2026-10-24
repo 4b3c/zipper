@@ -1011,10 +1011,10 @@ def metrics_block():
         return '<p class="sub">metrics: %s</p>' % esc(str(e))
     cells = ''.join('<div class="em"><b>%s</b><span>%s</span></div>'
                     % (esc(str(sc[k])), esc(k.replace('_', ' ')))
-                    for k in ('stall_days_max', 'projects_drifting', 'tasks_open', 'tasks_overdue'))
-    oldest = ', '.join('%s (%dd)' % (t, n) for t, n in det.get('oldest', [])[:2])
+                    for k in ('projects_drifting', 'tasks_open', 'tasks_overdue'))
+    ignored = ', '.join(t for t, _ in det.get('ignored', []))
     return ('<div class="ems">%s</div>%s'
-            % (cells, '<p class="sub">oldest: %s</p>' % esc(oldest) if oldest else ''))
+            % (cells, '<p class="sub">ignored a month: %s</p>' % esc(ignored) if ignored else ''))
 
 
 def views_row():

@@ -99,7 +99,7 @@ status_verified: 2026-09-01   # "this status is right despite the evidence"
   (`[project:: [[Note]]]`). An active project with none is fine. A field nobody ticks
   goes stale without anyone noticing; an unticked task is visibly overdue.
 - **`status_verified` has a fuse.** It silences the stale-status flag, and the drift flag for
-  45 days only. `stall_days_max` keeps counting regardless.
+  45 days only. `projects_drifting` counts the project regardless.
 - **Repo↔note mapping is by hand.** Guessing by name was removed: a wrong mapping moves
   `last_touched` and erases the drift the flags exist to catch. Unmapped is honest.
 
@@ -179,7 +179,7 @@ could inflate them:
 
 | Metric | Defends against |
 |---|---|
-| `stall_days_max`, `stall_days_median` | Suppressed flags — keeps counting |
+| `projects_drifting` (active, no evidence of work for 30+ days) | Suppressed flags — counts them anyway |
 | `hard_closes` (open ≥14 days), `quick_closes` (≤1 day) | Closing trivia to feel productive |
 | `tasks_dropped` | Work that left the list unfinished |
 | `tasks_open`, `tasks_overdue` | Missed self-set dates |

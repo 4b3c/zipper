@@ -143,20 +143,22 @@ def compute_score(window=30):
     cut = (core.TODAY - datetime.timedelta(days=window)).isoformat()
     out, detail = {}, {}
 
-    # --- the ungameable denominator: active projects, which shrink only by an
-    # --- explicit, dated status change
-    stalls = []
+    # --- active projects, which shrink only by an explicit, dated status change.
+    # --- Ignoring one is fine; only a month of it counts.
+    from . import sync
+    linked = sync.log_latest()
+    active, ignored = 0, []
     for p in iter_notes():
         d = fm_dict(read_note(p)[0])
         if d.get('type') != 'project' or d.get('status') != 'active':
             continue
-        n = _months_ago(d.get('last_touched'))
-        stalls.append((title_of(p), n if n is not None else 9999))
-    out['projects_active'] = len(stalls)
-    out['projects_drifting'] = sum(1 for _, n in stalls if n >= 30)
-    out['stall_days_max'] = max([n for _, n in stalls] or [0])
-    out['stall_days_median'] = int(_median([n for _, n in stalls]))
-    detail['oldest'] = sorted(stalls, key=lambda x: -x[1])[:3]
+        active += 1
+        n = sync.ignored_for(d, linked.get(title_of(p), ''))
+        if n is None or n > sync.IGNORED_DAYS:
+            ignored.append((title_of(p), n if n is not None else 9999))
+    out['projects_active'] = active
+    out['projects_drifting'] = len(ignored)
+    detail['ignored'] = sorted(ignored, key=lambda x: -x[1])
 
     # --- anti-inflation: closes weighted by how long the thing sat
     hard = quick = 0
@@ -208,9 +210,9 @@ def cmd_score(a):
         wrote += 1
     for k in sorted(out):
         print('  %-20s %s' % (k, out[k]))
-    if detail.get('oldest'):
-        print('\n  oldest untouched active project(s):')
-        for t, n in detail['oldest']:
+    if detail.get('ignored'):
+        print('\n  active but ignored %d+ days:' % 30)
+        for t, n in detail['ignored']:
             print('    %-28s %s' % (t, '%d days' % n if n < 9999 else 'never touched'))
     print('\n%s' % ('wrote %d row(s) to Metrics/metrics.csv' % wrote if wrote
                     else 'no rows written - scored within the last 7 days (--force to override)'))
