@@ -42,6 +42,12 @@ add` refuses a new topic without `--channel` while Discord is on, and refuses th
 main channel or one another topic has. A topic left without one still posts in the
 main channel rather than not at all. Replying in its thread continues the run's
 session, as anywhere.
+
+**A message in a topic's channel starts a conversation about it.** Posted in the
+channel itself, not a thread, it opens a thread like the main channel does, and the
+new conversation's first prompt carries the purpose and the context (`conversation`).
+It is not a run: nothing is locked or recorded, and the owner is watching. It updates
+context.md only for what the next run must know, and not while a run holds the lock.
 """
 import datetime, json, os, shutil, subprocess, sys, uuid
 
@@ -197,18 +203,66 @@ def _messages_block(msgs):
 
 def prompt(topic, now=None, messages=()):
     d = _dir(topic)
-    ctx_path = os.path.join(d, 'context.md')
-    ctx = _read(ctx_path).strip()
-    if ctx:
-        age = 'written %s' % datetime.datetime.fromtimestamp(
-            os.path.getmtime(ctx_path)).isoformat(timespec='minutes')
-    else:
-        age, ctx = 'empty', '(No context yet: this is the first run.)'
+    ctx_path, ctx, age = _context(topic)
     return PROMPT % {'name': topic, 'purpose_path': os.path.join(d, 'purpose.md'),
                      'purpose': _read(os.path.join(d, 'purpose.md')).strip() or '(empty)',
                      'context_path': ctx_path, 'context_age': age, 'context': ctx,
                      'words': int((_conf(topic) or {}).get('words') or WORDS),
                      'messages': _messages_block(messages)}
+
+
+CONVERSATION = """The owner opened this conversation in the channel of the topic "%(name)s". \
+It is not a scheduled run: they are here and this is a chat. The topic's folder is %(dir)s.
+
+## Purpose
+From %(purpose_path)s, the standing brief. Do not edit that file unless they ask.
+
+%(purpose)s
+
+## Context from the last run
+From %(context_path)s, %(context_age)s.
+
+%(context)s
+
+## This conversation
+Work from that context. If they decide something the next run must know, put it in \
+%(context_path)s before you finish, condensed like the rest; a run may be in flight, so \
+check `zipper topic list` first and, if it is running, wait for it to end and edit what \
+it wrote. Reply normally; no NOTIFY line.
+
+## Their message
+
+%(text)s"""
+
+
+def channel_topic(channel_id):
+    """The topic whose own channel this is, or None. The main channel is nobody's."""
+    cid = str(channel_id or '')
+    if not cid:
+        return None
+    for n, t in sorted((settings.get('plugins.topics.topics') or {}).items()):
+        if str(t.get('channel') or '') == cid:
+            return n
+    return None
+
+
+def _context(topic):
+    ctx_path = os.path.join(_dir(topic), 'context.md')
+    ctx = _read(ctx_path).strip()
+    if ctx:
+        return ctx_path, ctx, 'written %s' % datetime.datetime.fromtimestamp(
+            os.path.getmtime(ctx_path)).isoformat(timespec='minutes')
+    return ctx_path, '(No context yet: this is the first run.)', 'empty'
+
+
+def conversation(topic, text):
+    """The first prompt of a conversation opened in the topic's channel."""
+    d = _dir(topic)
+    ctx_path, ctx, age = _context(topic)
+    return CONVERSATION % {'name': topic, 'dir': d, 'purpose_path': os.path.join(d, 'purpose.md'),
+                           'purpose': _read(os.path.join(d, 'purpose.md')).strip() or '(empty)',
+                           'context_path': ctx_path, 'context_age': age, 'context': ctx,
+                           'text': text}
 
 
 def over_limit():

@@ -141,7 +141,7 @@ async def build_prompt(message: discord.Message):
 
 
 async def post_to_zipper(prompt: str, discord_thread_id: int,
-                         opening: bool = False):
+                         opening: bool = False, topic: str = None):
     """Forward a message to Zipper. Returns `(ok, error)`.
 
     Zipper decides what happens to it: pasted into a live Claude session,
@@ -153,6 +153,9 @@ async def post_to_zipper(prompt: str, discord_thread_id: int,
     Without the flag Zipper cannot tell that from a message in some long-dead
     thread, and would answer both the same way -- by starting a stranger
     underneath a visible history it has never read.
+
+    `topic` says the thread opened in that topic's own channel, so the new
+    conversation starts with the topic's purpose and context.
 
     The error half of the pair says *what* went wrong, and callers route on it
     through `failure_notice`. `slow` and `unreachable` are this function's own
@@ -174,6 +177,7 @@ async def post_to_zipper(prompt: str, discord_thread_id: int,
                 "source": "discord",
                 "discord_thread_id": discord_thread_id,
                 "opening": opening,
+                "topic": topic,
             }) as resp:
                 if resp.status == 200:
                     return True, ""
@@ -192,6 +196,19 @@ async def post_to_zipper(prompt: str, discord_thread_id: int,
     except Exception as e:
         print(f"[discord] post to Zipper failed: {e}")
         return False, "unreachable"
+
+
+def channel_topic(channel_id):
+    """The topic that owns this channel, or None. Read per message, so a topic
+    added or moved needs no bot restart."""
+    try:
+        from zipper import plugins
+        if not plugins.is_enabled('topics'):
+            return None
+        return plugins.load('topics').channel_topic(channel_id)
+    except Exception as e:
+        print(f"[discord] topic lookup failed for channel {channel_id}: {e}")
+        return None
 
 
 async def zipper_alive():
@@ -375,8 +392,11 @@ async def on_message(message: discord.Message):
     # A message in the main channel starts a *new* conversation, so it gets its
     # own thread and Zipper answers in there. Replying inside a thread continues
     # that conversation instead (handled above), which is what lets several run
-    # at once without their contexts touching.
-    if message.channel.id != DISCORD_CHANNEL_ID:
+    # at once without their contexts touching. A topic's own channel does the
+    # same, and its conversation starts from the topic's context.
+    topic = None if message.channel.id == DISCORD_CHANNEL_ID \
+        else channel_topic(message.channel.id)
+    if message.channel.id != DISCORD_CHANNEL_ID and not topic:
         return
 
     # Downloaded before the thread exists, so a slow CDN cannot leave a created
@@ -400,7 +420,7 @@ async def on_message(message: discord.Message):
         await message.channel.send(f"[Not delivered] Couldn't open a thread for that: {e}")
         return
 
-    ok, err = await post_to_zipper(prompt, thread.id, opening=True)
+    ok, err = await post_to_zipper(prompt, thread.id, opening=True, topic=topic)
     if not ok:
         notice = await failure_notice(err)
         if notice:
