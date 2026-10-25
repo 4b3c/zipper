@@ -33,7 +33,9 @@ a stale one (the endpoint failing) can't hold runs past the reset.
 The run is detached from the schedule, which runs jobs one at a time: a
 thirty-minute topic must not hold up the hourly pull. A lock in the folder keeps
 one run per topic. Like a pass, the run's last message starts `NOTIFY: yes|no`,
-and yes opens a Discord thread attached to the session.
+and yes opens a Discord thread attached to the session. Lines `ATTACH: <path>` at the
+end of that message are taken off it and their files posted into the thread (8 MB
+each), so a run that finished something sends the thing, not its name.
 
 **Each topic posts in its own channel** (`channel`, a Discord channel id), not the
 main one: a topic that notifies hourly buried every conversation there, and a
@@ -185,7 +187,9 @@ file (name the file instead). Condense, never append: stay under about %(words)d
 
 Your final message's first line must be exactly `NOTIFY: yes` if the operator needs to \
 see something, or `NOTIFY: no`. After that line, the message itself, short. Do not call \
-`discord send`.
+`discord send`. To send a file with it (a finished video, an image to look at), end the \
+message with one line per file, exactly `ATTACH: <absolute path>`, 8 MB at most each; \
+they are posted into the thread right after the message.
 """
 
 
@@ -363,7 +367,8 @@ def _exec(topic):
             raise RuntimeError('claude gave no result (exit %d): %s'
                                % (r.returncode, (r.stderr or r.stdout)[-400:]))
         notify, message = scheduled.parse(result)
-        rec.update(ok=True, notify=notify, message=message[:2000])
+        message, files = _attachments(message)
+        rec.update(ok=True, notify=notify, message=message[:2000], files=files)
     except subprocess.TimeoutExpired:
         notify, message = True, 'Topic %s ran out of time and was stopped.' % topic
         rec.update(ok=False, notify=True, message=message)
@@ -380,13 +385,21 @@ def _exec(topic):
         except FileNotFoundError:
             pass
     if notify and not conf.get('quiet'):
-        _tell(topic, sid, message)
+        _tell(topic, sid, message, rec.get('files') or [])
     if os.path.exists(_pending(topic)):
         _spawn(topic)                               # a message came in while we ran
     return 0 if rec.get('ok') else 1
 
 
-def _tell(topic, sid, message):
+def _attachments(message):
+    """(message, paths): trailing `ATTACH: <path>` lines taken off the message."""
+    lines, files = message.rstrip().split('\n'), []
+    while lines and lines[-1].strip().upper().startswith('ATTACH:'):
+        files.insert(0, lines.pop().strip()[len('ATTACH:'):].strip())
+    return '\n'.join(lines).rstrip(), [f for f in files if f]
+
+
+def _tell(topic, sid, message, files=()):
     from zipper import plugins
     if not plugins.is_enabled('discord'):
         print(message)
@@ -398,6 +411,27 @@ def _tell(topic, sid, message):
         conversations.touch(tid, title=title, session_id=sid, session_fixed=True)
     except Exception as e:
         print('topic %s: could not post to Discord: %s' % (topic, e))
+        return
+    from zipper import chat
+    for f in files:
+        # **One failed file says so in the thread.** The message above already
+        # promised it; silence would leave them waiting for a video that isn't coming.
+        why = None
+        if not os.path.isfile(f):
+            why = 'not found'
+        elif os.path.getsize(f) > 8 * 1024 * 1024:
+            why = 'over 8 MB'
+        else:
+            try:
+                r = chat.discord_send(os.path.basename(f), file_path=f, thread_id=tid)
+                why = None if r.get('ok', True) else (r.get('error') or 'refused')
+            except Exception as e:
+                why = str(e)
+        if why:
+            try:
+                chat.discord_send('Could not attach %s: %s' % (f, why), thread_id=tid)
+            except Exception:
+                print('topic %s: could not attach %s: %s' % (topic, f, why))
 
 
 # ---------------------------------------------------------------- commands
