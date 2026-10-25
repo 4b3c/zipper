@@ -89,6 +89,25 @@ class Topics(unittest.TestCase):
         self.assertIn('first run', p)
         self.assertIn(os.path.join(self.dir, 't', 'context.md'), p)
 
+    def test_channel_finds_its_topic(self):
+        settings.put('plugins.topics.topics', {'t': {'every': 15, 'channel': '111'},
+                                               'u': {'every': 15}})
+        self.assertEqual(topics.channel_topic(111), 't')
+        self.assertEqual(topics.channel_topic('111'), 't')
+        self.assertIsNone(topics.channel_topic('222'))
+        self.assertIsNone(topics.channel_topic(None))
+
+    def test_conversation_prompt_carries_context(self):
+        self.add()
+        with open(os.path.join(self.dir, 't', 'context.md'), 'w') as fh:
+            fh.write('video 3 is at the look check')
+        p = topics.conversation('t', 'where is video 3? 100% sure?')
+        self.assertIn('video 3 is at the look check', p)
+        self.assertIn('not a scheduled run', p)
+        self.assertTrue(p.endswith('where is video 3? 100% sure?'))
+        self.assertNotIn('NOTIFY: yes', p)
+        self.assertEqual(topics._runs('t'), [])      # a conversation is not a run
+
     def test_lock_skips_a_second_run(self):
         self.add()
         with open(topics._lock('t'), 'w') as fh:

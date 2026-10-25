@@ -541,6 +541,13 @@ class Handler(BaseHTTPRequestHandler):
             if stopturn.is_stop(text):
                 self._stop(tid)
                 return
+            title = ' '.join(text.split())[:60]
+            if body.get('topic') and not known:
+                # Opened in a topic's own channel: the conversation starts from
+                # the topic's purpose and context, not from nothing.
+                from .. import plugins
+                if plugins.is_enabled('topics'):
+                    text = plugins.load('topics').conversation(body['topic'], text)
             # The first message after a stop tells Claude its last turn was cut off.
             text = stopturn.take_note(tid) + text
             chat.discord_typing(True, tid)
@@ -549,7 +556,7 @@ class Handler(BaseHTTPRequestHandler):
                 # The thread's name in Discord is the first line of the
                 # message that opened it; the chat list should read the same
                 # rather than showing an id nobody recognises.
-                conversations.touch(str(tid), title=' '.join(text.split())[:60])
+                conversations.touch(str(tid), title=title)
             res = conversations.deliver(str(tid), text,
                                         body.get('source', 'discord'))
             if res.get('ok'):
