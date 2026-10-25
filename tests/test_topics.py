@@ -269,6 +269,27 @@ class Topics(unittest.TestCase):
             scheduled._open_thread, conversations.touch, plugins.is_enabled = saved
         self.assertEqual(seen, ['200'])
 
+    def test_attach_lines_become_files_in_the_thread(self):
+        from zipper import scheduled, conversations, plugins, chat
+        self.assertEqual(topics._attachments('Done.\nATTACH: /a.mp4\nATTACH: /b.png'),
+                         ('Done.', ['/a.mp4', '/b.png']))
+        self.assertEqual(topics._attachments('ATTACH: here, mid-line'), ('', ['here, mid-line']))
+        self.add(channel='200')
+        f = os.path.join(self.dir, "cut.mp4")
+        open(f, 'wb').write(b'x')
+        sent = []
+        saved = (scheduled._open_thread, conversations.touch, plugins.is_enabled, chat.discord_send)
+        scheduled._open_thread = lambda m, n, c=None: '9'
+        conversations.touch = lambda *a, **k: None
+        plugins.is_enabled = lambda name, *a, **k: True
+        chat.discord_send = lambda m, file_path=None, thread_id=None: sent.append((m, file_path, thread_id)) or {'ok': True}
+        try:
+            topics._tell('t', 'sid', 'hello', [f, '/nope.mp4'])
+        finally:
+            scheduled._open_thread, conversations.touch, plugins.is_enabled, chat.discord_send = saved
+        self.assertEqual(sent[0], ('cut.mp4', f, '9'))
+        self.assertIn('/nope.mp4: not found', sent[1][0])
+
 
 if __name__ == '__main__':
     unittest.main()
