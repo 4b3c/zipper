@@ -27,13 +27,14 @@ class Guides(unittest.TestCase):
             os.remove(settings.PATH)
 
     def test_every_guide_is_generic(self):
-        # A guide is public and shared by every zipper: no owner's names in it.
+        # A guide is shared by every zipper, so it can't lean on one vault's layout:
+        # an owner's folders and notes belong in their own guide note.
         for name in plugins.manifests():
             p = os.path.join(plugins.DIR, name, 'GUIDE.md')
             if os.path.isfile(p):
                 text = open(p, encoding='utf-8').read()
                 self.assertTrue(text.startswith('# '), name)
-                for word in ('Abram', 'ASU', 'Pantry'):
+                for word in ('Meta/Systems', 'People/', '[['):
                     self.assertNotIn(word, text, '%s guide names %s' % (name, word))
 
     def test_guide_is_the_plugins_then_the_owners(self):
@@ -80,6 +81,38 @@ class Guides(unittest.TestCase):
         gm = brief.index('### Gmail')
         self.assertLess(gm, brief.index('guide gmail'))
         self.assertLess(brief.index('guide gmail'), brief.index('- mail'))
+
+    def test_a_pulled_row_keeps_its_plugin_into_the_brief(self):
+        # The live path: a plugin's pull publishes its rows into Inbox/feed.json and
+        # the brief reads them back. A `zipper` row only maps to its guide by the tag.
+        from zipper import serve
+
+        class Stub:
+            name = 'upstream'
+            state = 0
+            def pull(self): Stub.state += 1
+            def snapshot(self): return Stub.state
+            def events(self, before, after):
+                return [{'system': 'zipper', 'action': 'push', 'text': 'merged  a fix %d' % after}]
+
+        real = plugins.get
+        plugins.get = lambda n: Stub() if n == 'upstream' else real(n)
+        try:
+            self.assertEqual(plugins.pull('upstream')[0], 1)
+        finally:
+            plugins.get = real
+        rows = [r for r in serve.feed_rows() if r['text'].startswith('merged  a fix')]
+        self.assertEqual([r.get('plugin') for r in rows], ['upstream'])
+        runqueue.cmd_brief(None)
+        brief = open(os.path.join(TMP, 'vault', 'Meta', 'Queue.md'), encoding='utf-8').read()
+        self.assertIn('`zipper plugin guide upstream`', brief)
+
+    def test_publish_keeps_the_tag_from_the_batch_path(self):
+        from zipper import serve
+        serve.publish('diff', 'hello from zipper-9', system='zipper', action='add',
+                      who='zipper-9', plugin='peers')
+        row = [r for r in serve.feed_rows() if r['text'] == 'hello from zipper-9'][0]
+        self.assertEqual(row['plugin'], 'peers')
 
 
 if __name__ == '__main__':

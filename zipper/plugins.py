@@ -215,6 +215,7 @@ def pull(name, log=print):
     if hasattr(i, 'snapshot') and hasattr(i, 'events'):
         try:
             for row in i.events(before.get(name), i.snapshot()) if name in before else []:
+                row.setdefault('plugin', name)
                 serve.publish('diff', row.pop('text'), **row)
                 n += 1
         except Exception as e:
