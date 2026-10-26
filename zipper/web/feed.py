@@ -186,7 +186,8 @@ def publish(kind, text='', **extra):
                    'system': extra.get('system', 'other'),
                    'action': extra.get('action', ''),
                    'clears': 'tick'}
-            for f in ('who', 'when', 'target'):
+            # `plugin`: which guide the brief points at (zipper.plugins.guide).
+            for f in ('who', 'when', 'target', 'plugin'):
                 if extra.get(f):
                     row[f] = extra[f]
             FEED.append(row)

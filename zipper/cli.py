@@ -211,10 +211,10 @@ def main():
     g = ss.add_parser('done', help='remove a finished section; with none left, the guide')
     g.add_argument('section', nargs='?')
     s.set_defaults(fn=_setup('cmd_setup'))
-    s = sub.add_parser('plugin', help='list, describe, enable or disable plugins')
+    s = sub.add_parser('plugin', help='list, describe, enable or disable plugins; print one\'s guide')
     ps = s.add_subparsers(dest='action')
     ps.add_parser('list')
-    for act in ('info', 'enable', 'disable'):
+    for act in ('info', 'guide', 'enable', 'disable'):
         g = ps.add_parser(act); g.add_argument('name')
     s.set_defaults(fn=_mod('plugins', 'cmd_plugin'))
 

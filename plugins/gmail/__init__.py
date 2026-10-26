@@ -1,7 +1,7 @@
 """Gmail: every message in and out becomes one queue row. A pointer, never the body.
 
 The row says who, the subject and the message id; the pass decides what it means
-for the notes, and reads the message with `zipper gmail read <id>` when the
+for the notes, and reads the message with `zipper gmail <id>` when the
 subject is not enough. The vault holds conclusions, so nothing here stores a body:
 `Inbox/gmail.json` keeps headers only, and `read` prints to the terminal.
 

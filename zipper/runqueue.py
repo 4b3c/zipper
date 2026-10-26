@@ -314,8 +314,9 @@ def cmd_brief(a):
     resolve = inputs.target_resolver()
     rows = [classify(r, resolve) for r in open_rows()]
     changes = note_changes()
+    guides = sorted({n for n in map(inputs.row_plugin, rows) if n and inputs.has_guide(n)})
     q = {'generated': datetime.datetime.now().isoformat(timespec='seconds'),
-         'events': rows, 'notes_uncommitted': changes,
+         'events': rows, 'notes_uncommitted': changes, 'guides': guides,
          'tasks_dropped': dropped, 'tasks_renamed': renamed, 'flags': fl}
     with open(QUEUE_JSON, 'w', encoding='utf-8') as fh:
         json.dump(q, fh, indent=1)
@@ -370,6 +371,11 @@ def _write_brief(q):
             continue
         clears = 'commit' if sysname == 'vault' else 'tick'
         L += ['', '### %s  <sub>clears by %s</sub>' % (SYSTEM_LABEL[sysname], clears), '']
+        # Only the guides this pass needs: a plugin with no rows costs no reading.
+        have = set(q.get('guides') or ())
+        need = sorted({inputs.row_plugin(e) for e in rows} & have)
+        if need:
+            L += ['*Read first: %s*' % ' · '.join('`zipper plugin guide %s`' % n for n in need), '']
         L += [_ev_line(e) for e in rows]
     L.append('')
 
