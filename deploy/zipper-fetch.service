@@ -1,5 +1,5 @@
 [Unit]
-Description=Zipper — pull each plugin whose own timer is due
+Description=Zipper — pull each scoop whose own timer is due
 After=network-online.target
 Wants=network-online.target
 

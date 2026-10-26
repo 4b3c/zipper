@@ -28,10 +28,10 @@ def _token():
     return None
 
 def _open_repos():
-    """Org repos the operator has declared free of NDA (`plugins.github.open`)."""
+    """Org repos the operator has declared free of NDA (`scoops.github.open`)."""
     try:
         from . import settings
-        return set(settings.get('plugins.github.open') or [])
+        return set(settings.get('scoops.github.open') or [])
     except Exception:
         return set()
 

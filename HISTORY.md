@@ -9,6 +9,20 @@ tense.
 
 ---
 
+## 2026-10-25 — plugins became scoops
+
+- **"Plugin" collided with Claude Code**, which has plugins of its own (and skills,
+  connectors, MCP servers), so every sentence about one needed a qualifier. Zipper's
+  parts are now *scoops*, a name from zipper anatomy (moulded zipper teeth). `plugins/` is
+  `scoops/`, `plugin.json` is `scoop.json`, the setting is `scoops.<name>` and the command
+  is `zipper scoop`.
+- **The old name still works where something outside the repo holds it.** `zipper
+  plugin` is an alias, because vaults made before the rename have it in their CLAUDE.md.
+  A settings file that says `plugins` is read as `scoops` and written back under
+  `plugins`, so a rollback or a process from before the rename never finds its settings
+  gone; `zipper settings migrate` renames it when the operator chooses. Queue rows saved
+  with a `plugin` field still find their guide.
+
 ## 2026-10-14 — the dashboard's basic-auth dialog
 
 - **A browser's basic-auth prompt is not a page**, so no password manager can fill it:

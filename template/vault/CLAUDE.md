@@ -57,7 +57,7 @@ zipper commit "what changed"   # ticks the queue, commits, pushes the backup
 ```
 
 The middle step is the whole point and only you can do it: "pushed my-app" is a fact; that
-My App's next step is now out of date is a judgment. Pull first so the brief is current (each plugin also pulls on its own timer);
+My App's next step is now out of date is a judgment. Pull first so the brief is current (each scoop also pulls on its own timer);
 commit last so the next pass's diff means "since last pass". `commit` refuses while another
 conversation is live, because it would sweep up their half-finished edits.
 
@@ -120,10 +120,10 @@ last commit — and **flags**, which are standing disagreements: something marke
 nobody has touched in 45 days, a project pushed to but never mentioned, a review date
 passed, a meeting that needs a debrief, a backup that has fallen behind.
 
-**Each plugin carries its own instructions.** Before working a section of the brief, run the
-command it names (`zipper plugin guide <name>`): how that plugin's rows are worked, followed by
-{{OWNER}}'s own rules for them if `plugins.<name>.guide` names a note. Do the same before
-working a plugin's data outside a pass (asked to check email: `zipper plugin guide gmail`).
+**Each scoop carries its own instructions.** Before working a section of the brief, run the
+command it names (`zipper scoop guide <name>`): how that scoop's rows are worked, followed by
+{{OWNER}}'s own rules for them if `scoops.<name>.guide` names a note. Do the same before
+working a scoop's data outside a pass (asked to check email: `zipper scoop guide gmail`).
 When {{OWNER}} sets a rule about one source, write it in that note, not here, so it is read
 exactly when it applies.
 
@@ -139,14 +139,14 @@ is right as well, never instead.
 
 ## 5a. Settings and the dashboard
 
-`settings.json`, in this vault, is the zipper's one settings file: which plugins are
-on, how often each one pulls (`plugins.<name>.poll_minutes`), their options, and —
-if the dashboard is on — its cards (`plugins.dashboard.rows`). Change it with
-`zipper settings set` or `zipper plugin enable|disable`; secrets never go in it
+`settings.json`, in this vault, is the zipper's one settings file: which scoops are
+on, how often each one pulls (`scoops.<name>.poll_minutes`), their options, and —
+if the dashboard is on — its cards (`scoops.dashboard.rows`). Change it with
+`zipper settings set` or `zipper scoop enable|disable`; secrets never go in it
 (`zipper secret NAME`).
 
 `Dashboard/` holds this vault's own cards. When they ask to see something on the
-dashboard, add a built-in or plugin card to a row, or write a vault card there;
+dashboard, add a built-in or scoop card to a row, or write a vault card there;
 `Dashboard/README.md` explains how, and a broken card only ever breaks itself.
 
 ## 6. Code, and other zippers

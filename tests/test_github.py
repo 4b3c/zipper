@@ -14,7 +14,7 @@ os.environ.update(ZIPPER_SETTINGS=os.path.join(TMP, 'settings.json'),
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from zipper import gh, ghpush, settings      # noqa: E402
-import plugins.github as ghp                 # noqa: E402
+import scoops.github as ghp                 # noqa: E402
 
 
 def tearDownModule():
@@ -47,7 +47,7 @@ class CommitRecord(unittest.TestCase):
         c = gh._commit(api_commit('b', 'mate', '2026-10-14T03:30:00Z', 'NDA thing'), r)
         self.assertNotIn('message', c)
         self.assertEqual(c['author'], 'mate')
-        settings.put('plugins.github.open', ['LAB/secret'])
+        settings.put('scoops.github.open', ['LAB/secret'])
         c = gh._commit(api_commit('b', 'mate', '2026-10-14T03:30:00Z', 'Open thing'), r)
         self.assertEqual(c['message'], 'Open thing')
 
@@ -205,7 +205,7 @@ def issues_settings(**plug):
     g = {'user': 'abe', 'open': ['Org/open'], 'issues': ['Org/open']}
     g.update(plug)
     os.makedirs(os.path.dirname(settings.PATH), exist_ok=True)
-    json.dump({'plugins': {'github': g}}, open(settings.PATH, 'w'))
+    json.dump({'scoops': {'github': g}}, open(settings.PATH, 'w'))
 
 
 def node(n, title, state='OPEN', closed=None, status='In Progress', due='2026-10-30'):

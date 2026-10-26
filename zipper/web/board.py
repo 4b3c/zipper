@@ -1,4 +1,4 @@
-"""The other boards: /p/<key>, one per entry in `plugins.dashboard.pages`.
+"""The other boards: /p/<key>, one per entry in `scoops.dashboard.pages`.
 
 The front page's machinery and look, with fewer moving parts: no day strip, no
 Claude terminal, just the page's rows of cards, live-updated the same way.

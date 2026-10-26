@@ -7,7 +7,7 @@
    lists nothing, run `zipper setup done` once more with no section. That leaves only
    the rules in `CLAUDE.md`, so every conversation after this one starts as their zipper,
    fully set up, with no trace of setup. Don't finish without doing this.
-3. If they turned on a plugin that runs something -- Discord, the scheduled passes, the
+3. If they turned on a scoop that runs something -- Discord, the scheduled passes, the
    digest -- run `zipper restart --when-idle` so it starts. With Discord on, ask them to
    send a message in their zipper's channel: a thread should open and you should answer.
 4. `zipper commit "set up"`.

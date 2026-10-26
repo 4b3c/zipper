@@ -1,6 +1,6 @@
 """Print nginx's config for a zipper in a container, from the environment.
 
-Up to two listeners, each only if its plugin is on. 8899 (dashboard) is the operator's: the dashboard and every terminal under
+Up to two listeners, each only if its scoop is on. 8899 (dashboard) is the operator's: the dashboard and every terminal under
 /t/<port>/. It is behind basic auth, because in a container it is reachable from
 the other zippers on the Docker network and from everyone on the tailnet, and the
 terminal is a shell. Without ZIPPER_TERM_CRED it listens on loopback only and
@@ -15,9 +15,9 @@ header can only ever be nginx's.
 import os, subprocess, sys
 
 sys.path.insert(0, '/zipper/code')
-from zipper import plugins
-DASHBOARD = plugins.is_enabled('dashboard')
-PEERS = plugins.is_enabled('peers')
+from zipper import scoops
+DASHBOARD = scoops.is_enabled('dashboard')
+PEERS = scoops.is_enabled('peers')
 web = os.environ.get('ZIPPER_PORT') or '8800'
 cred = os.environ.get('ZIPPER_TERM_CRED', '')
 if not cred:
@@ -31,13 +31,13 @@ listen = '8899'
 auth = ''
 ttyd_auth = ''
 
-# `plugins.dashboard.public_url` (https://host:8443): where a plain-HTTP visit is sent.
+# `scoops.dashboard.public_url` (https://host:8443): where a plain-HTTP visit is sent.
 # tailscale serve forwards its HTTPS here as plain HTTP with X-Forwarded-Proto: https,
 # and the container's port is also reachable on the tailnet directly, unencrypted. A
 # request with neither that header nor a loopback source came in that second way.
 # Loopback is the box itself: tests/shot.py, sandboxes, health checks.
 from zipper import settings
-public = (settings.get('plugins.dashboard.public_url') or '').rstrip('/')
+public = (settings.get('scoops.dashboard.public_url') or '').rstrip('/')
 plain = ''
 if public.startswith('https://'):
     plain = '''
@@ -128,12 +128,12 @@ server {
     listen 8898;
     location = /api/msg {
         client_max_body_size 64m;
-        proxy_set_header X-Real-IP $remote_addr;   # the sender check (plugins/peers)
+        proxy_set_header X-Real-IP $remote_addr;   # the sender check (scoops/peers)
         proxy_pass http://127.0.0.1:%(web)s;
     }
     location / { return 404; }
 }
 ''' % {'web': web}
-# Only what is switched on listens. With neither plugin, the supervisor does not
+# Only what is switched on listens. With neither scoop, the supervisor does not
 # start nginx at all and this file is never read.
 print((DASH if DASHBOARD else '') + (PEER if PEERS else ''))

@@ -32,7 +32,7 @@
     "uid": "",
     "key": "zipper-app.pem"
   },
-  "plugins": {
+  "scoops": {
     "backup": {
       "enabled": true
     },

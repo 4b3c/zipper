@@ -14,8 +14,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from zipper import settings                                         # noqa: E402
-from plugins import peers                                           # noqa: E402
-from plugins.peers import turn                                      # noqa: E402
+from scoops import peers                                           # noqa: E402
+from scoops.peers import turn                                      # noqa: E402
 
 SPAWNED = []
 turn._spawn = SPAWNED.append                # no test starts a real Claude
@@ -32,8 +32,8 @@ def b64(data):
 class PeerFiles(unittest.TestCase):
     def setUp(self):
         os.makedirs(os.path.join(TMP, 'vault', 'Inbox'), exist_ok=True)
-        settings.put('plugins.peers.zippers', {'studio': 'http://127.0.0.1:8898'})
-        settings.put('plugins.peers.notify', False)
+        settings.put('scoops.peers.zippers', {'studio': 'http://127.0.0.1:8898'})
+        settings.put('scoops.peers.notify', False)
         shutil.rmtree(peers.FILES, ignore_errors=True)
         shutil.rmtree(turn._dir(), ignore_errors=True)
         del SPAWNED[:]
@@ -100,13 +100,13 @@ class PeerFiles(unittest.TestCase):
         class Fake:
             name = 'fake'
             on_peer_message = staticmethod(seen.append)
-        from zipper import plugins
-        real = plugins.enabled
-        plugins.enabled = lambda: [Fake]
+        from zipper import scoops
+        real = scoops.enabled
+        scoops.enabled = lambda: [Fake]
         try:
             self.post(text='wake up')
         finally:
-            plugins.enabled = real
+            scoops.enabled = real
         self.assertEqual(seen[0]['text'], 'wake up')
 
 
@@ -134,7 +134,7 @@ class Sender(unittest.TestCase):
             self.post(**{'from': 'stranger'})
 
     def test_unresolvable_peer_refused(self):
-        settings.put('plugins.peers.zippers', {'studio': 'http://no-such-host.invalid:8898'})
+        settings.put('scoops.peers.zippers', {'studio': 'http://no-such-host.invalid:8898'})
         with self.assertRaises(ValueError):
             self.post()
 
@@ -162,11 +162,11 @@ class Wake(unittest.TestCase):
         self.assertTrue(peers._load()['messages'][-1]['reply'])
 
     def test_answer_off(self):
-        settings.put('plugins.peers.answer', False)
+        settings.put('scoops.peers.answer', False)
         try:
             self.post()
         finally:
-            settings.put('plugins.peers.answer', True)
+            settings.put('scoops.peers.answer', True)
         self.assertEqual(SPAWNED, [])
 
     def test_take_empties_the_file(self):

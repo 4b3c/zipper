@@ -2,22 +2,22 @@
 
 Issues assigned to the operator, written as `Tasks/GitHub.md` -- a todo list GitHub owns.
 
-The repos are named in `plugins.github.issues`. An org repo is read only if it is also
-in `plugins.github.open`: an issue title is content, and owning an org is not consent
+The repos are named in `scoops.github.issues`. An org repo is read only if it is also
+in `scoops.github.open`: an issue title is content, and owning an org is not consent
 to copy its contents into a vault. The due date is the issue's date field on whatever
-project board it sits on (`plugins.github.due_field`, "Target date" by default), and the
+project board it sits on (`scoops.github.due_field`, "Target date" by default), and the
 board's Status goes on the description line.
 
 **The file is read-only.** Every pull rewrites it from GitHub, so a tick, a re-date or
 a deleted line made in the vault is undone, and the dashboard draws its tick boxes as
 ghosts. An edit is reported as a queue row rather than silently reverted: an undo
 nobody hears about reads exactly like the edit having worked. A `Tasks/GitHub.md` the
-plugin did not write (no `generated: github`) is never overwritten.
+scoop did not write (no `generated: github`) is never overwritten.
 """
 import datetime, fcntl, json, os, re, urllib.request
 
 from . import core, settings
-from .plugins import as_list
+from .scoops import as_list
 
 FILE = 'GitHub.md'
 STORE = os.path.join(core.INBOX, 'github-issues.json')
@@ -41,10 +41,10 @@ def path():
 
 def repos():
     """(repos to read, repos refused). Org repos must be listed open."""
-    user = (settings.get('plugins.github.user') or '').lower()
-    opened = set(settings.get('plugins.github.open') or [])
+    user = (settings.get('scoops.github.user') or '').lower()
+    opened = set(settings.get('scoops.github.open') or [])
     ok, refused = [], []
-    for r in settings.get('plugins.github.issues') or []:
+    for r in settings.get('scoops.github.issues') or []:
         r = str(r).strip()
         if '/' not in r:
             refused.append(r)
@@ -136,7 +136,7 @@ def _note_for(repo, notes):
 def render(items, notes):
     lines = ['---', 'tags: [tasks]', 'type: tasks', 'status: living', 'scope: github',
              MARK, '---', '# GitHub', '',
-             '*Written by the GitHub plugin on every pull: the issues assigned to you in '
+             '*Written by the GitHub scoop on every pull: the issues assigned to you in '
              + ', '.join('`%s`' % r for r in repos()[0])
              + '. **Read-only.** Close, reassign or re-date them on GitHub; an edit made '
              'here is undone on the next pull.*', '']
@@ -214,7 +214,7 @@ def write(items, notes):
         except FileNotFoundError:
             cur = None
         if cur is not None and MARK not in cur.split('\n---', 1)[0]:
-            return '', '%s exists and was not written by this plugin; left alone' % p
+            return '', '%s exists and was not written by this scoop; left alone' % p
         undone = ''
         if store.get('text') and cur != store['text']:
             undone = describe_edit(store['text'], cur)

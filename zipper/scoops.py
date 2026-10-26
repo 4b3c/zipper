@@ -1,0 +1,507 @@
+"""zipper.scoops
+
+Everything beyond the core is a scoop. The core is Claude conversations that edit a
+vault, plus the queue, lint and commit. The rest -- Discord, GitHub, calendars, the
+dashboard, backups, scheduled passes -- lives in
+`scoops/<name>/` at the top of the repository:
+
+    scoops/<name>/scoop.json    the manifest: title, about, default settings,
+                                  secrets it needs, env variables its settings stand for
+    scoops/<name>/__init__.py    the code, imported only when the scoop is enabled
+
+A manifest may say `"requires": ["discord"]`: the scoop counts as off while any of
+those is off, and `enable` refuses until they are on. `"default_on_when": "<setting>"`
+makes an unset scoop count as on when that setting has a value -- how a zipper that
+had Discord before it was a scoop keeps it.
+
+**Enabled means `scoops.<name>.enabled` in the settings file**, nothing else -- not
+whether its credentials happen to be present. A scoop that switches itself on or off
+quietly is how a fetch once ran on public repos only and nobody noticed.
+`zipper scoop list|info|enable|disable` is the interface; the setup conversation
+runs `enable` only after the owner says yes.
+
+A scoop's code provides whichever of these it has; callers check with hasattr.
+
+    pull()                fetch from outside and store under Inbox/
+    receive(body) -> dict take a POST to /api/inputs/<name>
+    fetched() -> iso      when its data was last read (freshness chips)
+    snapshot() -> obj     cheap comparable state; two of them make a diff
+    events(before, after) queue rows for what changed between two snapshots
+    target(row, notes)    the note a queue row lands on, or None
+    timeline(first, last) event rows between two dates (the agenda, the Today grid)
+    work()                work items: things that are due
+    facts()               {note title: {field: value}} for zipper.writer to apply
+    toggle(key)           cross a work item off by hand; keys are `<name>:...`
+    CALENDARS             ICS labels it owns; the calendar scoop skips them
+    flags() -> [str]      standing disagreements for the brief
+    on_commit() -> str    run after `zipper commit`; a string is a warning to print
+    jobs(settings) -> [(job, 'HH:MM')]  scheduled `zipper <job>` runs (zipper run)
+
+A scoop may also ship `GUIDE.md`: how Claude works its rows, flags and data. The code
+moves facts; the guide carries the judgment that goes with them, so it arrives and
+leaves with the scoop instead of living in every vault's CLAUDE.md. An owner adds
+their own rules in a vault note named by `scoops.<name>.guide`. `zipper scoop guide
+<name>` prints both, and the brief names it under each section that has rows, so a
+pass reads only the guides its rows need.
+
+Two row shapes, because the dashboard asks two different questions.
+
+    event row   "what is on these days?" -- date, time, label, summary, loc, done,
+                start, end, uid, url, all_day
+    work item   "what is due?" -- source, title, due, at, tag, url, points, next,
+                elsewhere, desc, kind, links, course, submitted, done,
+                done_by_hand, key
+"""
+import datetime, importlib, json, os, sys
+
+from . import core, settings
+
+DIR = os.path.join(settings.ROOT, 'scoops')
+# `python3 -m zipper` from inside the vault has the vault, not the checkout, on
+# sys.path; the top-level `scoops` package has to be findable from anywhere.
+if settings.ROOT not in sys.path:
+    sys.path.insert(0, settings.ROOT)
+
+# Who "you" are in a queue row's `who`. Configuration: a real name compiled into a
+# public repository is a bug.
+OWNER = core.cfg('ZIPPER_OWNER') or 'you'
+
+
+# ---------------------------------------------------------------- manifests
+
+def manifests():
+    """{name: manifest} for every scoop in the repository, enabled or not. Reading a
+    manifest never imports the scoop's code."""
+    out = {}
+    try:
+        names = sorted(os.listdir(DIR))
+    except FileNotFoundError:
+        return out
+    for n in names:
+        p = os.path.join(DIR, n, 'scoop.json')
+        try:
+            with open(p, encoding='utf-8') as fh:
+                out[n] = json.load(fh)
+        except (OSError, ValueError):     # not a scoop folder (__init__.py, caches)
+            continue
+    return out
+
+
+def _setting(s, path):
+    cur = s
+    for k in path.split('.'):
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(k)
+    return cur
+
+
+def is_enabled(name, s=None, _seen=()):
+    ms = manifests()
+    m = ms.get(name)
+    if not m or name in _seen:
+        return False
+    s = s if s is not None else settings.load()
+    # Whether it was ever set, from the file itself: the merged settings fill every
+    # scoop's `enabled` in from its default, which hides "never set".
+    written = settings._legacy(settings.raw())     # also reads the old name, `plugins`
+    v = ((written.get('scoops') or {}).get(name) or {}).get('enabled')
+    if v is None:
+        on = bool(m.get('default_on')) or bool(m.get('default_on_when')
+                                               and _setting(s, m['default_on_when']))
+    else:
+        on = bool(v)
+    return on and all(is_enabled(r, s, _seen + (name,)) for r in m.get('requires') or [])
+
+
+def names():
+    s = settings.load()
+    return [n for n in manifests() if is_enabled(n, s)]
+
+
+def load(name):
+    return importlib.import_module('scoops.' + name)
+
+
+def enabled():
+    """The enabled scoops' modules, in name order."""
+    out = []
+    for n in names():
+        try:
+            out.append(load(n))
+        except Exception as e:
+            # One broken scoop must not take the core down with it.
+            print('scoop %s failed to load: %s' % (n, e), file=sys.stderr)
+    return out
+
+
+def get(name):
+    """One enabled scoop's module, or None -- a disabled scoop is treated as absent."""
+    return load(name) if is_enabled(name) else None
+
+
+def require(name):
+    """For a command that belongs to a scoop: None if enabled, else a sentence."""
+    if name not in manifests():
+        return 'no scoop named %r' % name
+    if not is_enabled(name):
+        return ('the %s scoop is off -- `zipper scoop enable %s` to turn it on'
+                % (name, name))
+    return None
+
+
+# ---------------------------------------------------------------- the pipeline
+
+PULLS = os.path.join(core.INBOX, 'pulls.json')
+
+
+def _pulls():
+    try:
+        with open(PULLS, encoding='utf-8') as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def poll_minutes(name, s=None):
+    """How often a scoop pulls on its own, or 0 for never (only by hand)."""
+    s = s if s is not None else settings.load()
+    return int(((s.get('scoops') or {}).get(name) or {}).get('poll_minutes') or 0)
+
+
+def pullers():
+    """Enabled scoops that fetch from outside."""
+    return [i for i in enabled() if hasattr(i, 'pull')]
+
+
+def due(now=None):
+    """Names of pulling scoops whose own timer has run out."""
+    now = now or datetime.datetime.now()
+    s, last = settings.load(), _pulls()
+    out = []
+    for i in pullers():
+        every = poll_minutes(i.name, s)
+        if not every:
+            continue
+        t = last.get(i.name)
+        if not t or (now - datetime.datetime.fromisoformat(t)).total_seconds() >= every * 60:
+            out.append(i.name)
+    return out
+
+
+def pull(name, log=print):
+    """Pull one scoop and turn what changed into queue rows.
+
+    **Each scoop is its own fetch.** It is snapshotted, pulled and snapshotted
+    again, and the difference becomes rows -- so a scoop on a 15-minute timer and
+    one on an hour never wait for each other, and a card's refresh button pulls
+    only its own scoop. Rows go through `publish`, whose file lock makes this
+    safe from any process. Facts are applied by the one writer. A failure is
+    reported and recorded, never raised: one outage must not stop the rest.
+    Returns (rows added, error or '').
+    """
+    i = get(name)
+    if not i or not hasattr(i, 'pull'):
+        return 0, 'no enabled scoop %r that pulls' % name
+    from . import serve, writer
+    before = {name: i.snapshot()} if hasattr(i, 'snapshot') else {}
+    err = ''
+    try:
+        i.pull()
+    except Exception as e:
+        err = str(e)
+        log('%s: pull failed: %s' % (name, e))
+    n = 0
+    if hasattr(i, 'snapshot') and hasattr(i, 'events'):
+        try:
+            for row in i.events(before.get(name), i.snapshot()) if name in before else []:
+                row.setdefault('scoop', name)
+                serve.publish('diff', row.pop('text'), **row)
+                n += 1
+        except Exception as e:
+            serve.publish('diff', 'error       %s events: %s' % (name, e),
+                          system='error', action='edit')
+    if hasattr(i, 'facts'):
+        try:
+            writer.apply(i.facts(), source=name)
+        except Exception as e:
+            log('%s: facts failed: %s' % (name, e))
+    last = _pulls()
+    last[name] = datetime.datetime.now().isoformat(timespec='seconds')
+    if err:
+        last[name + ':error'] = err
+    else:
+        last.pop(name + ':error', None)
+    os.makedirs(core.INBOX, exist_ok=True)
+    tmp = PULLS + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as fh:
+        json.dump(last, fh, indent=1)
+    os.replace(tmp, PULLS)
+    return n, err
+
+
+def pull_all(log=print):
+    """Pull every enabled scoop that pulls. Kept for a whole refresh by hand."""
+    errors = []
+    for i in pullers():
+        log('== %s ==' % i.name)
+        n, err = pull(i.name, log=log)
+        log('%s: %d new row(s)%s' % (i.name, n, ' -- ' + err if err else ''))
+        if err:
+            errors.append('%s: %s' % (i.name, err))
+    return errors
+
+
+def freshness():
+    return {i.name: i.fetched() for i in enabled() if hasattr(i, 'fetched')}
+
+
+def snapshot():
+    out = {}
+    for i in enabled():
+        if hasattr(i, 'snapshot'):
+            try:
+                out[i.name] = i.snapshot()
+            except Exception as e:
+                print('%s snapshot failed: %s' % (i.name, e))
+    return out
+
+
+def events(before, after):
+    """Queue rows for everything that changed between two snapshots. A scoop missing
+    from `before` has just been enabled: its first snapshot is a baseline, not news."""
+    out = []
+    for i in enabled():
+        if not hasattr(i, 'events') or i.name not in before or i.name not in after:
+            continue
+        try:
+            rows = i.events(before[i.name], after[i.name])
+            for r in rows:
+                r.setdefault('scoop', i.name)   # which guide the brief points at
+            out += rows
+        except Exception as e:
+            out.append({'system': 'error', 'action': 'edit',
+                        'text': 'error       %s events: %s' % (i.name, e)})
+    return out
+
+
+def target_resolver():
+    """A function row -> note title, with the vault read once rather than per row."""
+    notes = [(core.title_of(p), core.fm_dict(core.read_note(p)[0])) for p in core.iter_notes()]
+    mods = {i.name: i for i in enabled() if hasattr(i, 'target')}
+
+    def resolve(row):
+        i = mods.get(row.get('system'))
+        return i.target(row, notes) if i else None
+    return resolve
+
+
+def claimed_calendars():
+    out = set()
+    for i in enabled():
+        out.update(getattr(i, 'CALENDARS', ()))
+    return out
+
+
+def timeline(first, last):
+    rows = []
+    for i in enabled():
+        if hasattr(i, 'timeline'):
+            rows += i.timeline(first, last)
+    rows.sort(key=lambda r: r['label'])
+    return rows
+
+
+def work():
+    out = []
+    for i in enabled():
+        if hasattr(i, 'work'):
+            out += i.work()
+    return out
+
+
+def toggle(key):
+    i = get(key.split(':', 1)[0])
+    return i.toggle(key) if i and hasattr(i, 'toggle') else None
+
+
+def flags():
+    out = []
+    for i in enabled():
+        if hasattr(i, 'flags'):
+            try:
+                out += i.flags()
+            except Exception as e:
+                out.append('%s flags failed: %s' % (i.name, e))
+    return out
+
+
+def on_commit():
+    """Warnings from scoops that act after a commit (the backup push)."""
+    out = []
+    for i in enabled():
+        if hasattr(i, 'on_commit'):
+            try:
+                w = i.on_commit()
+            except Exception as e:
+                w = str(e)
+            if w:
+                out.append('%s: %s' % (i.name, w))
+    return out
+
+
+def jobs():
+    """[(job, 'HH:MM')] from every enabled scoop that schedules something."""
+    out = []
+    s = settings.load()
+    for i in enabled():
+        if hasattr(i, 'jobs'):
+            out += i.jobs((s.get('scoops') or {}).get(i.name, {}))
+    return out
+
+
+# ---------------------------------------------------------------- shared helpers
+
+def event_row(label, e, done=None):
+    """One ingested ICS event as an event row."""
+    return {'date': e['start'][:10], 'time': e['start'][11:], 'label': label,
+            'summary': e['summary'], 'loc': e.get('location', ''), 'done': done,
+            'start': e['start'], 'end': e.get('end', ''), 'uid': e.get('uid', ''),
+            'url': e.get('url', ''),
+            'all_day': bool(e.get('all_day')) or len(e['start']) <= 10}
+
+
+def read_calendar(path):
+    try:
+        blob = json.load(open(path, encoding='utf-8'))
+        return blob['label'], blob['events']
+    except Exception:
+        return None, []
+
+
+def mtime_iso(path):
+    try:
+        return datetime.datetime.fromtimestamp(os.path.getmtime(path)).isoformat(timespec='seconds')
+    except OSError:
+        return None
+
+
+def blob_fetched(path):
+    """A JSON file's own `fetched` stamp, falling back to its mtime (calendars store a
+    bare date, too coarse to age)."""
+    try:
+        blob = json.load(open(path, encoding='utf-8'))
+    except Exception:
+        return None
+    v = blob.get('fetched')
+    if v and len(v) == 10:
+        return mtime_iso(path)
+    return v or mtime_iso(path)
+
+
+def as_list(v):
+    if v is None:
+        return []
+    return v if isinstance(v, list) else core.as_list(v)
+
+
+# ---------------------------------------------------------------- guides
+
+def guide_files(name):
+    """[(label, path)] for what exists of the scoop's GUIDE.md and the owner's note.
+    A `guide` setting naming a missing note is listed anyway, with path None, so the
+    mistake is visible instead of the owner's rules silently not applying."""
+    out = []
+    own = os.path.join(DIR, name, 'GUIDE.md')
+    if os.path.isfile(own):
+        out.append(('scoop', own))
+    note = (settings.get('scoops.%s.guide' % name) or '').strip()
+    if note:
+        p = os.path.join(core.VAULT, note)
+        out.append((note, p if os.path.isfile(p) else None))
+    return out
+
+
+def has_guide(name):
+    return bool(guide_files(name))
+
+
+def row_scoop(row):
+    """The scoop a queue row came from. Rows saved before 2026-10-25 say `plugin`, the
+    old name; rows older than that carry neither and fall back to their system, which
+    matches the scoop for every source but `zipper`."""
+    return row.get('scoop') or row.get('plugin') or \
+        (row.get('system') if row.get('system') in manifests() else None)
+
+
+def guide(name):
+    """The text `zipper scoop guide` prints, or None when the scoop has none."""
+    files = guide_files(name)
+    if not files:
+        return None
+    parts = []
+    for label, p in files:
+        if p is None:
+            parts.append('## %s\n\n(scoops.%s.guide names this note, and it does not exist)'
+                         % (label, name))
+            continue
+        text = core.read_note(p)[1].strip()          # a vault note's frontmatter is noise here
+        parts.append(text if label == 'scoop' else
+                     '## The owner\'s rules: %s\n\n%s' % (label, text))
+    return '\n\n---\n\n'.join(parts) + '\n'
+
+
+# ---------------------------------------------------------------- the command
+
+def cmd_scoop(a):
+    action = getattr(a, 'action', None) or 'list'
+    ms = manifests()
+    if action == 'list':
+        s = settings.load()
+        for n, m in ms.items():
+            needs = m.get('requires') or []
+            print('  [%s] %-10s %s%s' % ('x' if is_enabled(n, s) else ' ', n, m.get('title', ''),
+                                         ('  (needs %s)' % ', '.join(needs)) if needs else ''))
+        return 0
+    name = a.name
+    if name not in ms:
+        print('scoop: no scoop named %r (have: %s)' % (name, ', '.join(ms)))
+        return 1
+    m = ms[name]
+    if action == 'guide':
+        text = guide(name)
+        if text is None:
+            print('scoop: %s has no guide -- work its rows from CLAUDE.md' % name)
+            return 1
+        sys.stdout.write(text)
+        return 0
+    if action == 'info':
+        print('%s -- %s' % (m.get('title', name), 'on' if is_enabled(name) else 'off'))
+        print('  %s' % m.get('about', ''))
+        for k, v in (m.get('defaults') or {}).items():
+            print('  setting  scoops.%s.%s = %s' % (name, k,
+                  json.dumps(settings.get('scoops.%s.%s' % (name, k), v))))
+        for sec in m.get('secrets') or []:
+            print('  secret   %s  (%s)' % (sec, 'set' if core.cfg(sec) else 'not set'))
+        for label, p in guide_files(name):
+            print('  guide    %s%s' % ('GUIDE.md' if label == 'scoop' else label,
+                                       '' if p else '  (missing)'))
+        return 0
+    if action == 'enable':
+        off = [r for r in m.get('requires') or [] if not is_enabled(r)]
+        if off:
+            print('scoop: %s needs %s -- enable %s first' % (name, ', '.join(off),
+                                                                ' and '.join(off)))
+            return 1
+    settings.put('scoops.%s.enabled' % name, action == 'enable')
+    if action == 'disable':
+        needed_by = [n for n, x in ms.items() if name in (x.get('requires') or [])]
+        if needed_by:
+            print('  also off now, because they need it: %s' % ', '.join(needed_by))
+    print('%s %s. Restart for running services to pick it up (`zipper restart --when-idle`).'
+          % (m.get('title', name), 'enabled' if action == 'enable' else 'disabled'))
+    if action == 'enable':
+        missing = [s for s in m.get('secrets') or [] if not core.cfg(s)]
+        if missing:
+            print('  secrets not set yet: %s -- `zipper secret <NAME>`' % ', '.join(missing))
+    return 0

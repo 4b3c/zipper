@@ -4,8 +4,8 @@
 inside a container, or on a laptop.
 
     the dashboard   python3 -m zipper.serve --daemon       always
-    the bot         python3 -u -m bot.discord_bot          the discord plugin, and DISCORD_TOKEN
-    the schedule    fetch / pass / digest / update         from the enabled plugins
+    the bot         python3 -u -m bot.discord_bot          the discord scoop, and DISCORD_TOKEN
+    the schedule    fetch / pass / digest / update         from the enabled scoops
 
 Children are restarted when they exit, with a backoff so a crash loop does not
 spin. The schedule runs jobs as subprocesses, one at a time: a pass that takes
@@ -68,9 +68,9 @@ def _last_run(st, job):
 def due(now, st, jobs, pulls_due=False, queue_open=0):
     """The jobs due at `now`, given what has run. Pure, so it can be tested.
 
-    `pulls_due`: whether any plugin's own poll timer has run out (plugins.due());
+    `pulls_due`: whether any scoop's own poll timer has run out (scoops.due());
     if so, one `zipper pull --due` pulls exactly those. `jobs`: [(job, spec)] from
-    the plugins -- spec 'HH:MM' (a slot, once a day), 'every:N' (every N
+    the scoops -- spec 'HH:MM' (a slot, once a day), 'every:N' (every N
     minutes; `update` rides this, and waits by itself while a conversation is live)
     or 'queue:N' (when `queue_open`, the unticked rows, reaches N, and the job has
     not run under any key for QUEUE_COOLDOWN).
@@ -143,20 +143,20 @@ def _children():
     if os.environ.get('ZIPPER_NO_TERMINAL'):
         web.append('--no-terminal')     # tests, and zippers that never want a shell
     # The web process is core: it serves the dashboard and its terminals, and it is
-    # where the bot, when the discord plugin is on, hands each message to a Claude
+    # where the bot, when the discord scoop is on, hands each message to a Claude
     # conversation (zipper/web/http.py).
     kids = [Child('web', web)]
-    from . import plugins
-    if os.environ.get('ZIPPER_NGINX') and (plugins.is_enabled('dashboard')
-                                           or plugins.is_enabled('peers')):
+    from . import scoops
+    if os.environ.get('ZIPPER_NGINX') and (scoops.is_enabled('dashboard')
+                                           or scoops.is_enabled('peers')):
         # In the container, nginx fronts the dashboard (8899) and the peer port
         # (8898) -- see docker/nginx.py. With neither, nothing listens outside.
         kids.append(Child('nginx', ['nginx', '-g', 'daemon off;']))
-    if plugins.is_enabled('discord'):
+    if scoops.is_enabled('discord'):
         if core.cfg('DISCORD_TOKEN'):
             kids.append(Child('bot', [py, '-u', '-m', 'bot.discord_bot']))
         else:
-            print('[run] the discord plugin is on but DISCORD_TOKEN is not set '
+            print('[run] the discord scoop is on but DISCORD_TOKEN is not set '
                   '(`zipper secret DISCORD_TOKEN`); Discord will not answer until it is.',
                   flush=True)
     return kids
@@ -169,10 +169,10 @@ def _scheduler(stop):
             continue
         now = datetime.datetime.now()
         st = _load_state()
-        from . import plugins, runqueue
-        planned = plugins.jobs()
+        from . import scoops, runqueue
+        planned = scoops.jobs()
         n = len(runqueue.open_rows()) if any(s.startswith('queue:') for _, s in planned) else 0
-        jobs = due(now, st, planned, pulls_due=bool(plugins.due(now)), queue_open=n)
+        jobs = due(now, st, planned, pulls_due=bool(scoops.due(now)), queue_open=n)
         if not jobs:
             continue
 

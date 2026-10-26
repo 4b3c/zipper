@@ -1,8 +1,8 @@
 """zipper.settings
 
 `settings.json`, in the vault: what this zipper is and does -- its id, whose it is,
-its ports, which plugins are on, how often each pulls, and (under
-`plugins.dashboard.rows`) the dashboard's cards. Structure only. **Secrets stay in
+its ports, which scoops are on, how often each pulls, and (under
+`scoops.dashboard.rows`) the dashboard's cards. Structure only. **Secrets stay in
 `.env`**, outside the vault, so an agent can read and edit this file freely without
 a token entering a transcript.
 
@@ -13,28 +13,28 @@ through the environment or `.env`, never through this file). An old checkout-lev
     {
       "id": "zipper-0", "owner": "Sam", "vault": "/zipper/vault",
       "discord": {"channel": "...", "notify_channel": ""},
-      "plugins": {
+      "scoops": {
         "github":    {"enabled": true, "user": "sam", "orgs": []},
         "dashboard": {"enabled": false}
       }
     }
 
-**Plugin settings live under `plugins.<name>`**, and their defaults come from each
-plugin's own `plugins/<name>/plugin.json` -- so a new plugin needs no edit here.
+**Scoop settings live under `scoops.<name>`**, and their defaults come from each
+scoop's own `scoops/<name>/scoop.json` -- so a new scoop needs no edit here.
 
 **How the code sees it.** Most readers use environment variables. `apply()` runs once
 at import and fills in any variable not already set, from the core keys below and from
 each manifest's `env` map. Order everywhere: the real environment, then `.env`
 (through `core.cfg`), then this file.
 
-**An older file** -- plugin settings under `inputs`, `peers`, `host`, `google`,
+**An older file** -- scoop settings under `inputs`, `peers`, `host`, `google`,
 `extension`, `schedule.pass` -- is translated on read, and `zipper settings migrate`
 rewrites it in the current shape.
 """
 import copy, json, os, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PLUGIN_DIR = os.path.join(ROOT, 'plugins')
+SCOOP_DIR = os.path.join(ROOT, 'scoops')
 LEGACY_PATH = os.path.join(ROOT, 'zipper.settings.json')
 
 
@@ -71,7 +71,7 @@ def _path():
 
 PATH = _path()
 
-# The core's shape, with defaults. Plugins add theirs from their manifests.
+# The core's shape, with defaults. Scoops add theirs from their manifests.
 DEFAULTS = {
     'id': 'zipper-0',
     'owner': '',
@@ -98,27 +98,27 @@ CORE_ENV = {
 # ---------------------------------------------------------------- manifests
 
 def manifests():
-    """Read here rather than through zipper.plugins: this module runs at import,
+    """Read here rather than through zipper.scoops: this module runs at import,
     before anything else in the package, and must not import it."""
     out = {}
     try:
-        names = sorted(os.listdir(PLUGIN_DIR))
+        names = sorted(os.listdir(SCOOP_DIR))
     except FileNotFoundError:
         return out
     for n in names:
         try:
-            with open(os.path.join(PLUGIN_DIR, n, 'plugin.json'), encoding='utf-8') as fh:
+            with open(os.path.join(SCOOP_DIR, n, 'scoop.json'), encoding='utf-8') as fh:
                 out[n] = json.load(fh)
-        except (OSError, ValueError):     # not a plugin folder (__init__.py, caches)
+        except (OSError, ValueError):     # not a scoop folder (__init__.py, caches)
             continue
     return out
 
 
 def defaults():
     d = copy.deepcopy(DEFAULTS)
-    # `guide`: a vault note with the owner's own rules for this plugin's data, read
-    # after the plugin's GUIDE.md (zipper.plugins.guide). Every plugin can have one.
-    d['plugins'] = {n: dict({'enabled': bool(m.get('default_on')), 'guide': ''},
+    # `guide`: a vault note with the owner's own rules for this scoop's data, read
+    # after the scoop's GUIDE.md (zipper.scoops.guide). Every scoop can have one.
+    d['scoops'] = {n: dict({'enabled': bool(m.get('default_on')), 'guide': ''},
                             **(m.get('defaults') or {}))
                     for n, m in manifests().items()}
     return d
@@ -145,11 +145,21 @@ def raw():
 LEGACY_KEYS = ('inputs', 'peers', 'host', 'google', 'extension', 'vault')
 
 
+# Scoops were called plugins until 2026-10-25. A file still saying `plugins` is read as
+# `scoops` and written back under `plugins` (see put), so code from before the rename --
+# a rollback, another process not yet restarted -- still reads it. `zipper settings
+# migrate` renames it once the operator chooses to.
+OLD_NAME = 'plugins'
+
+
 def _legacy(data):
-    """Translate the pre-plugin shape. Returns a new dict; never writes."""
+    """Translate older shapes. Returns a new dict; never writes."""
     data = copy.deepcopy(data)
     data.pop('vault', None)             # located by ZIPPER_VAULT, never by this file
-    p = data.setdefault('plugins', {})
+    if OLD_NAME in data:
+        old = data.pop(OLD_NAME) or {}
+        data['scoops'] = _merge(old, data.get('scoops') or {})
+    p = data.setdefault('scoops', {})
 
     def put_p(name, key, value):
         p.setdefault(name, {})
@@ -182,7 +192,7 @@ def _legacy(data):
         t = sched.pop('digest')
         put_p('digest', 'time', t)
     if not p:
-        data.pop('plugins')
+        data.pop('scoops')
     return data
 
 
@@ -199,7 +209,7 @@ def load():
 
 
 def get(path, default=None):
-    """A dotted path: `get('plugins.hours.sheet')`."""
+    """A dotted path: `get('scoops.hours.sheet')`."""
     cur = load()
     for part in path.split('.'):
         if not isinstance(cur, dict) or part not in cur:
@@ -221,16 +231,36 @@ def _parse(value):
 def put(path, value):
     """Write one dotted key and save atomically. An old-shape file is migrated in the
     same write, so a key is never written into a layout that is then translated
-    around it."""
-    data = _legacy(raw()) if is_legacy() else raw()
-    cur = data
+    around it. The one exception is the old name for scoops: a file that says
+    `plugins` keeps saying it, and the key is written there (OLD_NAME)."""
+    data = raw()
+    keep_old = OLD_NAME in data and 'scoops' not in data
+    if is_legacy(data):
+        data = _legacy(data)
+        if keep_old:
+            data[OLD_NAME] = data.pop('scoops', {})
     parts = path.split('.')
+    if keep_old and parts[0] == 'scoops':
+        parts[0] = OLD_NAME
+    cur = data
     for part in parts[:-1]:
         cur = cur.setdefault(part, {})
         if not isinstance(cur, dict):
             raise ValueError('%s is not an object' % part)
     cur[parts[-1]] = value
     save(data)
+
+
+def rename_old():
+    """Rename the file's `plugins` block to `scoops`. True if it did. Code from before
+    2026-10-25 cannot read the result, so this runs only when asked."""
+    data = raw()
+    if OLD_NAME not in data:
+        return False
+    old = data.pop(OLD_NAME) or {}
+    data['scoops'] = _merge(old, data.get('scoops') or {})
+    save(data)
+    return True
 
 
 def save(data):
@@ -244,23 +274,26 @@ def save(data):
 
 
 def check():
-    """Problems with the file: unknown keys, wrong types, unknown plugins. [] when clean."""
+    """Problems with the file: unknown keys, wrong types, unknown scoops. [] when clean."""
     out = []
     try:
         data = raw()
     except ValueError as e:
         return ['unreadable: %s' % e]
-    if is_legacy(data):
-        out.append('old layout (plugin settings outside "plugins") -- `zipper settings migrate`')
+    if OLD_NAME in data:
+        out.append('"%s" is the old name for "scoops" -- `zipper settings migrate` renames it'
+                   % OLD_NAME)
+    elif is_legacy(data):
+        out.append('old layout (scoop settings outside "scoops") -- `zipper settings migrate`')
     base = defaults()
 
     def walk(ref, over, where):
         for k, v in over.items():
             here = '%s.%s' % (where, k) if where else k
-            if where == 'plugins' and k not in ref:
-                out.append('%s: no such plugin' % here)
+            if where == 'scoops' and k not in ref:
+                out.append('%s: no such scoop' % here)
                 continue
-            if where.startswith('plugins.') and where.count('.') == 1 and k in ('zippers', 'topics'):
+            if where.startswith('scoops.') and where.count('.') == 1 and k in ('zippers', 'topics'):
                 continue                    # peers' and topics' maps: any names
             if k not in ref:
                 out.append('%s: unknown key' % here)
@@ -298,7 +331,7 @@ def env():
     key = s['github_app']['key']
     out['ZIPPER_GH_APP_KEY'] = os.path.join(ROOT, key) if key else ''
     for name, m in manifests().items():
-        conf = s['plugins'].get(name, {})
+        conf = s['scoops'].get(name, {})
         for var, k in (m.get('env') or {}).items():
             out[var] = _flat(conf.get(k))
     return {k: v for k, v in out.items() if v not in ('', None)}
@@ -336,7 +369,7 @@ def _env_to_path():
     out = dict(CORE_ENV)
     for name, m in manifests().items():
         for var, k in (m.get('env') or {}).items():
-            out[var] = 'plugins.%s.%s' % (name, k)
+            out[var] = 'scoops.%s.%s' % (name, k)
     return out
 
 
@@ -348,7 +381,7 @@ def migrate(envfile):
     e = _env_file() if envfile is None else _read_env(envfile)
     data = _legacy(raw())
     moved = ['(rewrote the old layout)'] if is_legacy() else []
-    lists = {'plugins.github.orgs', 'plugins.github.open'}
+    lists = {'scoops.github.orgs', 'scoops.github.open'}
 
     def put_in(path, value):
         cur = data
@@ -371,7 +404,7 @@ def migrate(envfile):
         put_in('github_app.key', os.path.relpath(k, ROOT) if k.startswith(ROOT) else k)
     if e.get('ZIPPER_INPUTS'):
         for n in (x.strip() for x in e['ZIPPER_INPUTS'].split(',') if x.strip()):
-            put_in('plugins.%s.enabled' % n, True)
+            put_in('scoops.%s.enabled' % n, True)
     for key, name in (('ZIPPER_URL', 'web'), ('BOT_URL', 'bot')):
         port = e.get(key, '').rsplit(':', 1)[-1].strip('/')
         if port.isdigit():
@@ -428,6 +461,8 @@ def cmd_settings(a):
         print('restart the services for long-running components to see it')
         return 0
     if action == 'migrate':
+        if rename_old():
+            print('renamed "%s" to "scoops" in %s' % (OLD_NAME, PATH))
         moved = migrate(getattr(a, 'env', None))
         print('%d change(s) to %s:' % (len(moved), PATH))
         for m in moved:

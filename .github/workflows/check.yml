@@ -23,7 +23,7 @@ jobs:
       - name: compile
         run: python -m compileall -q zipper bot hooks utils tests
       - name: import
-        run: python -c "import zipper.cli, zipper.serve, zipper.supervise, zipper.code, zipper.plugins, plugins.host.hostd"
+        run: python -c "import zipper.cli, zipper.serve, zipper.supervise, zipper.code, zipper.scoops, scoops.host.hostd"
       - name: unit tests
         # One process per file: each empties and sets the environment before
         # importing zipper, and settings reads its path once, at import.
@@ -31,10 +31,10 @@ jobs:
       - name: a fresh vault, end to end
         run: |
           export ZIPPER_VAULT="$RUNNER_TEMP/vault" ZIPPER_SETTINGS="$RUNNER_TEMP/settings.json" ZIPPER_ENV_FILE="$RUNNER_TEMP/env"
-          echo '{"plugins": {"calendar": {"enabled": true}, "backup": {"enabled": false}}}' > "$ZIPPER_SETTINGS"
+          echo '{"scoops": {"calendar": {"enabled": true}, "backup": {"enabled": false}}}' > "$ZIPPER_SETTINGS"
           python -m zipper init --vault-only "$ZIPPER_VAULT"
           python -m zipper settings check
           python -m zipper lint
-          python -m zipper plugin list
+          python -m zipper scoop list
           python -m zipper pull
           python -m zipper lint

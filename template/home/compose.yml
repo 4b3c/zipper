@@ -3,7 +3,7 @@
 #
 #   vault/    the notes, settings.json and the dashboard's cards -- a git repository
 #   config/   .env: secrets only, never in the vault
-#   backup/   the vault's second copy, pushed on every commit (backup plugin)
+#   backup/   the vault's second copy, pushed on every commit (backup scoop)
 #   code/     its own checkout of the code, updated by `zipper update`
 #   home/     its Claude login and transcripts
 #
