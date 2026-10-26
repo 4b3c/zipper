@@ -2,7 +2,7 @@
 
 The host half of `zipper init`: where the zipper will be reached, its dashboard
 password, and starting it. Everything after that -- Claude's login, who the owner
-is, which plugins -- happens in the dashboard's terminal, inside the container.
+is, which scoops -- happens in the dashboard's terminal, inside the container.
 
     ssh'd into a server   the dashboard goes on this machine's Tailscale address,
                           so the owner opens it from their own laptop or phone.

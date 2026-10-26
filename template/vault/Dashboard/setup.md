@@ -5,5 +5,5 @@ setup gets there; when they are all done, remove the card from `settings.json`.
 
 - [ ] Say who you are
 - [ ] Say what the notes are for
-- [ ] Go through the plugins (Discord among them, all optional)
+- [ ] Go through the scoops (Discord among them, all optional)
 - [ ] Write down what this vault is for

@@ -26,8 +26,8 @@ from .. import convhead, stopturn, turnstatus
 
 SRV = {'server': None, 'clients': 0, 'quit_timer': None, 'daemon': False, 'dashboard': True}
 
-# With the dashboard plugin off this process is only the core's relay: the bot hands
-# each Discord message in here, and plugins post readings. Everything else is a page.
+# With the dashboard scoop off this process is only the core's relay: the bot hands
+# each Discord message in here, and scoops post readings. Everything else is a page.
 RELAY_GET = ('/api/conversations', '/health')
 LOGIN_LOCK = threading.Lock()
 RELAY_POST = ('/discord', '/api/canvas', '/api/hours', '/api/msg')
@@ -173,7 +173,7 @@ class Handler(BaseHTTPRequestHandler):
                        'application/json')
             return
         if _relay_only_refuses('GET', self.path):
-            self._send(404, 'the dashboard plugin is off', 'text/plain; charset=utf-8')
+            self._send(404, 'the dashboard scoop is off', 'text/plain; charset=utf-8')
             return
         if self._login_get():
             return
@@ -278,7 +278,7 @@ class Handler(BaseHTTPRequestHandler):
             key = urllib.parse.unquote(self.path.split('?')[0][3:].strip('/'))
             page = board_page(key)
             if page is None:
-                self._send(404, '<p>no such page -- see plugins.dashboard.pages</p>')
+                self._send(404, '<p>no such page -- see scoops.dashboard.pages</p>')
             else:
                 self._send(200, page)
         elif self.path in ('/tasks', '/canvas'):
@@ -326,7 +326,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         core.TODAY = datetime.date.today()
         if _relay_only_refuses('POST', self.path):
-            self._send(404, 'the dashboard plugin is off', 'text/plain; charset=utf-8')
+            self._send(404, 'the dashboard scoop is off', 'text/plain; charset=utf-8')
             return
         if self.path == '/login':
             self._login_post()
@@ -346,7 +346,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200 if res['ok'] else 400, json.dumps(res), 'application/json')
             return
         if self.path == '/api/refresh' or self.path.startswith('/api/pull/'):
-            # /api/pull/<plugin>: a card's own refresh button. /api/refresh: all.
+            # /api/pull/<scoop>: a card's own refresh button. /api/refresh: all.
             name = self.path[len('/api/pull/'):] if self.path.startswith('/api/pull/') else ''
             threading.Thread(target=do_refresh, args=([name] if name else None,),
                              daemon=True).start()
@@ -545,9 +545,9 @@ class Handler(BaseHTTPRequestHandler):
             if body.get('topic') and not known:
                 # Opened in a topic's own channel: the conversation starts from
                 # the topic's purpose and context, not from nothing.
-                from .. import plugins
-                if plugins.is_enabled('topics'):
-                    text = plugins.load('topics').conversation(body['topic'], text)
+                from .. import scoops
+                if scoops.is_enabled('topics'):
+                    text = scoops.load('topics').conversation(body['topic'], text)
             # The first message after a stop tells Claude its last turn was cut off.
             text = stopturn.take_note(tid) + text
             chat.discord_typing(True, tid)
@@ -600,7 +600,7 @@ class Handler(BaseHTTPRequestHandler):
 def input_name(path):
     """The input a POST path feeds, or None. Peers come in on `/api/msg` and nowhere
     else: that is the one path nginx's peer port serves and sets X-Real-IP for, and
-    the sender check rests on that header (plugins/peers). `/api/inputs/peers` would
+    the sender check rests on that header (scoops/peers). `/api/inputs/peers` would
     reach the same input from the dashboard's port, with a header the client chose."""
     if path == '/api/msg':
         return 'peers'
@@ -687,8 +687,8 @@ def main():
         return 0 if res['ok'] else 1
     srv = ThreadingHTTPServer((a.host, a.port), Handler)
     srv.daemon_threads = True
-    from .. import plugins
-    SRV['dashboard'] = plugins.is_enabled('dashboard')
+    from .. import scoops
+    SRV['dashboard'] = scoops.is_enabled('dashboard')
     TTYD['enabled'] = not a.no_terminal and SRV['dashboard']
     TTYD['host'] = a.term_host
     TTYD['cred'] = a.term_cred

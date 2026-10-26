@@ -1,5 +1,5 @@
 [Unit]
-Description=Check every five minutes for Zipper plugins due to pull
+Description=Check every five minutes for Zipper scoops due to pull
 
 [Timer]
 OnCalendar=*:0/5

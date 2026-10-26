@@ -202,10 +202,10 @@ def channel_topic(channel_id):
     """The topic that owns this channel, or None. Read per message, so a topic
     added or moved needs no bot restart."""
     try:
-        from zipper import plugins
-        if not plugins.is_enabled('topics'):
+        from zipper import scoops
+        if not scoops.is_enabled('topics'):
             return None
-        return plugins.load('topics').channel_topic(channel_id)
+        return scoops.load('topics').channel_topic(channel_id)
     except Exception as e:
         print(f"[discord] topic lookup failed for channel {channel_id}: {e}")
         return None

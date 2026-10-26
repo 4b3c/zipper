@@ -1,4 +1,4 @@
-"""The dashboard's cards, per-plugin pulls, and the queue's cross-process lock.
+"""The dashboard's cards, per-scoop pulls, and the queue's cross-process lock.
 
     python3 -m unittest tests.test_dashboard -v
 
@@ -18,7 +18,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 ENV = dict(os.environ)      # as set here: another test module may change os.environ later
 
-from zipper import plugins, settings                               # noqa: E402
+from zipper import scoops, settings                               # noqa: E402
 from zipper.web import cards                                       # noqa: E402
 
 
@@ -27,7 +27,7 @@ def tearDownModule():
 
 
 def layout(*rows):
-    settings.save({'plugins': {'dashboard': {'rows': list(rows)}}})
+    settings.save({'scoops': {'dashboard': {'rows': list(rows)}}})
 
 
 def vault_card(name, backend, frontend=None):
@@ -58,8 +58,8 @@ class Resolution(unittest.TestCase):
         self.assertIn('data-live="queue"', html)
         self.assertIn('hi sam', html)
         self.assertIn('data-card="vault-hello"', html)
-        # A plugin's card is only there while its plugin is on.
-        self.assertIn('the canvas plugin is off', html)
+        # A scoop's card is only there while its scoop is on.
+        self.assertIn('the canvas scoop is off', html)
 
     def test_a_named_renderer_instead_of_a_frontend(self):
         vault_card('plain', '''
@@ -130,7 +130,7 @@ class Pages(unittest.TestCase):
             ''')
 
     def save(self, rows, pages):
-        settings.save({'plugins': {'dashboard': {'rows': rows, 'pages': pages}}})
+        settings.save({'scoops': {'dashboard': {'rows': rows, 'pages': pages}}})
 
     def test_a_page_draws_its_own_rows_and_the_front_page_does_not(self):
         self.save([{'cards': ['dashboard:pages']}],
@@ -209,21 +209,21 @@ class Actions(unittest.TestCase):
 
 
 class Pulls(unittest.TestCase):
-    def test_each_plugin_is_due_on_its_own_timer(self):
+    def test_each_scoop_is_due_on_its_own_timer(self):
         # upstream is on by default; off here so only the two timers under test exist.
-        settings.save({'plugins': {'calendar': {'enabled': True, 'poll_minutes': 15},
+        settings.save({'scoops': {'calendar': {'enabled': True, 'poll_minutes': 15},
                                    'github': {'enabled': True, 'poll_minutes': 60},
                                    'upstream': {'enabled': False}}})
         import datetime
         now = datetime.datetime(2026, 9, 29, 12, 0)
-        with open(plugins.PULLS, 'w') as fh:
+        with open(scoops.PULLS, 'w') as fh:
             json.dump({'calendar': '2026-09-29T11:50:00', 'github': '2026-09-29T11:50:00'}, fh)
-        self.assertEqual(plugins.due(now), [])
+        self.assertEqual(scoops.due(now), [])
         later = datetime.datetime(2026, 9, 29, 12, 6)
-        self.assertEqual(plugins.due(later), ['calendar'])
-        settings.save({'plugins': {'calendar': {'enabled': True, 'poll_minutes': 0},
+        self.assertEqual(scoops.due(later), ['calendar'])
+        settings.save({'scoops': {'calendar': {'enabled': True, 'poll_minutes': 0},
                                    'upstream': {'enabled': False}}})
-        self.assertEqual(plugins.due(later), [])         # 0: only by hand
+        self.assertEqual(scoops.due(later), [])         # 0: only by hand
 
 
 class QueueLock(unittest.TestCase):

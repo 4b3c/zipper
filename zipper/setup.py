@@ -87,11 +87,11 @@ def init_vault(path, owner='', zid='', git_name='', git_email='', backup='', sta
     subprocess.run(['git', '-C', path, 'add', '-A'], check=True)
     subprocess.run(['git', '-C', path, 'commit', '-q', '-m', 'A new vault'], check=False)
     if backup:
-        from . import plugins as _plugins           # puts `plugins` on sys.path
-        from plugins import backup as _backup
+        from . import scoops as _scoops           # puts `scoops` on sys.path
+        from scoops import backup as _backup
         _backup.attach(backup, vault=path)
         if record_backup:
-            _plugins.settings.put('plugins.backup.enabled', True)
+            _scoops.settings.put('scoops.backup.enabled', True)
     return written
 
 
@@ -190,9 +190,9 @@ def _backup_default():
 
 SETUP_DIR = os.path.join(ROOT, 'template', 'setup')
 HOME_TEMPLATE = os.path.join(ROOT, 'template', 'home')
-# The guide's order. Plugins not named here follow, alphabetically.
+# The guide's order. Scoops not named here follow, alphabetically.
 FIRST = ('about', 'notes')
-PLUGIN_ORDER = ('discord', 'dashboard', 'backup', 'github', 'calendar', 'canvas', 'hours', 'gmail', 'passes',
+SCOOP_ORDER = ('discord', 'dashboard', 'backup', 'github', 'calendar', 'canvas', 'hours', 'gmail', 'passes',
                 'digest', 'upstream', 'peers', 'host')
 LAST = ('finish',)
 GUIDE_OPEN, GUIDE_CLOSE = '<!-- setup -->', '<!-- /setup -->'
@@ -203,7 +203,7 @@ def _block(name, text):
 
 
 def guide(subs):
-    """The setup guide: the intro, then one removable block per step and per plugin."""
+    """The setup guide: the intro, then one removable block per step and per scoop."""
     def read(p):
         with open(p, encoding='utf-8') as fh:
             t = fh.read()
@@ -213,9 +213,9 @@ def guide(subs):
     out = GUIDE_OPEN + '\n' + read(os.path.join(SETUP_DIR, 'intro.md')) + '\n'
     for n in FIRST:
         out += _block(n, read(os.path.join(SETUP_DIR, n + '.md')))
-    pdir = os.path.join(ROOT, 'plugins')
+    pdir = os.path.join(ROOT, 'scoops')
     have = sorted(n for n in os.listdir(pdir) if os.path.exists(os.path.join(pdir, n, 'SETUP.md')))
-    for n in [x for x in PLUGIN_ORDER if x in have] + [x for x in have if x not in PLUGIN_ORDER]:
+    for n in [x for x in SCOOP_ORDER if x in have] + [x for x in have if x not in SCOOP_ORDER]:
         out += _block(n, read(os.path.join(pdir, n, 'SETUP.md')))
     for n in LAST:
         out += _block(n, read(os.path.join(SETUP_DIR, n + '.md')))
@@ -326,7 +326,7 @@ def init_home(home, owner='', zid='zipper-0', starter=False, addr='127.0.0.1', p
                    'id': zid, 'owner': owner,
                    'code': {'repo': '4b3c/Zipper', 'branch': 'main'},
                    'timezone': host_timezone(),
-                   'plugins': {'backup': {'enabled': True}}})
+                   'scoops': {'backup': {'enabled': True}}})
     return home
 
 

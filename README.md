@@ -9,7 +9,7 @@ happened disagree.
 markdown files in git — reached through a web dashboard with terminals in it. That's the
 whole requirement: a Claude account and a folder. It runs in a container.
 
-**Everything else is a plugin** you switch on: Discord; reading GitHub, calendars, Canvas or a
+**Everything else is a scoop** you switch on: Discord; reading GitHub, calendars, Canvas or a
 timesheet; twice-daily bookkeeping passes; an evening digest (which needs Discord); backups;
 messages between zippers. Several people can each run their own zipper on one machine, all on the same
 code, and every change to that code is a pull request, approved by a person or, where the
@@ -18,12 +18,12 @@ operator maintains the repository, by testing it.
 ## What it does
 
 - **Keeps notes current.** Push code, submit an assignment, move a meeting, and the notes that
-  mention it get updated. Plugins bring the news; Claude decides what it means.
+  mention it get updated. Scoops bring the news; Claude decides what it means.
 - **Tells you when a note is wrong.** A project called active that nobody has touched in 45
   days, work you did but never wrote down, a review date that passed.
 - **Answers from your notes.** "What did I decide about X?", "what am I behind on?"
 - **Handles small admin.** "Worked 1:30 to 9:30" becomes a timesheet row.
-- **Shows your day** on a dashboard of cards you choose — built in, from a plugin, or written
+- **Shows your day** on a dashboard of cards you choose — built in, from a scoop, or written
   in your own vault.
 - **Stays yours.** This repository is only code; your notes and everything personal stay in
   your vault, and secrets stay out of both.
@@ -36,11 +36,11 @@ operator maintains the repository, by testing it.
   Discord ── bot/ ──► zipper.serve (relay) ──► a Claude conversation per thread
                            │                          │ reads, argues, edits
                            │                          ▼
-  plugins/, each on its    ├─ the queue ◀── git ── the vault (markdown in git)
+  scoops/, each on its    ├─ the queue ◀── git ── the vault (markdown in git)
   own timer: GitHub,       │   (Inbox/feed.json,       notes · settings.json
   calendars, Canvas,  ─────┘    Meta/Queue.md)         Dashboard/ (your cards)
   hours, passes, digest…   │
-                           └─ the dashboard plugin: rows of cards (owns no data)
+                           └─ the dashboard scoop: rows of cards (owns no data)
 ```
 
 **The division of labour is the design.** The engine writes what's verifiable: a push date,
@@ -70,7 +70,7 @@ layout (Projects, Areas, Topics, People, Tasks, a schema, a few query pages); it
 starting point, not a contract.
 
 **Viewing and syncing are optional and outside the system.** Any editor reads markdown.
-Obsidian is a good viewer, and the starter's query pages use its Dataview plugin. Getting the
+Obsidian is a good viewer, and the starter's query pages use its Dataview scoop. Getting the
 folder onto other devices — CouchDB with LiveSync, iCloud, Syncthing — is up to the owner;
 nothing here depends on it.
 
@@ -114,7 +114,7 @@ python3 -m zipper <command>          # --help lists everything
 
 | Command | Does |
 |---|---|
-| `pull [plugin…] [--due]` | Pull plugins — named, due by their own timers, or all — then sync, agenda, status, views and the brief. Each plugin also pulls on its own `poll_minutes` |
+| `pull [scoop…] [--due]` | Pull scoops — named, due by their own timers, or all — then sync, agenda, status, views and the brief. Each scoop also pulls on its own `poll_minutes` |
 | `brief` | Re-render the brief without pulling |
 | `commit "<msg>" [--force]` | Ends a pass: ticks the queue, commits the notes, fails if the tree is dirty after |
 | `github [--full]` | Repos + commits → `last_push`, `commits_*`, `last_touched`, `Meta/Repos.md` |
@@ -135,12 +135,12 @@ python3 -m zipper <command>          # --help lists everything
 | `ghapp` / `ext` | The bot's GitHub identity / build and sign the extension |
 | `lint` | Validate all frontmatter. **Run before finishing** |
 | `init <path>` / `setup done\|remaining` | Make a whole zipper (vault with a setup guide, config, backup, compose) / work through the guide |
-| `plugin list\|info\|enable\|disable` | Which plugins are on |
+| `scoop list\|info\|enable\|disable` | Which scoops are on |
 | `settings get\|set\|check\|migrate` / `secret NAME` | The vault's `settings.json` / put a secret in `.env` through a one-time page |
 | `run` / `restart [--when-idle]` | Supervise the relay, bot, dashboard and timers (containers) / reload the code without cutting a turn off |
 | `code start\|review\|propose\|prs` / `update` | Change the shared code as a PR: a tester agent tests it and, if it approves, it merges and restarts (`review`), or a person reviews it (`propose`) / take merged changes, rolling back if they break |
-| `msg <zipper> "text" [--file F]` / `host <verb>` | Message another zipper, files attached (peers plugin) / ask the host daemon (host plugin) |
-| `topic list\|show\|run\|add\|rm` | Standing jobs for Claude: on a timer, a fresh session reads a topic's condensed context, works, and rewrites it (topics plugin) |
+| `msg <zipper> "text" [--file F]` / `host <verb>` | Message another zipper, files attached (peers scoop) / ask the host daemon (host scoop) |
+| `topic list\|show\|run\|add\|rm` | Standing jobs for Claude: on a timer, a fresh session reads a topic's condensed context, works, and rewrites it (topics scoop) |
 
 ---
 
@@ -194,13 +194,13 @@ python3 -m zipper.serve --port 8800 [--host ADDR] [--daemon] [--open]
 ```
 
 The dashboard is rows of cards, listed in the vault's `settings.json` under
-`plugins.dashboard.rows`. A card comes from one of three places:
+`scoops.dashboard.rows`. A card comes from one of three places:
 
 - **Built in** (`dashboard:<name>`): the queue, Claude (every conversation in its own
   terminal), the week and the day as a time grid, the Zipper panel (metrics, plan usage,
-  the machine), sources (how old each plugin's data is, with a refresh button each), and a
+  the machine), sources (how old each scoop's data is, with a refresh button each), and a
   to-do card for the checkboxes in any markdown file.
-- **Brought by a plugin** (`<plugin>:<name>`), while it is on — e.g. `canvas:week`, with
+- **Brought by a scoop** (`<scoop>:<name>`), while it is on — e.g. `canvas:week`, with
   its own refresh button.
 - **Written in the vault** (`vault:<name>`): `Dashboard/<name>/backend.py`, and optionally
   `frontend.py`. This is where a card built on one person's notes lives, never in this
@@ -213,7 +213,7 @@ in its frame, and a card slower than four seconds is skipped for a minute. See
 `template/vault/Dashboard/README.md` and the `recent` example a new vault starts with.
 
 **It owns no data** — every panel reads what the engine wrote. **It never fetches on
-launch** — each plugin pulls on its own timer — and sources publish over SSE as they land. **Looking is
+launch** — each scoop pulls on its own timer — and sources publish over SSE as they land. **Looking is
 free**: no Claude session starts until you press a button. Details: `zipper/README.md`.
 
 ## Discord
@@ -257,7 +257,7 @@ goes on `127.0.0.1` (`--local` forces that).
 
 Open the dashboard, open a terminal in it, log in to Claude when it asks, and say **"set me
 up"**. Everything from there happens in that browser: Claude walks through who you are,
-what your notes are for, and each plugin -- Discord among them, all optional -- and removes
+what your notes are for, and each scoop -- Discord among them, all optional -- and removes
 each part of its setup guide as it is done, until only the everyday rules are left.
 
 The zipper's folder holds all of it:
@@ -276,7 +276,7 @@ into `.env` and Claude only learns that it was saved (`--tty` asks in a terminal
 
 **Several people on one machine:** one `init` per person, each with its own `--id`, or
 `compose.example.yml` for all of them in one file. Zippers on a shared Docker network can
-message each other through the peers plugin (port 8898, `/api/msg` only).
+message each other through the peers scoop (port 8898, `/api/msg` only).
 
 **Without Docker:** `pip install -r requirements.txt` (plus git, tmux, ttyd and `claude`),
 then `zipper run` — or the systemd units in `deploy/`.

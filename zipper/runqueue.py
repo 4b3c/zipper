@@ -18,7 +18,7 @@ handled while the project it names keeps stalling. They are reported, never
 queued.
 
 `cmd_brief` renders all three into `Meta/Queue.md` -- the brief for a
-bookkeeping pass; `cmd_pull` pulls the plugins that are due and ends by calling it. The
+bookkeeping pass; `cmd_pull` pulls the scoops that are due and ends by calling it. The
 reading in between is not a command and cannot be one. `cmd_commit` ends the
 pass by ticking the rows and committing the notes.
 """
@@ -29,7 +29,7 @@ from . import core
 from .events import resolve_events
 from .metrics import _ledger_update
 from . import ics, status, sync, views
-from . import plugins as inputs
+from . import scoops as inputs
 
 
 QUEUE_JSON = os.path.join(INBOX, 'queue.json')
@@ -252,13 +252,13 @@ def flags(evrecs=None):
 # ------------------------------------------------------------------ bookkeep
 
 def cmd_pull(a):
-    """Pull plugins -- named ones, the ones whose timer is due (`--due`), or all
+    """Pull scoops -- named ones, the ones whose timer is due (`--due`), or all
     that pull -- then regenerate everything derived from them and the brief.
 
-    There is no global fetch any more: every plugin that polls has its own timer
-    (`plugins.<name>.poll_minutes`), and `zipper run` or a systemd timer calls
+    There is no global fetch any more: every scoop that polls has its own timer
+    (`scoops.<name>.poll_minutes`), and `zipper run` or a systemd timer calls
     `zipper pull --due` every few minutes. A bookkeeping pass does the same first,
-    so the brief it reads is never staler than the plugins' own intervals.
+    so the brief it reads is never staler than the scoops' own intervals.
     """
     from . import serve
     serve.feed_load()
@@ -282,8 +282,8 @@ def cmd_pull(a):
 
 
 def cmd_fetch(a):
-    """The old whole-refresh command: now every pulling plugin, then the brief."""
-    print('note: `fetch` is `zipper pull` now -- plugins also pull on their own timers.\n')
+    """The old whole-refresh command: now every pulling scoop, then the brief."""
+    print('note: `fetch` is `zipper pull` now -- scoops also pull on their own timers.\n')
     a.names, a.due = [], False
     return cmd_pull(a)
 
@@ -314,7 +314,7 @@ def cmd_brief(a):
     resolve = inputs.target_resolver()
     rows = [classify(r, resolve) for r in open_rows()]
     changes = note_changes()
-    guides = sorted({n for n in map(inputs.row_plugin, rows) if n and inputs.has_guide(n)})
+    guides = sorted({n for n in map(inputs.row_scoop, rows) if n and inputs.has_guide(n)})
     q = {'generated': datetime.datetime.now().isoformat(timespec='seconds'),
          'events': rows, 'notes_uncommitted': changes, 'guides': guides,
          'tasks_dropped': dropped, 'tasks_renamed': renamed, 'flags': fl}
@@ -371,11 +371,11 @@ def _write_brief(q):
             continue
         clears = 'commit' if sysname == 'vault' else 'tick'
         L += ['', '### %s  <sub>clears by %s</sub>' % (SYSTEM_LABEL[sysname], clears), '']
-        # Only the guides this pass needs: a plugin with no rows costs no reading.
+        # Only the guides this pass needs: a scoop with no rows costs no reading.
         have = set(q.get('guides') or ())
-        need = sorted({inputs.row_plugin(e) for e in rows} & have)
+        need = sorted({inputs.row_scoop(e) for e in rows} & have)
         if need:
-            L += ['*Read first: %s*' % ' · '.join('`zipper plugin guide %s`' % n for n in need), '']
+            L += ['*Read first: %s*' % ' · '.join('`zipper scoop guide %s`' % n for n in need), '']
         L += [_ev_line(e) for e in rows]
     L.append('')
 

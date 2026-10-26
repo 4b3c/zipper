@@ -62,7 +62,7 @@ def _canvas_age():
     digest says so, because a list that quietly includes work they finished this
     afternoon is how they got handed back homework they had already done.
     """
-    from . import plugins as inputs
+    from . import scoops as inputs
     cv = inputs.get('canvas')
     if not cv:
         return ''
@@ -99,13 +99,13 @@ def _done_days(key):
 
 
 def _habits(today):
-    """One line per key in `plugins.digest.daily`: done today or not, and the streak.
+    """One line per key in `scoops.digest.daily`: done today or not, and the streak.
 
     Unlike the rest of the digest this is about *tonight*, not tomorrow: 19:00
     is still early enough to do it, which is the reason it comes first. A streak
     that is still alive counts through yesterday, so the line says what is at
     stake instead of reading zero all evening."""
-    keys = settings.get('plugins.digest.daily') or []
+    keys = settings.get('scoops.digest.daily') or []
     if not keys:
         return []
     out = ['Daily:']

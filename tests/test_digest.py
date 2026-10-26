@@ -26,7 +26,7 @@ class Habits(unittest.TestCase):
         self.csv = os.path.join(TMP, 'metrics.csv')
         self._orig = core.METCSV
         core.METCSV = self.csv
-        json.dump({'plugins': {'digest': {'daily': ['leetcode']}}},
+        json.dump({'scoops': {'digest': {'daily': ['leetcode']}}},
                   open(os.environ['ZIPPER_SETTINGS'], 'w'))
 
     def tearDown(self):

@@ -73,8 +73,8 @@ class Login(unittest.TestCase):
 class Nginx(unittest.TestCase):
     def conf(self, public=None):
         from zipper import settings
-        settings.put('plugins.dashboard.enabled', True)
-        settings.put('plugins.dashboard.public_url', public or '')
+        settings.put('scoops.dashboard.enabled', True)
+        settings.put('scoops.dashboard.public_url', public or '')
         env = dict(os.environ, ZIPPER_TERM_CRED='abe:pw', PYTHONPATH=ROOT)
         src = open(os.path.join(ROOT, 'docker', 'nginx.py')).read()
         src = src.replace("sys.path.insert(0, '/zipper/code')", '').replace(
@@ -100,7 +100,7 @@ class Nginx(unittest.TestCase):
         conf = subprocess.run([sys.executable, '-c', src], env=env, capture_output=True,
                               text=True, cwd=TMP).stdout
         if 'listen' not in conf:
-            self.skipTest('dashboard plugin off in this environment')
+            self.skipTest('dashboard scoop off in this environment')
         self.assertIn('satisfy any;', conf)
         self.assertIn('absolute_redirect off;', conf)
         # ttyd checks the same credential; nginx answers it for a cookie session

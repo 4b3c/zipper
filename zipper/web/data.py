@@ -313,7 +313,7 @@ def override_key(it):
     return 'task:%s|%s' % (str(it['tag'] or '').split('|')[0], it['title'])
 
 def generated(p):
-    """A Tasks/ file a plugin writes (`generated: <plugin>` in its frontmatter). Its
+    """A Tasks/ file a scoop writes (`generated: <scoop>` in its frontmatter). Its
     source owns the checkboxes, so nothing here may tick, untick or delete them."""
     try:
         head = open(p, encoding='utf-8').read(600)

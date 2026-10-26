@@ -22,7 +22,7 @@ from . import core
 
 PROMPT = """This is a scheduled bookkeeping pass, started by a timer, with nobody watching.
 
-The plugins have just pulled. The brief has %(events)d open event(s), %(notes)d \
+The scoops have just pulled. The brief has %(events)d open event(s), %(notes)d \
 uncommitted note(s) and %(flags)d flag(s).
 
 Do step 2 of a pass as the vault's CLAUDE.md describes: read Meta/Queue.md against the \
@@ -30,8 +30,8 @@ vault, work each row into the notes it affects, then `python3 -m zipper lint`, `
 `python3 -m zipper commit "<what changed>"`. Do not pass --force: if commit refuses because \
 another conversation is live, leave the tree uncommitted and say so.
 
-Where a section of the brief says *Read first: `zipper plugin guide <name>`*, run it \
-before working that section's rows: it is how that plugin's rows are worked, and the \
+Where a section of the brief says *Read first: `zipper scoop guide <name>`*, run it \
+before working that section's rows: it is how that scoop's rows are worked, and the \
 operator's own rules for them. Skip guides for sections with no rows.
 
 Some things are the operator's to decide, not yours: a status that is a judgment about \

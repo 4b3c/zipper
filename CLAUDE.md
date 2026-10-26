@@ -26,17 +26,17 @@ Dependencies are allowed where they earn their place; `requirements.txt` lists t
 | `zipper/cli.py` | The whole command surface |
 | `zipper/lint.py` `sync.py` `status.py` | Validation, evidence, the snapshot |
 | `zipper/ics.py` `events.py` | Calendars, recurrence, event notes |
-| `zipper/plugins.py` | The plugin loader and registry. See `zipper/README.md` § Plugins |
-| `plugins/<name>/` | One plugin each: `plugin.json` (manifest) and `__init__.py` (code, imported only when enabled) |
-| `zipper/writer.py` | The only place plugin facts enter frontmatter. Facts only; `last_touched` forward only |
-| `zipper/gh.py` `canvas.py` `hours.py` | What the plugins wrap: fetching and storage |
+| `zipper/scoops.py` | The scoop loader and registry. See `zipper/README.md` § Scoops |
+| `scoops/<name>/` | One scoop each: `scoop.json` (manifest) and `__init__.py` (code, imported only when enabled) |
+| `zipper/writer.py` | The only place scoop facts enter frontmatter. Facts only; `last_touched` forward only |
+| `zipper/gh.py` `canvas.py` `hours.py` | What the scoops wrap: fetching and storage |
 | `zipper/metrics.py` | The numbers |
 | `zipper/runqueue.py` `views.py` | The queue, the saved queries |
 | `zipper/chat.py` | The Discord CLI |
 | `zipper/conversations.py` | Front door over `convcore.py` (identity, registry), `convhead.py` (headless Discord conversations), `ttyd.py` (a ttyd per pane), `convstate.py` (liveness, reaper) |
 | `zipper/serve.py` + `zipper/web/` | The dashboard. `serve.py` is the entry point |
-| `zipper/web/cards.py` | The card framework: resolving `dashboard:`/`<plugin>:`/`vault:` cards, isolation, actions, the `ui` kit |
-| `plugins/dashboard/cards/`, `plugins/<name>/cards/` | Built-in cards, and cards a plugin brings |
+| `zipper/web/cards.py` | The card framework: resolving `dashboard:`/`<scoop>:`/`vault:` cards, isolation, actions, the `ui` kit |
+| `scoops/dashboard/cards/`, `scoops/<name>/cards/` | Built-in cards, and cards a scoop brings |
 | `zipper/web/home.py` | `/`: the page frame and the built-in panels (week, day, queue, Claude, zipper) that cards wrap |
 | `zipper/web/render.py` | The `/views`, `/tasks` and `/canvas` pages, and helpers `home.py` shares |
 | `zipper/web/js.py` `css.py` | `TERM_JS`/`TERM_CSS` drive the Claude card; the rest styles the list pages |
@@ -46,7 +46,7 @@ Dependencies are allowed where they earn their place; `requirements.txt` lists t
 | `zipper/hostd.py` `host.py` | The host daemon (root, on the host) and its client |
 | `docker/` | The image, entrypoint and nginx generator; `compose.example.yml` runs several |
 | `template/vault/` `template/starter/` | What every new vault gets; an optional suggested layout |
-| `template/setup/`, `plugins/*/SETUP.md` | The setup guide `zipper init` puts on top of a new vault's CLAUDE.md, one removable section each |
+| `template/setup/`, `scoops/*/SETUP.md` | The setup guide `zipper init` puts on top of a new vault's CLAUDE.md, one removable section each |
 | `template/home/` | A new zipper's compose file and its `./zipper` command |
 | `zipper/secret.py` | `zipper secret NAME`: a one-time page, so a secret never passes through a chat |
 | `bin/zipper` | Run the CLI from a checkout without installing: `./bin/zipper init ~/zipper` |

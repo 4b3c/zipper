@@ -2,11 +2,11 @@
 
 The dashboard is rows of cards, and a card comes from one of three places:
 
-    dashboard:<name>   built in       plugins/dashboard/cards/<name>.py
-    <plugin>:<name>    a plugin's     plugins/<plugin>/cards/<name>.py (only while it is on)
+    dashboard:<name>   built in       scoops/dashboard/cards/<name>.py
+    <scoop>:<name>    a scoop's     scoops/<scoop>/cards/<name>.py (only while it is on)
     vault:<name>       the owner's    <vault>/Dashboard/<name>/backend.py (+ frontend.py)
 
-**Which cards, and where, is the settings file** -- `plugins.dashboard.rows` in the
+**Which cards, and where, is the settings file** -- `scoops.dashboard.rows` in the
 vault's settings.json:
 
     "rows": [
@@ -16,7 +16,7 @@ vault's settings.json:
                   "options": {"file": "Dashboard/setup.md"}}]}
     ]
 
-**Pages.** `plugins.dashboard.pages` adds more boards beside the front page, each at
+**Pages.** `scoops.dashboard.pages` adds more boards beside the front page, each at
 `/p/<key>` with its own rows, drawn by the same machinery:
 
     "pages": [{"key": "money", "title": "money", "about": "cash against the bills",
@@ -53,7 +53,7 @@ vault card can hurt is the vault's owner.
 import concurrent.futures, datetime, hashlib, html, importlib, importlib.util, json, os
 import sys, time, traceback
 
-from .. import core, plugins, settings
+from .. import core, scoops, settings
 
 LIMIT = 4.0
 _POOL = concurrent.futures.ThreadPoolExecutor(max_workers=8, thread_name_prefix='card')
@@ -113,9 +113,9 @@ class Card:
                 if os.path.exists(fp):
                     self.frontend = _load_file(fp).render
             return
-        if self.source != 'dashboard' and not plugins.is_enabled(self.source):
-            raise RuntimeError('the %s plugin is off' % self.source)
-        self.backend = importlib.import_module('plugins.%s.cards.%s' % (self.source, self.name))
+        if self.source != 'dashboard' and not scoops.is_enabled(self.source):
+            raise RuntimeError('the %s scoop is off' % self.source)
+        self.backend = importlib.import_module('scoops.%s.cards.%s' % (self.source, self.name))
         if self.entry.get('frontend'):
             self.frontend = _renderer(self.entry['frontend'])
 
@@ -216,9 +216,9 @@ def _load_file(path):
 
 
 def _renderer(ref):
-    """'dashboard:list' -> plugins.dashboard.renderers.list"""
+    """'dashboard:list' -> scoops.dashboard.renderers.list"""
     src, _, name = ref.partition(':')
-    mod = importlib.import_module('plugins.%s.renderers' % src)
+    mod = importlib.import_module('scoops.%s.renderers' % src)
     return getattr(mod, name)
 
 
@@ -233,7 +233,7 @@ def pages():
     """The extra boards: [{'key', 'title', 'about', 'rows'}] in settings order. A
     page without a usable key is skipped, and so is a second page with the same key."""
     out, keys = [], set()
-    for p in settings.get('plugins.dashboard.pages') or []:
+    for p in settings.get('scoops.dashboard.pages') or []:
         key = str(p.get('key') or '').strip('/') if isinstance(p, dict) else ''
         if not key or key in keys or '/' in key:
             continue
@@ -249,7 +249,7 @@ def page_of(key):
 
 def _spec(page):
     if not page:
-        return settings.get('plugins.dashboard.rows') or DEFAULT_ROWS
+        return settings.get('scoops.dashboard.rows') or DEFAULT_ROWS
     p = page_of(page)
     return p['rows'] if p else []
 

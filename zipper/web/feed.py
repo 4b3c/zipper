@@ -8,7 +8,7 @@ lines, which meant no part of it could be read without loading all of it.
 """
 from .base import *
 from .base import core, conversations, events, metrics, usage
-from .. import plugins as inputs
+from .. import scoops as inputs
 from .data import flags
 
 
@@ -51,7 +51,7 @@ import contextlib, fcntl
 def feed_txn():
     """One read-modify-write of the queue, safe across processes.
 
-    Every plugin pulls on its own timer and a card's refresh button pulls from
+    Every scoop pulls on its own timer and a card's refresh button pulls from
     inside this server, so two processes can add rows at the same moment. An
     in-process lock cannot see the other one, and whichever saved last would
     silently drop the other's rows. So: take a file lock, re-read the file, change
@@ -186,8 +186,8 @@ def publish(kind, text='', **extra):
                    'system': extra.get('system', 'other'),
                    'action': extra.get('action', ''),
                    'clears': 'tick'}
-            # `plugin`: which guide the brief points at (zipper.plugins.guide).
-            for f in ('who', 'when', 'target', 'plugin'):
+            # `scoop`: which guide the brief points at (zipper.scoops.guide).
+            for f in ('who', 'when', 'target', 'scoop'):
                 if extra.get(f):
                     row[f] = extra[f]
             FEED.append(row)
@@ -272,8 +272,8 @@ def emit_diff(before, after):
     return len(evs)
 
 def do_refresh(names=None):
-    """Pull plugins from inside the server: one (a card's refresh button) or every
-    one that pulls. Each goes through `plugins.pull`, the same path as its timer,
+    """Pull scoops from inside the server: one (a card's refresh button) or every
+    one that pulls. Each goes through `scoops.pull`, the same path as its timer,
     so rows land the same way whoever asked. They run concurrently: a Canvas feed
     alone can take seconds, and GitHub has no reason to queue behind it."""
     with LOCK:

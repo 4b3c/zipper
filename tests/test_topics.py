@@ -14,7 +14,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from zipper import settings                                         # noqa: E402
-from plugins import topics                                          # noqa: E402
+from scoops import topics                                          # noqa: E402
 
 # A stand-in for `claude -p`: rewrites context.md when the prompt asks, and answers
 # with whatever FAKE_RESULT says.
@@ -39,8 +39,8 @@ def ns(**kw):
 class Topics(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp(dir=TMP)
-        settings.put('plugins.topics.dir', self.dir)
-        settings.put('plugins.topics.topics', {})
+        settings.put('scoops.topics.dir', self.dir)
+        settings.put('scoops.topics.topics', {})
         bindir = os.path.join(self.dir, 'bin')
         os.makedirs(bindir)
         fake = os.path.join(bindir, 'claude')
@@ -60,9 +60,9 @@ class Topics(unittest.TestCase):
 
     def test_add_schedules_and_scaffolds(self):
         self.add(gate='test -e ready')
-        self.assertEqual(topics.jobs(settings.get('plugins.topics')), [('topic run t', 'every:15')])
+        self.assertEqual(topics.jobs(settings.get('scoops.topics')), [('topic run t', 'every:15')])
         self.assertTrue(os.path.exists(os.path.join(self.dir, 't', 'purpose.md')))
-        self.assertEqual(settings.get('plugins.topics.topics.t.gate'), 'test -e ready')
+        self.assertEqual(settings.get('scoops.topics.topics.t.gate'), 'test -e ready')
 
     def test_closed_gate_runs_nothing(self):
         self.add(gate='test -e ready')
@@ -90,7 +90,7 @@ class Topics(unittest.TestCase):
         self.assertIn(os.path.join(self.dir, 't', 'context.md'), p)
 
     def test_channel_finds_its_topic(self):
-        settings.put('plugins.topics.topics', {'t': {'every': 15, 'channel': '111'},
+        settings.put('scoops.topics.topics', {'t': {'every': 15, 'channel': '111'},
                                                'u': {'every': 15}})
         self.assertEqual(topics.channel_topic(111), 't')
         self.assertEqual(topics.channel_topic('111'), 't')
@@ -128,7 +128,7 @@ class Topics(unittest.TestCase):
     def test_add_needs_a_way_to_run(self):
         self.assertEqual(topics.cmd_topic(ns(action='add')), 1)
         self.assertEqual(topics.cmd_topic(ns(action='add', wake_on=['studio'])), 0)
-        self.assertEqual(topics.jobs(settings.get('plugins.topics')), [])   # no timer
+        self.assertEqual(topics.jobs(settings.get('scoops.topics')), [])   # no timer
 
     def test_message_lands_in_the_prompt_once(self):
         self.add(wake_on=['studio'])
@@ -165,7 +165,7 @@ class Topics(unittest.TestCase):
             {'key': 'session', 'label': 'session', 'pct': 72.0, 'resets': '2999-01-01T07:20:00+00:00'},
             {'key': 'week', 'label': 'week', 'pct': 11.0}]}
         try:
-            settings.put('plugins.topics.max_usage', 70)
+            settings.put('scoops.topics.max_usage', 70)
             self.add(wake_on=['studio'])
             with open(topics._inbox('t'), 'w') as fh:
                 fh.write(json.dumps({'from': 'studio', 'text': 'x'}) + '\n')
@@ -173,30 +173,30 @@ class Topics(unittest.TestCase):
             run = topics._runs('t')[-1]
             self.assertIn('session 72.0%', run['skipped'])
             self.assertTrue(os.path.exists(topics._inbox('t')))     # waits for the reset
-            settings.put('plugins.topics.max_usage', 80)
+            settings.put('scoops.topics.max_usage', 80)
             topics.cmd_topic(ns())
             self.assertEqual(topics._runs('t')[-1]['messages'], 1)
         finally:
             usage.read = real
-            settings.put('plugins.topics.max_usage', 0)
+            settings.put('scoops.topics.max_usage', 0)
 
     def test_unreadable_usage_does_not_block(self):
         from zipper import usage
         real = usage.read
         usage.read = lambda force=False: {'error': 'no credentials', 'meters': []}
         try:
-            settings.put('plugins.topics.max_usage', 70)
+            settings.put('scoops.topics.max_usage', 70)
             self.add()
             topics.cmd_topic(ns())
             self.assertNotIn('skipped', topics._runs('t')[-1])
         finally:
             usage.read = real
-            settings.put('plugins.topics.max_usage', 0)
+            settings.put('scoops.topics.max_usage', 0)
 
     def test_stale_reading_stops_counting_at_its_reset(self):
         from zipper import usage
         real = usage.read
-        settings.put('plugins.topics.max_usage', 70)
+        settings.put('scoops.topics.max_usage', 70)
         try:
             for resets, blocks in (('2026-10-01T10:00:00+00:00', False),   # reset passed
                                    ('2999-01-01T00:00:00+00:00', True),    # still a floor
@@ -208,7 +208,7 @@ class Topics(unittest.TestCase):
             self.assertTrue(topics.over_limit())       # fresh, no reset time: believe it
         finally:
             usage.read = real
-            settings.put('plugins.topics.max_usage', 0)
+            settings.put('scoops.topics.max_usage', 0)
 
     def test_new_topic_waits_one_interval(self):
         from zipper import supervise
@@ -217,7 +217,7 @@ class Topics(unittest.TestCase):
         st = supervise._load_state()
         self.assertIn('topic run t', st)
         now = datetime.datetime.now()
-        jobs = topics.jobs(settings.get('plugins.topics'))
+        jobs = topics.jobs(settings.get('scoops.topics'))
         self.assertEqual(supervise.due(now, st, jobs), [])
         later = now + datetime.timedelta(minutes=16)
         self.assertEqual(supervise.due(later, st, jobs), [('topic run t', 'topic run t')])
@@ -235,42 +235,42 @@ class Topics(unittest.TestCase):
     def test_rm_keeps_folder(self):
         self.add()
         topics.cmd_topic(ns(action='rm'))
-        self.assertEqual(topics.jobs(settings.get('plugins.topics')), [])
+        self.assertEqual(topics.jobs(settings.get('scoops.topics')), [])
         self.assertTrue(os.path.isdir(os.path.join(self.dir, 't')))
 
     def test_channel_is_its_own(self):
-        settings.put('plugins.discord.enabled', True)
+        settings.put('scoops.discord.enabled', True)
         settings.put('discord.channel', '100')
         try:
             self.assertEqual(topics.cmd_topic(ns(action='add', every=15)), 1)     # none given
             self.assertEqual(topics.cmd_topic(ns(action='add', every=15, channel='100')), 1)  # main
             self.assertEqual(topics.cmd_topic(ns(action='add', every=15, channel='abc')), 1)
             self.add(channel='200')
-            self.assertEqual(settings.get('plugins.topics.topics.t.channel'), '200')
+            self.assertEqual(settings.get('scoops.topics.topics.t.channel'), '200')
             self.assertEqual(topics.cmd_topic(ns(action='add', name='u', every=15, channel='200')), 1)
             # An existing topic is updated without repeating it.
             self.add()
-            self.assertEqual(settings.get('plugins.topics.topics.t.channel'), '200')
+            self.assertEqual(settings.get('scoops.topics.topics.t.channel'), '200')
         finally:
-            settings.put('plugins.discord.enabled', False)
+            settings.put('scoops.discord.enabled', False)
             settings.put('discord.channel', '')
 
     def test_notify_posts_in_the_topics_channel(self):
-        from zipper import scheduled, conversations, plugins
+        from zipper import scheduled, conversations, scoops
         self.add(channel='200')
         seen = []
-        saved = (scheduled._open_thread, conversations.touch, plugins.is_enabled)
+        saved = (scheduled._open_thread, conversations.touch, scoops.is_enabled)
         scheduled._open_thread = lambda m, n, c=None: seen.append(c) or '1'
         conversations.touch = lambda *a, **k: None
-        plugins.is_enabled = lambda name, *a, **k: True
+        scoops.is_enabled = lambda name, *a, **k: True
         try:
             topics._tell('t', 'sid', 'hello')
         finally:
-            scheduled._open_thread, conversations.touch, plugins.is_enabled = saved
+            scheduled._open_thread, conversations.touch, scoops.is_enabled = saved
         self.assertEqual(seen, ['200'])
 
     def test_attach_lines_become_files_in_the_thread(self):
-        from zipper import scheduled, conversations, plugins, chat
+        from zipper import scheduled, conversations, scoops, chat
         self.assertEqual(topics._attachments('Done.\nATTACH: /a.mp4\nATTACH: /b.png'),
                          ('Done.', ['/a.mp4', '/b.png']))
         self.assertEqual(topics._attachments('ATTACH: here, mid-line'), ('', ['here, mid-line']))
@@ -278,15 +278,15 @@ class Topics(unittest.TestCase):
         f = os.path.join(self.dir, "cut.mp4")
         open(f, 'wb').write(b'x')
         sent = []
-        saved = (scheduled._open_thread, conversations.touch, plugins.is_enabled, chat.discord_send)
+        saved = (scheduled._open_thread, conversations.touch, scoops.is_enabled, chat.discord_send)
         scheduled._open_thread = lambda m, n, c=None: '9'
         conversations.touch = lambda *a, **k: None
-        plugins.is_enabled = lambda name, *a, **k: True
+        scoops.is_enabled = lambda name, *a, **k: True
         chat.discord_send = lambda m, file_path=None, thread_id=None: sent.append((m, file_path, thread_id)) or {'ok': True}
         try:
             topics._tell('t', 'sid', 'hello', [f, '/nope.mp4'])
         finally:
-            scheduled._open_thread, conversations.touch, plugins.is_enabled, chat.discord_send = saved
+            scheduled._open_thread, conversations.touch, scoops.is_enabled, chat.discord_send = saved
         self.assertEqual(sent[0], ('cut.mp4', f, '9'))
         self.assertIn('/nope.mp4: not found', sent[1][0])
 

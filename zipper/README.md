@@ -14,52 +14,52 @@ unset environment variable from the settings file when the package is imported, 
 before a key was added still sees it. **Anything reading config at call time goes through
 `cfg`.** `zipper settings show|get|set|check|migrate`.
 
-## Plugins
+## Scoops
 
 The core is the Discord relay, the Claude conversations, the vault and its queue, lint
-and commit. Everything else is a plugin: a folder in `plugins/` at the top of the
+and commit. Everything else is a scoop: a folder in `scoops/` at the top of the
 repository.
 
-    plugins/<name>/plugin.json    manifest: name, title, about, default settings,
+    scoops/<name>/scoop.json    manifest: name, title, about, default settings,
                                   secrets it needs, env variables its settings stand for
-    plugins/<name>/__init__.py    the code, imported only when the plugin is enabled
-    plugins/<name>/GUIDE.md       optional: how Claude works its rows, flags and data
+    scoops/<name>/__init__.py    the code, imported only when the scoop is enabled
+    scoops/<name>/GUIDE.md       optional: how Claude works its rows, flags and data
 
-**On means `plugins.<name>.enabled` in settings** (a manifest's `default_on` covers an
-absent key; only the dashboard has it). `zipper plugin list|info|enable|disable`.
-Commands that belong to a plugin refuse, with the line that turns it on, while it is
+**On means `scoops.<name>.enabled` in settings** (a manifest's `default_on` covers an
+absent key; only the dashboard has it). `zipper scoop list|info|enable|disable`.
+Commands that belong to a scoop refuse, with the line that turns it on, while it is
 off. With the dashboard off, the web process still runs: it is where the bot hands in
-Discord messages, and it serves only that relay and plugin posts.
+Discord messages, and it serves only that relay and scoop posts.
 
-A plugin provides whichever hooks it has data for (the full list is in
-`zipper/plugins.py`): `pull`, `receive` (`POST /api/inputs/<name>`), `fetched`,
+A scoop provides whichever hooks it has data for (the full list is in
+`zipper/scoops.py`): `pull`, `receive` (`POST /api/inputs/<name>`), `fetched`,
 `snapshot` + `events` (queue rows), `target`, `timeline` (event rows), `work` (work
-items), `facts` (through `zipper/writer.py`, the only thing that writes plugin facts
+items), `facts` (through `zipper/writer.py`, the only thing that writes scoop facts
 into frontmatter), `toggle`, `CALENDARS`, `flags`, `on_commit`, `jobs` (scheduled runs
 under `zipper run`).
 
 **Guides.** The code moves facts; `GUIDE.md` carries the judgment that goes with them, so
-a plugin brings and takes its instructions with it instead of growing every vault's
-CLAUDE.md. An owner adds their own rules in a vault note named by `plugins.<name>.guide`
-(every plugin accepts the key). `zipper plugin guide <name>` prints both. Queue rows carry
-the `plugin` that made them, and the brief puts *Read first: `zipper plugin guide <name>`*
+a scoop brings and takes its instructions with it instead of growing every vault's
+CLAUDE.md. An owner adds their own rules in a vault note named by `scoops.<name>.guide`
+(every scoop accepts the key). `zipper scoop guide <name>` prints both. Queue rows carry
+the `scoop` that made them, and the brief puts *Read first: `zipper scoop guide <name>`*
 under each section with rows, so a pass reads only the guides it needs. A guide is
 generic: anything naming a person, school or label belongs in the owner's note.
 
-**Callers go through the registry** (`plugins.timeline`, `plugins.work`,
-`plugins.toggle`), never a plugin's files: each dashboard card once read `canvas.json`
+**Callers go through the registry** (`scoops.timeline`, `scoops.work`,
+`scoops.toggle`), never a scoop's files: each dashboard card once read `canvas.json`
 itself, and a cross-off made in one place came back in the others.
 
 **The writer** applies only `last_push`, `commits_recent`, `commits_mine` and
 `last_touched`, moves `last_touched` only forward, and refuses (and logs) anything else —
-a plugin can never set `status`.
+a scoop can never set `status`.
 
-**Adding a plugin:** a folder with `plugin.json`, `__init__.py` (with `name`) and a
+**Adding a scoop:** a folder with `scoop.json`, `__init__.py` (with `name`) and a
 `SETUP.md` — the section the setup guide shows for it: what it is, and the exact commands.
 If it makes queue rows, a `GUIDE.md` saying how to work them. Its
-settings default in the manifest and appear under `plugins.<name>`; any the rest of the
+settings default in the manifest and appear under `scoops.<name>`; any the rest of the
 code reads as environment variables go in the manifest's `env` map. A newly enabled
-plugin's first snapshot is a baseline and emits no rows.
+scoop's first snapshot is a baseline and emits no rows.
 
 ## Feeds
 
@@ -71,7 +71,7 @@ plugin's first snapshot is a baseline and emits no rows.
 
     python3 -m zipper ingest-ics "https://calendar.google.com/calendar/ical/.../basic.ics" --label gcal
 
-A URL is remembered in `Inbox/calendars.json` and refetched whenever the calendar plugin pulls; a file goes
+A URL is remembered in `Inbox/calendars.json` and refetched whenever the calendar scoop pulls; a file goes
 stale. The secret URL grants read access to anyone holding it, so it lives only in `Inbox/`.
 
 **Budget** — `python3 -m zipper ingest-budget transactions.csv`. Column detection is
@@ -93,7 +93,7 @@ on course + normalized title *or* `plannable_id`, so it survives renames and the
 wholesale rewrites. `zipper canvas` lists the cross-offs, since they rest on the operator's
 word rather than Canvas.
 
-**The join lives in the Canvas plugin.** An ICS row learns whether its assignment is done
+**The join lives in the Canvas scoop.** An ICS row learns whether its assignment is done
 there (matching on date and normalized title, accepting the next day too, since Canvas
 files a 23:59 deadline on its own day and the feed often on the next).
 
@@ -104,18 +104,18 @@ files a 23:59 deadline on its own day and the feed often on the next).
 `--daemon` keeps it up with no tabs open; without it the last tab closing (after a 4s grace
 for reloads) stops the server. The service always runs `--daemon`.
 
-**No fetch at launch.** Each plugin pulls on its own timer (`zipper pull --due`), and every
-pass pulls what is due first; a plugin's card can pull just that plugin (`POST
-/api/pull/<plugin>`). The `sources` card shows each plugin's age — every data bug so far was
+**No fetch at launch.** Each scoop pulls on its own timer (`zipper pull --due`), and every
+pass pulls what is due first; a scoop's card can pull just that scoop (`POST
+/api/pull/<scoop>`). The `sources` card shows each scoop's age — every data bug so far was
 stale data shown as current.
 
-**The page is rows of cards** (`plugins.dashboard.rows` in the vault's settings). The
+**The page is rows of cards** (`scoops.dashboard.rows` in the vault's settings). The
 contract, the three sources and the isolation rules are in `zipper/web/cards.py`; the ones a
 new vault is given, and how to write one, are in `template/vault/Dashboard/README.md`. A card
 button posts to `/api/card/<id>/<action>`, which calls the card's `act_<action>(args, ctx)`.
-**More boards** sit at `/p/<key>`, one per entry in `plugins.dashboard.pages`, each with its
+**More boards** sit at `/p/<key>`, one per entry in `scoops.dashboard.pages`, each with its
 own rows; the `pages` card is the catalog that links them. A card id is unique across pages.
-With the dashboard plugin off, the web process serves only the Discord relay and plugin posts.
+With the dashboard scoop off, the web process serves only the Discord relay and scoop posts.
 
 ### Today
 
@@ -311,11 +311,11 @@ project in two threads at once; if that becomes a problem, the lock belongs in `
 ## Timers
 
 `zipper-fetch.timer` runs `zipper pull --due` every five minutes; under `zipper run` the
-supervisor does the same, plus each plugin's `jobs()`.
+supervisor does the same, plus each scoop's `jobs()`.
 
 ### The scheduled pass
 
-`zipper pass` runs at 09:00 and 21:00 (`zipper-pass.timer`, or the passes plugin under
+`zipper pass` runs at 09:00 and 21:00 (`zipper-pass.timer`, or the passes scoop under
 `zipper run`). It pulls what is due; if the brief is
 empty it stops. Otherwise a headless `claude -p` does the middle step of a pass and commits,
 and its final message starts `NOTIFY: yes` or `NOTIFY: no`. Only *yes* reaches Discord: a new
@@ -323,7 +323,7 @@ thread in the main channel, attached to the pass's session (`session_fixed` on t
 row), so replying there continues the conversation that did the work. An unparseable answer
 counts as *yes*. `--dry-run` never posts; `--force` runs on an empty brief.
 
-Under `zipper run` a pass also starts early when the queue holds `plugins.passes.queue_trigger`
+Under `zipper run` a pass also starts early when the queue holds `scoops.passes.queue_trigger`
 unticked rows (default 50; 0 is off), at most once per two hours after any pass, so one a
 live conversation kept from committing is not retried every tick. systemd timers have no
 trigger.
@@ -338,7 +338,7 @@ cannot sweep up edits a Discord conversation is in the middle of.
 week ahead. `zipper-digest.timer` runs it at 19:00; `--dry-run` prints it.
 
 - **Reads through `web/data.py`**, so it and *What to work on* never disagree.
-- **Daily habits come first.** Each metric key in `plugins.digest.daily` gets a line: done
+- **Daily habits come first.** Each metric key in `scoops.digest.daily` gets a line: done
   today or not, and the streak. A habit is a metric row above zero (`zipper metric leetcode 1`).
 - **Coursework and self-set tasks are counted separately** — different obligations, and a
   merged ranking pushes homework below the cut.

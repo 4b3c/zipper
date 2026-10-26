@@ -17,24 +17,24 @@ def _pass_cmd(a):
 
 def _mod(module, name):
     """Import on use: `run` and `setup` pull in more than a quick `lint` needs.
-    `module` is under zipper/ unless it starts with `plugins.`."""
+    `module` is under zipper/ unless it starts with `scoops.`."""
     def run(a):
         import importlib
-        from . import plugins      # puts the checkout on sys.path for `plugins.*`
-        path = module if module.startswith('plugins.') else 'zipper.' + module
+        from . import scoops      # puts the checkout on sys.path for `scoops.*`
+        path = module if module.startswith('scoops.') else 'zipper.' + module
         return getattr(importlib.import_module(path), name)(a)
     return run
 
 
-def _needs(plugins_, fn):
-    """A command that belongs to a plugin: refuse, with the line that turns it on,
-    while none of `plugins_` is enabled."""
-    names = (plugins_,) if isinstance(plugins_, str) else plugins_
+def _needs(scoops_, fn):
+    """A command that belongs to a scoop: refuse, with the line that turns it on,
+    while none of `scoops_` is enabled."""
+    names = (scoops_,) if isinstance(scoops_, str) else scoops_
 
     def run(a):
-        from . import plugins
-        if not any(plugins.is_enabled(n) for n in names):
-            print(plugins.require(names[0]))
+        from . import scoops
+        if not any(scoops.is_enabled(n) for n in names):
+            print(scoops.require(names[0]))
             return 1
         return fn(a)
     return run
@@ -45,7 +45,7 @@ def _setup(name):
 
 
 def _github_cmd(a):
-    from plugins import github
+    from scoops import github
     return github.cmd(a)
 
 
@@ -87,7 +87,7 @@ def main():
     s.add_argument('--backlog', action='store_true', help='with --sort: all old mail, holds ignored')
     s.add_argument('--dry-run', action='store_true', help='with --sort: count, move nothing')
     s.add_argument('--file', metavar='LABEL', help='move message <id> into LABEL, out of the inbox')
-    s.set_defaults(fn=_needs('gmail', _mod('plugins.gmail', 'cmd_gmail')))
+    s.set_defaults(fn=_needs('gmail', _mod('scoops.gmail', 'cmd_gmail')))
 
     s = sub.add_parser('hours', help='the timesheet ledger')
     hs = s.add_subparsers(dest='action')
@@ -120,11 +120,11 @@ def main():
     # A bookkeeping pass is fetch -> reasoning -> commit. Only the ends are
     # commands; the middle is an agent reading the brief against the vault, so
     # there is deliberately no `bookkeep` subcommand to imply otherwise.
-    s = sub.add_parser('pull', help='pull plugins (named, --due, or all), then write the brief')
+    s = sub.add_parser('pull', help='pull scoops (named, --due, or all), then write the brief')
     s.add_argument('names', nargs='*'); s.add_argument('--due', action='store_true',
-                   help='only plugins whose own timer has run out')
+                   help='only scoops whose own timer has run out')
     s.add_argument('--days', type=int, default=14); s.set_defaults(fn=runqueue.cmd_pull)
-    s = sub.add_parser('fetch', help='(old) every pulling plugin, then the brief')
+    s = sub.add_parser('fetch', help='(old) every pulling scoop, then the brief')
     s.add_argument('--days', type=int, default=14); s.set_defaults(fn=runqueue.cmd_fetch)
     s = sub.add_parser('brief', help='rewrite the brief without pulling anything')
     s.add_argument('--days', type=int, default=14); s.set_defaults(fn=runqueue.cmd_brief)
@@ -211,12 +211,14 @@ def main():
     g = ss.add_parser('done', help='remove a finished section; with none left, the guide')
     g.add_argument('section', nargs='?')
     s.set_defaults(fn=_setup('cmd_setup'))
-    s = sub.add_parser('plugin', help='list, describe, enable or disable plugins; print one\'s guide')
+    # `plugin` is the name from before 2026-10-25: old vaults' CLAUDE.md files still say it.
+    s = sub.add_parser('scoop', aliases=['plugin'],
+                       help='list, describe, enable or disable scoops; print one\'s guide')
     ps = s.add_subparsers(dest='action')
     ps.add_parser('list')
     for act in ('info', 'guide', 'enable', 'disable'):
         g = ps.add_parser(act); g.add_argument('name')
-    s.set_defaults(fn=_mod('plugins', 'cmd_plugin'))
+    s.set_defaults(fn=_mod('scoops', 'cmd_scoop'))
 
     s = sub.add_parser('run', help='supervise the dashboard, bot and schedule (containers)')
     s.add_argument('--no-schedule', action='store_true', help='run the services only')
@@ -231,10 +233,10 @@ def main():
 
     s = sub.add_parser('host', help='ask the host daemon: status, services, approved root commands')
     s.add_argument('verb'); s.add_argument('args', nargs=argparse.REMAINDER)
-    s.set_defaults(fn=_needs('host', _mod('plugins.host', 'cmd_host')))
+    s.set_defaults(fn=_needs('host', _mod('scoops.host', 'cmd_host')))
     s = sub.add_parser('hostd', help='the host daemon itself (as root, on the host)')
     s.add_argument('action', choices=['init', 'install', 'serve'])
-    s.set_defaults(fn=_mod('plugins.host.hostd', 'cmd_hostd'))
+    s.set_defaults(fn=_mod('scoops.host.hostd', 'cmd_hostd'))
 
     s = sub.add_parser('code', help='propose a change to the shared code as a pull request')
     cs = s.add_subparsers(dest='action', required=True)
@@ -258,7 +260,7 @@ def main():
     s = sub.add_parser('msg', help='send a message to another zipper')
     s.add_argument('peer'); s.add_argument('text')
     s.add_argument('--file', action='append', help='attach a file (repeatable; 40 MB together)')
-    s.set_defaults(fn=_needs('peers', _mod('plugins.peers', 'cmd_msg')))
+    s.set_defaults(fn=_needs('peers', _mod('scoops.peers', 'cmd_msg')))
 
     s = sub.add_parser('topic', help='standing jobs for Claude: fresh sessions that carry a condensed context')
     s.add_argument('action', choices=['list', 'show', 'run', 'add', 'rm', '_exec'])
@@ -272,7 +274,7 @@ def main():
     s.add_argument('--force', action='store_true', help='run: ignore the gate')
     s.add_argument('--wait', action='store_true', help='run: in the foreground, not detached')
     s.add_argument('--limit', type=int, default=5, help='show: how many runs')
-    s.set_defaults(fn=_needs('topics', _mod('plugins.topics', 'cmd_topic')))
+    s.set_defaults(fn=_needs('topics', _mod('scoops.topics', 'cmd_topic')))
 
     s = sub.add_parser('secret', help='put a secret into .env without it passing through a chat')
     s.add_argument('name'); s.add_argument('--check', action='store_true', help='say whether it is set')

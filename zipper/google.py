@@ -38,7 +38,7 @@ SHEETS = 'https://sheets.googleapis.com/v4/spreadsheets'
 # the queue, and a token that could send would let one message instruct the box
 # to forward others. Sending, when wanted, happens in a conversation.
 #
-# Folders (plugins/gmail/sort.py) need gmail.modify, and Google has no scope that
+# Folders (scoops/gmail/sort.py) need gmail.modify, and Google has no scope that
 # moves mail without also allowing send. So it is asked for only while folders are
 # configured -- the operator's choice, made knowing that -- and nothing here sends.
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets',
@@ -48,7 +48,7 @@ MODIFY = 'https://www.googleapis.com/auth/gmail.modify'
 
 def scopes():
     from . import settings
-    if settings.get('plugins.gmail.folders'):
+    if settings.get('scoops.gmail.folders'):
         return SCOPES[:1] + [MODIFY]
     return list(SCOPES)
 

@@ -18,10 +18,10 @@ os.environ.update(ZIPPER_SETTINGS=os.path.join(TMP, 'settings.json'),
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from zipper import plugins, settings, supervise, setup, runqueue   # noqa: E402
+from zipper import scoops, settings, supervise, setup, runqueue   # noqa: E402
 from zipper import presence, review                                # noqa: E402
-from plugins import backup, peers, upstream                        # noqa: E402
-from plugins.host import hostd                                     # noqa: E402
+from scoops import backup, peers, upstream                        # noqa: E402
+from scoops.host import hostd                                     # noqa: E402
 
 
 def tearDownModule():
@@ -279,8 +279,8 @@ class Settings(unittest.TestCase):
 
     def test_defaults_and_env(self):
         settings.put('ports.web', 9100)
-        settings.put('plugins.hours.sheet', 'abc')
-        settings.put('plugins.github.orgs', ['one', 'two'])
+        settings.put('scoops.hours.sheet', 'abc')
+        settings.put('scoops.github.orgs', ['one', 'two'])
         env = settings.env()
         self.assertEqual(env['ZIPPER_URL'], 'http://127.0.0.1:9100')
         self.assertEqual(env['ZIPPER_SHEET_ID'], 'abc')
@@ -288,9 +288,9 @@ class Settings(unittest.TestCase):
         self.assertEqual(settings.get('ports.bot'), 4200)
 
     def test_check_flags_mistakes(self):
-        settings.save({'ports': {'web': 'eighty'}, 'colour': 'blue', 'plugins': {'slak': {}}})
+        settings.save({'ports': {'web': 'eighty'}, 'colour': 'blue', 'scoops': {'slak': {}}})
         probs = ' '.join(settings.check())
-        for word in ('ports.web', 'colour', 'plugins.slak'):
+        for word in ('ports.web', 'colour', 'scoops.slak'):
             self.assertIn(word, probs)
 
     def test_old_layout_is_translated(self):
@@ -298,17 +298,17 @@ class Settings(unittest.TestCase):
                        'peers': {'zipper-1': 'http://z1:8898'}, 'host': {'socket': '/s'},
                        'code': {'repo': 'a/b', 'auto_update': False},
                        'schedule': {'fetch_minutes': 30, 'pass': ['08:00'], 'digest': '18:00'}})
-        self.assertTrue(settings.get('plugins.github.enabled'))
-        self.assertEqual(settings.get('plugins.github.user'), 'sam')
-        self.assertEqual(settings.get('plugins.peers.zippers'), {'zipper-1': 'http://z1:8898'})
-        self.assertEqual(settings.get('plugins.passes.times'), ['08:00'])
-        self.assertIs(settings.get('plugins.upstream.auto_update'), False)
+        self.assertTrue(settings.get('scoops.github.enabled'))
+        self.assertEqual(settings.get('scoops.github.user'), 'sam')
+        self.assertEqual(settings.get('scoops.peers.zippers'), {'zipper-1': 'http://z1:8898'})
+        self.assertEqual(settings.get('scoops.passes.times'), ['08:00'])
+        self.assertIs(settings.get('scoops.upstream.auto_update'), False)
         self.assertEqual(settings.get('code.repo'), 'a/b')
         self.assertIn('old layout', ' '.join(settings.check()))
         settings.migrate(os.path.join(TMP, 'no-such-env'))
         self.assertEqual(settings.check(), [])
         self.assertNotIn('inputs', settings.raw())
-        self.assertEqual(settings.get('plugins.github.user'), 'sam')
+        self.assertEqual(settings.get('scoops.github.user'), 'sam')
 
     def test_an_old_files_vault_key_still_locates_the_vault(self):
         settings.save({'vault': '/some/old/vault'})
@@ -330,19 +330,19 @@ class Settings(unittest.TestCase):
             del os.environ['ZIPPER_OWNER']
 
 
-class Plugins(unittest.TestCase):
+class Scoops(unittest.TestCase):
     def setUp(self):
         if os.path.exists(settings.PATH):
             os.remove(settings.PATH)
 
-    def test_every_manifest_is_valid_and_every_plugin_imports(self):
-        ms = plugins.manifests()
+    def test_every_manifest_is_valid_and_every_scoop_imports(self):
+        ms = scoops.manifests()
         self.assertIn('dashboard', ms)
         for name, m in ms.items():
             for key in ('name', 'title', 'about', 'defaults', 'secrets', 'env'):
                 self.assertIn(key, m, '%s: %s' % (name, key))
             self.assertEqual(m['name'], name)
-            mod = plugins.load(name)
+            mod = scoops.load(name)
             self.assertEqual(mod.name, name)
             for var, key in m['env'].items():
                 self.assertIn(key, m['defaults'], '%s: env %s -> %s' % (name, var, key))
@@ -350,53 +350,53 @@ class Plugins(unittest.TestCase):
     def test_only_the_dashboard_and_code_updates_are_on_by_default(self):
         # Code updates too: every zipper must hear about merged changes, or a fix
         # one zipper lands never reaches the others.
-        self.assertEqual(plugins.names(), ['dashboard', 'upstream'])
+        self.assertEqual(scoops.names(), ['dashboard', 'upstream'])
 
     def test_enable_and_disable(self):
-        cmd = plugins.cmd_plugin
+        cmd = scoops.cmd_scoop
 
         class A:
             action, name = 'enable', 'github'
         cmd(A)
-        self.assertTrue(plugins.is_enabled('github'))
-        self.assertIn('github', plugins.names())
+        self.assertTrue(scoops.is_enabled('github'))
+        self.assertIn('github', scoops.names())
         A.action = 'disable'
         cmd(A)
-        self.assertFalse(plugins.is_enabled('github'))
+        self.assertFalse(scoops.is_enabled('github'))
         A.name = 'dashboard'
         cmd(A)
         A.name = 'upstream'
         cmd(A)
-        self.assertEqual(plugins.names(), [])
+        self.assertEqual(scoops.names(), [])
 
-    def test_a_disabled_plugin_is_absent(self):
-        self.assertIsNone(plugins.get('github'))
-        self.assertIn('plugin enable github', plugins.require('github'))
+    def test_a_disabled_scoop_is_absent(self):
+        self.assertIsNone(scoops.get('github'))
+        self.assertIn('scoop enable github', scoops.require('github'))
 
     def test_the_digest_needs_discord(self):
         class A:
             action, name = 'enable', 'digest'
-        self.assertEqual(plugins.cmd_plugin(A), 1)            # refused: discord is off
-        self.assertFalse(plugins.is_enabled('digest'))
+        self.assertEqual(scoops.cmd_scoop(A), 1)            # refused: discord is off
+        self.assertFalse(scoops.is_enabled('digest'))
         A.name = 'discord'
-        plugins.cmd_plugin(A)
+        scoops.cmd_scoop(A)
         A.name = 'digest'
-        self.assertEqual(plugins.cmd_plugin(A), 0)
-        self.assertTrue(plugins.is_enabled('digest'))
+        self.assertEqual(scoops.cmd_scoop(A), 0)
+        self.assertTrue(scoops.is_enabled('digest'))
         A.action, A.name = 'disable', 'discord'
-        plugins.cmd_plugin(A)
-        self.assertFalse(plugins.is_enabled('digest'))         # off with it
+        scoops.cmd_scoop(A)
+        self.assertFalse(scoops.is_enabled('digest'))         # off with it
 
     def test_a_zipper_that_had_discord_keeps_it(self):
-        self.assertFalse(plugins.is_enabled('discord'))
+        self.assertFalse(scoops.is_enabled('discord'))
         settings.put('discord.channel', '123')
-        self.assertTrue(plugins.is_enabled('discord'))
-        settings.put('plugins.discord.enabled', False)
-        self.assertFalse(plugins.is_enabled('discord'))
+        self.assertTrue(scoops.is_enabled('discord'))
+        settings.put('scoops.discord.enabled', False)
+        self.assertFalse(scoops.is_enabled('discord'))
 
     def test_nothing_is_sent_with_discord_off(self):
         from zipper import chat
-        self.assertIn('plugin is off', chat.discord_send('hello')['error'])
+        self.assertIn('scoop is off', chat.discord_send('hello')['error'])
         self.assertEqual(chat.discord_history(), [])
 
 
@@ -489,10 +489,10 @@ class Backup(unittest.TestCase):
 
 
 class Setup(unittest.TestCase):
-    def test_every_plugin_has_a_setup_section_and_the_guide_has_them_all(self):
+    def test_every_scoop_has_a_setup_section_and_the_guide_has_them_all(self):
         g = setup.guide({'{{HOME}}': '/h', '{{ID}}': 'z', '{{CODE}}': '/c', '{{OWNER}}': 'Sam'})
         left = setup.remaining(g)
-        for name in plugins.manifests():
+        for name in scoops.manifests():
             self.assertIn(name, left)
         self.assertEqual(left[:3], ['about', 'notes', 'discord'])
         self.assertEqual(left[-1:], ['finish'])
@@ -522,17 +522,17 @@ class Setup(unittest.TestCase):
         with open(os.path.join(home, 'vault/settings.json'), encoding='utf-8') as fh:
             cfg = json.load(fh)
         self.assertEqual(cfg['id'], 'zipper-9')
-        self.assertTrue(cfg['plugins']['backup']['enabled'])
+        self.assertTrue(cfg['scoops']['backup']['enabled'])
         with self.assertRaises(RuntimeError):
             setup.init_home(home)
 
-    def test_the_guide_asks_about_the_notes_and_names_the_plugins_apart(self):
+    def test_the_guide_asks_about_the_notes_and_tells_scoops_from_claude_plugins(self):
         home = os.path.join(TMP, 'home-guide')
         setup.init_home(home, owner='Sam', zid='zipper-7')
         with open(os.path.join(home, 'vault/CLAUDE.md'), encoding='utf-8') as fh:
             text = fh.read()
         self.assertEqual(setup.remaining(text)[:2], ['about', 'notes'])
-        self.assertIn('Two things are called "plugins"', text)
+        self.assertIn("not *Claude Code's* plugins", text)
         with open(os.path.join(home, 'vault/settings.json'), encoding='utf-8') as fh:
             self.assertTrue(json.load(fh).get('timezone'))
 
@@ -683,7 +683,7 @@ class QueueRows(unittest.TestCase):
             upstream.SEEN = real
 
     def test_upstream_on_by_default(self):
-        self.assertTrue(plugins.manifests()['upstream'].get('default_on'))
+        self.assertTrue(scoops.manifests()['upstream'].get('default_on'))
 
 
 class Presence(unittest.TestCase):
@@ -999,10 +999,10 @@ class StatusMessage(unittest.TestCase):
 
 
 class Gmail(unittest.TestCase):
-    """plugins/gmail: metadata into rows, a baseline first, bodies only on demand."""
+    """scoops/gmail: metadata into rows, a baseline first, bodies only on demand."""
 
     def setUp(self):
-        from plugins import gmail
+        from scoops import gmail
         self.g = gmail
         self.saved = gmail.STATE
         gmail.STATE = os.path.join(TMP, 'gmail-%s.json' % self.id().rsplit('.', 1)[-1])

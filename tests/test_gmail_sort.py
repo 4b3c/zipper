@@ -1,4 +1,4 @@
-"""plugins/gmail/sort.py: folder rules over a fake Gmail, no network.
+"""scoops/gmail/sort.py: folder rules over a fake Gmail, no network.
 
     python3 -m unittest tests.test_gmail_sort -v
 """
@@ -13,9 +13,9 @@ os.environ.update(ZIPPER_SETTINGS=os.path.join(TMP, 'settings.json'),
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from zipper import google, settings     # noqa: E402
-from plugins.gmail import sort          # noqa: E402
+from scoops.gmail import sort          # noqa: E402
 
-RULES = {'plugins': {'gmail': {
+RULES = {'scoops': {'gmail': {
     'folders': [{'label': 'Login codes', 'query': 'CODE', 'always': True},
                 {'label': 'Promos', 'query': 'PROMO'},
                 {'label': 'Newsletters', 'query': 'NEWS'}],

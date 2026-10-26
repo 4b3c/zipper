@@ -7,8 +7,8 @@ status: living
 
 # Dashboard
 
-Live Dataview queries. `Meta/Status.md` is the generated, plugin-free equivalent — run
-`zipper status` if you'd rather not rely on the plugin.
+Live Dataview queries. `Meta/Status.md` is the generated, scoop-free equivalent — run
+`zipper status` if you'd rather not rely on the scoop.
 
 ## Today
 

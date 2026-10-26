@@ -66,7 +66,7 @@ def apply(facts, source=''):
 
 def apply_all():
     """Every enabled input's facts."""
-    from . import plugins as inputs
+    from . import scoops as inputs
     n = 0
     for i in inputs.enabled():
         if hasattr(i, 'facts'):
