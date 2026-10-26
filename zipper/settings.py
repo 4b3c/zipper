@@ -116,7 +116,10 @@ def manifests():
 
 def defaults():
     d = copy.deepcopy(DEFAULTS)
-    d['plugins'] = {n: dict({'enabled': bool(m.get('default_on'))}, **(m.get('defaults') or {}))
+    # `guide`: a vault note with the owner's own rules for this plugin's data, read
+    # after the plugin's GUIDE.md (zipper.plugins.guide). Every plugin can have one.
+    d['plugins'] = {n: dict({'enabled': bool(m.get('default_on')), 'guide': ''},
+                            **(m.get('defaults') or {}))
                     for n, m in manifests().items()}
     return d
 

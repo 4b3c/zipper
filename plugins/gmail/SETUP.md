@@ -2,7 +2,7 @@
 
 Puts every email they receive or send into the queue as one row: who, the subject, and the
 message id. Never the body. The pass reads a message when it needs to, with
-`zipper gmail read <id>`, and works out what it means for the notes. Ask whether they want
+`zipper gmail <id>`, and works out what it means for the notes. Ask whether they want
 it. It uses the same Google login as the timesheet, so first make sure
 `ZIPPER_GOOGLE_CLIENT_ID` and `_SECRET` are set, then:
 

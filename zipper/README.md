@@ -23,6 +23,7 @@ repository.
     plugins/<name>/plugin.json    manifest: name, title, about, default settings,
                                   secrets it needs, env variables its settings stand for
     plugins/<name>/__init__.py    the code, imported only when the plugin is enabled
+    plugins/<name>/GUIDE.md       optional: how Claude works its rows, flags and data
 
 **On means `plugins.<name>.enabled` in settings** (a manifest's `default_on` covers an
 absent key; only the dashboard has it). `zipper plugin list|info|enable|disable`.
@@ -37,6 +38,14 @@ items), `facts` (through `zipper/writer.py`, the only thing that writes plugin f
 into frontmatter), `toggle`, `CALENDARS`, `flags`, `on_commit`, `jobs` (scheduled runs
 under `zipper run`).
 
+**Guides.** The code moves facts; `GUIDE.md` carries the judgment that goes with them, so
+a plugin brings and takes its instructions with it instead of growing every vault's
+CLAUDE.md. An owner adds their own rules in a vault note named by `plugins.<name>.guide`
+(every plugin accepts the key). `zipper plugin guide <name>` prints both. Queue rows carry
+the `plugin` that made them, and the brief puts *Read first: `zipper plugin guide <name>`*
+under each section with rows, so a pass reads only the guides it needs. A guide is
+generic: anything naming a person, school or label belongs in the owner's note.
+
 **Callers go through the registry** (`plugins.timeline`, `plugins.work`,
 `plugins.toggle`), never a plugin's files: each dashboard card once read `canvas.json`
 itself, and a cross-off made in one place came back in the others.
@@ -46,7 +55,8 @@ itself, and a cross-off made in one place came back in the others.
 a plugin can never set `status`.
 
 **Adding a plugin:** a folder with `plugin.json`, `__init__.py` (with `name`) and a
-`SETUP.md` — the section the setup guide shows for it: what it is, and the exact commands. Its
+`SETUP.md` — the section the setup guide shows for it: what it is, and the exact commands.
+If it makes queue rows, a `GUIDE.md` saying how to work them. Its
 settings default in the manifest and appear under `plugins.<name>`; any the rest of the
 code reads as environment variables go in the manifest's `env` map. A newly enabled
 plugin's first snapshot is a baseline and emits no rows.

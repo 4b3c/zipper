@@ -37,6 +37,13 @@ A plugin's code provides whichever of these it has; callers check with hasattr.
     on_commit() -> str    run after `zipper commit`; a string is a warning to print
     jobs(settings) -> [(job, 'HH:MM')]  scheduled `zipper <job>` runs (zipper run)
 
+A plugin may also ship `GUIDE.md`: how Claude works its rows, flags and data. The code
+moves facts; the guide carries the judgment that goes with them, so it arrives and
+leaves with the plugin instead of living in every vault's CLAUDE.md. An owner adds
+their own rules in a vault note named by `plugins.<name>.guide`. `zipper plugin guide
+<name>` prints both, and the brief names it under each section that has rows, so a
+pass reads only the guides its rows need.
+
 Two row shapes, because the dashboard asks two different questions.
 
     event row   "what is on these days?" -- date, time, label, summary, loc, done,
@@ -267,7 +274,10 @@ def events(before, after):
         if not hasattr(i, 'events') or i.name not in before or i.name not in after:
             continue
         try:
-            out += i.events(before[i.name], after[i.name])
+            rows = i.events(before[i.name], after[i.name])
+            for r in rows:
+                r.setdefault('plugin', i.name)   # which guide the brief points at
+            out += rows
         except Exception as e:
             out.append({'system': 'error', 'action': 'edit',
                         'text': 'error       %s events: %s' % (i.name, e)})
@@ -394,6 +404,50 @@ def as_list(v):
     return v if isinstance(v, list) else core.as_list(v)
 
 
+# ---------------------------------------------------------------- guides
+
+def guide_files(name):
+    """[(label, path)] for what exists of the plugin's GUIDE.md and the owner's note.
+    A `guide` setting naming a missing note is listed anyway, with path None, so the
+    mistake is visible instead of the owner's rules silently not applying."""
+    out = []
+    own = os.path.join(DIR, name, 'GUIDE.md')
+    if os.path.isfile(own):
+        out.append(('plugin', own))
+    note = (settings.get('plugins.%s.guide' % name) or '').strip()
+    if note:
+        p = os.path.join(core.VAULT, note)
+        out.append((note, p if os.path.isfile(p) else None))
+    return out
+
+
+def has_guide(name):
+    return bool(guide_files(name))
+
+
+def row_plugin(row):
+    """The plugin a queue row came from. Rows written before rows carried `plugin`
+    fall back to their system, which matches the plugin for every source but `zipper`."""
+    return row.get('plugin') or (row.get('system') if row.get('system') in manifests() else None)
+
+
+def guide(name):
+    """The text `zipper plugin guide` prints, or None when the plugin has none."""
+    files = guide_files(name)
+    if not files:
+        return None
+    parts = []
+    for label, p in files:
+        if p is None:
+            parts.append('## %s\n\n(plugins.%s.guide names this note, and it does not exist)'
+                         % (label, name))
+            continue
+        text = core.read_note(p)[1].strip()          # a vault note's frontmatter is noise here
+        parts.append(text if label == 'plugin' else
+                     '## The owner\'s rules: %s\n\n%s' % (label, text))
+    return '\n\n---\n\n'.join(parts) + '\n'
+
+
 # ---------------------------------------------------------------- the command
 
 def cmd_plugin(a):
@@ -411,6 +465,13 @@ def cmd_plugin(a):
         print('plugin: no plugin named %r (have: %s)' % (name, ', '.join(ms)))
         return 1
     m = ms[name]
+    if action == 'guide':
+        text = guide(name)
+        if text is None:
+            print('plugin: %s has no guide -- work its rows from CLAUDE.md' % name)
+            return 1
+        sys.stdout.write(text)
+        return 0
     if action == 'info':
         print('%s -- %s' % (m.get('title', name), 'on' if is_enabled(name) else 'off'))
         print('  %s' % m.get('about', ''))
@@ -419,6 +480,9 @@ def cmd_plugin(a):
                   json.dumps(settings.get('plugins.%s.%s' % (name, k), v))))
         for sec in m.get('secrets') or []:
             print('  secret   %s  (%s)' % (sec, 'set' if core.cfg(sec) else 'not set'))
+        for label, p in guide_files(name):
+            print('  guide    %s%s' % ('GUIDE.md' if label == 'plugin' else label,
+                                       '' if p else '  (missing)'))
         return 0
     if action == 'enable':
         off = [r for r in m.get('requires') or [] if not is_enabled(r)]
