@@ -52,6 +52,20 @@ class Login(unittest.TestCase):
         self.assertFalse(login.check('', ''))
         self.assertFalse(login.valid('%s=:1:x' % login.COOKIE))
 
+    def test_cookie_is_secure_only_over_https(self):
+        # A Secure cookie set over plain http is dropped by the browser, and `zipper
+        # init` hands new zippers a plain-http address: Secure there is a login loop.
+        for c, secure in ((login.set_cookie(login.make()), False),
+                          (login.set_cookie(login.make(), secure=True), True),
+                          (login.set_cookie('', 0, secure=True), True)):
+            for flag in ('HttpOnly', 'SameSite=Lax', 'Path=/'):
+                self.assertIn(flag, c)
+            self.assertEqual('Secure' in c, secure, c)
+        self.assertTrue(login.over_https({'X-Forwarded-Proto': 'https'}))
+        self.assertTrue(login.over_https({'X-Forwarded-Proto': ' HTTPS '}))
+        self.assertFalse(login.over_https({'X-Forwarded-Proto': 'http'}))
+        self.assertFalse(login.over_https({}))
+
     def test_next_stays_on_this_site(self):
         self.assertEqual(login.safe_next('/views?x=1&y=2'), '/views?x=1&y=2')
         self.assertEqual(login.safe_next('/p/Café'), '/p/Caf%C3%A9')     # ASCII only in the header
@@ -68,6 +82,56 @@ class Login(unittest.TestCase):
                      'autocomplete="current-password"', 'value="/views"'):
             self.assertIn(attr, page)
         self.assertNotIn('<script', login.page('"><script>alert(1)</script>'))
+
+
+class Server(unittest.TestCase):
+    """The real dashboard server: what a browser is handed after signing in."""
+    def test_sign_in_sets_secure_only_over_https(self):
+        import socket, time, urllib.error, urllib.request
+        with socket.socket() as sk:
+            sk.bind(('127.0.0.1', 0))
+            port = sk.getsockname()[1]
+        vault = os.path.join(TMP, 'srv-vault')
+        os.makedirs(vault, exist_ok=True)
+        subprocess.run(['git', 'init', '-q', vault], check=True)
+        env = dict(os.environ, ZIPPER_VAULT=vault, PYTHONPATH=ROOT)
+        cred('abe:hunter2')
+        p = subprocess.Popen([sys.executable, '-m', 'zipper.serve', '--host', '127.0.0.1',
+                              '--port', str(port)], cwd=ROOT, env=env,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(p.wait)
+        self.addCleanup(p.terminate)
+
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *a, **k):
+                return None
+        opener = urllib.request.build_opener(NoRedirect)
+
+        def sign_in(headers):
+            req = urllib.request.Request('http://127.0.0.1:%d/login' % port, method='POST',
+                                         data=b'username=abe&password=hunter2&next=/',
+                                         headers=headers)
+            try:
+                opener.open(req, timeout=5)
+            except urllib.error.HTTPError as e:
+                return e.code, e.headers.get('Set-Cookie') or ''
+            self.fail('sign-in did not redirect')
+
+        for _ in range(50):
+            try:
+                urllib.request.urlopen('http://127.0.0.1:%d/login' % port, timeout=1)
+                break
+            except OSError:
+                time.sleep(0.2)
+        else:
+            self.fail('dashboard did not start')
+        code, c = sign_in({})
+        self.assertEqual(code, 303)
+        self.assertIn(login.COOKIE + '=abe:', c)
+        self.assertNotIn('Secure', c)            # plain http: the browser must keep it
+        code, c = sign_in({'X-Forwarded-Proto': 'https'})
+        self.assertEqual(code, 303)
+        self.assertIn('Secure', c)
 
 
 class Nginx(unittest.TestCase):

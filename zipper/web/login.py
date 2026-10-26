@@ -80,8 +80,20 @@ def safe_next(target):
     return urllib.parse.quote(target, safe="/?&=#%:@!$'()*+,;~-._")
 
 
-def set_cookie(value, max_age=MAX_AGE):
-    return '%s=%s; Path=/; Max-Age=%d; HttpOnly; SameSite=Lax' % (COOKIE, value, max_age)
+def over_https(headers):
+    """Did this request reach the browser's side over HTTPS? tailscale serve terminates
+    TLS and says so in X-Forwarded-Proto, which nginx passes through. `zipper init`
+    hands a new zipper a plain-http address, so HTTPS can't be assumed. A forged
+    header only makes the forger's own browser drop its cookie."""
+    return (headers.get('X-Forwarded-Proto') or '').strip().lower() == 'https'
+
+
+def set_cookie(value, max_age=MAX_AGE, secure=False):
+    """`secure` (from over_https) keeps the cookie off plain http from then on. It
+    can't be unconditional: a browser drops a Secure cookie set over plain http, so
+    a zipper reached that way would bounce back to the form after every sign-in."""
+    return '%s=%s; Path=/; Max-Age=%d; HttpOnly; %sSameSite=Lax' % (
+        COOKIE, value, max_age, 'Secure; ' if secure else '')
 
 
 def page(nxt='/', error=''):

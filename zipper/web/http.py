@@ -112,7 +112,8 @@ class Handler(BaseHTTPRequestHandler):
             nxt = query.split('next=', 1)[1] if query.startswith('next=') else '/'
             self._send(200, login.page(nxt))
         elif path == '/logout':
-            self._redirect('/login', login.set_cookie('', 0))
+            self._redirect('/login', login.set_cookie(
+                '', 0, secure=login.over_https(self.headers)))
         else:
             return False
         return True
@@ -129,7 +130,8 @@ class Handler(BaseHTTPRequestHandler):
             if not ok:
                 time.sleep(1)
         if ok:
-            self._redirect(nxt, login.set_cookie(login.make()))
+            self._redirect(nxt, login.set_cookie(
+                login.make(), secure=login.over_https(self.headers)))
         else:
             self._send(401, login.page(nxt, 'Wrong username or password.'))
 
