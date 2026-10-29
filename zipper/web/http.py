@@ -19,7 +19,7 @@ from .feed import (SUBS, SUBS_LOCK, do_refresh, emit_diff, feed_load, feed_mark,
                    snapshot_data)
 from .render import _list_page, _views_page, views_blob
 from . import home, login
-from .. import convhead, stopturn, turnstatus
+from .. import claudelogin, convhead, stopturn, turnstatus
 
 
 # ---------------------------------------------------------------- http
@@ -521,6 +521,20 @@ class Handler(BaseHTTPRequestHandler):
                 # reply forwarding posts to -- so a message with no thread has
                 # nowhere to be answered. The bot opens one before posting here.
                 self._send(400, json.dumps({'error': 'no thread'}),
+                           'application/json')
+                return
+
+            # `/login` and the code it waits for never reach Claude: they are
+            # for when Claude is signed out and can answer nothing. Any thread
+            # will do, including one whose conversation is gone.
+            if claudelogin.is_login(text) or claudelogin.takes(tid, text):
+                if claudelogin.is_login(text):
+                    fn, args = claudelogin.start, (tid,)
+                else:
+                    fn, args = claudelogin.submit, (tid, text)
+                threading.Thread(target=fn, args=args, daemon=True).start()
+                publish('status', 'login       thread %s' % tid)
+                self._send(200, json.dumps({'ok': True, 'login': True}),
                            'application/json')
                 return
 

@@ -46,7 +46,7 @@ could start a second `claude` on the session a pane was already running, which
 put a reply in the wrong thread the same afternoon. `tests/headless.py` is the
 regression net.
 """
-import os, json, glob, time, fcntl, shutil, select, threading, subprocess, contextlib
+import os, re, json, glob, time, fcntl, shutil, select, threading, subprocess, contextlib
 
 from .core import *          # noqa: F401,F403 -- the shared vocabulary
 from . import convcore, extras
@@ -435,6 +435,9 @@ def _refused(thread_id, out):
     if 'limit' in reason.lower():
         msg = ('[Out of usage] %s\nYour message was not answered. '
                'Send it again after the reset.' % reason)
+    elif re.search(r'login|log in|auth|credential|401', reason, re.I):
+        msg = ('[Signed out] %s\nYour message was not answered. '
+               'Send /login to sign Claude back in, then send it again.' % reason)
     else:
         msg = '[Refused] %s\nYour message was not answered.' % reason
     chat.discord_send(msg, thread_id=thread_id)
