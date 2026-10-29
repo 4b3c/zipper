@@ -27,6 +27,12 @@ a message). A failed download adds a line saying so, so the session can ask for 
 Only the last 20 messages' files are kept. **`PrivateTmp` must stay off** on this service
 and `zipper-web`, or the path points at nothing.
 
+**`/login`** never reaches Claude, since it is for when Claude is signed out and every turn
+is refused. The server runs `claude auth login` under a pty (`zipper/claudelogin.py`), posts
+its sign-in link to the thread, and types the next one-word, code-shaped message in that
+thread into the process. One login at a time; a link lasts ten minutes. A refusal that
+looks like an expired login says to send `/login`.
+
 ## Status line
 
 Every 30 seconds the bot sets its Discord status from `zipper.presence` to one word:
