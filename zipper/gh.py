@@ -16,7 +16,9 @@ GH_USER = os.environ.get('ZIPPER_GH_USER', '')
 GH_ORGS = [o for o in os.environ.get('ZIPPER_GH_ORGS', '').split(',') if o.strip()]
 
 def _token():
-    t = os.environ.get('GITHUB_TOKEN') or os.environ.get('GH_TOKEN')
+    # `.env` first, like every other key: the container's environment is fixed when
+    # the container is made, so a token replaced in the file never reached it there.
+    t = core.cfg('GITHUB_TOKEN') or core.cfg('GH_TOKEN')
     if t:
         return t.strip()
     try:
