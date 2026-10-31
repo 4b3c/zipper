@@ -61,10 +61,11 @@ def _save(d):
 
 # ---------------------------------------------------------------- time format
 #
-# Their rule, verbatim: 24-hour for any period that crosses noon, 12-hour
-# otherwise. It exists because the Total column is a plain subtraction -- a
-# 10:00 to 2:00 span would come out negative -- and not because the sheet has
-# any opinion about clocks. So it is a *rendering* rule: the ledger always
+# Their rule: 24-hour for any period that crosses the 11am-to-1pm border,
+# 12-hour otherwise. It exists because the Total column is a plain subtraction
+# -- a 10:00 to 2:00 span, or 12:00 to 8:00, would come out negative -- and not
+# because the sheet has any opinion about clocks. So 12:00 to 20:00 is 24-hour
+# and 11:00 to 12:30 is not: what matters is whether the end reaches 1pm. So it is a *rendering* rule: the ledger always
 # stores 24-hour, and the shape is chosen only at the moment a row is written.
 
 def _hm(s):
@@ -80,7 +81,7 @@ def sheet_times(start, end):
     a, b = _hm(start), _hm(end)
     if a is None or b is None:
         return '', ''
-    crosses = a < 12 * 60 <= b
+    crosses = a < 13 * 60 <= b
     def f(mins):
         h, mi = divmod(mins, 60)
         if not crosses and h > 12:
