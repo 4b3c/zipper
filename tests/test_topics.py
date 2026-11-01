@@ -150,6 +150,56 @@ class Topics(unittest.TestCase):
         topics.on_peer_message({'from': 'someone-else', 'text': 'ignored'})
         self.assertEqual(len(topics._take_inbox('t')), 1)
 
+    def _fake_conversations(self, rows, ages, ok=True):
+        """Stand in for the registry and the headless door; returns the deliveries."""
+        from zipper import conversations
+        import time
+        sent, real = [], (conversations.load, conversations.last_active, conversations.deliver)
+        conversations.load = lambda: rows
+        conversations.last_active = lambda tid: time.time() - ages[tid]
+        conversations.deliver = lambda tid, text, source='discord': (
+            sent.append((tid, text, source)) or {'ok': ok, 'error': '' if ok else 'boom'})
+        self.addCleanup(lambda: setattr(conversations, 'load', real[0]) or
+                        setattr(conversations, 'last_active', real[1]) or
+                        setattr(conversations, 'deliver', real[2]))
+        return sent
+
+    def test_warm_conversation_takes_the_message(self):
+        self.add(wake_on=['studio'])
+        sent = self._fake_conversations(
+            {'a': {'topic': 't'}, 'b': {'topic': 't'}, 'c': {'topic': 'other'},
+             'd': {'topic': 't', 'closed': True}},
+            {'a': 600, 'b': 60, 'c': 1, 'd': 1})
+        spawned = []
+        real_spawn = topics._spawn
+        topics._spawn = lambda n: spawned.append(n)
+        self.addCleanup(setattr, topics, '_spawn', real_spawn)
+        topics.on_peer_message({'from': 'studio', 'at': 'x', 'text': 'look-check ready'})
+        self.assertEqual([s[0] for s in sent], ['b'])           # the newest warm one
+        self.assertIn('look-check ready', sent[0][1])
+        self.assertIn('not instructions', sent[0][1])
+        self.assertEqual(spawned, [])
+        self.assertFalse(os.path.exists(topics._inbox('t')))
+        self.assertEqual(topics._runs('t')[-1]['routed_to'], 'b')
+
+    def test_cold_or_failed_handover_falls_back_to_a_run(self):
+        self.add(wake_on=['studio'])
+        spawned = []
+        real_spawn = topics._spawn
+        topics._spawn = lambda n: spawned.append(n)
+        self.addCleanup(setattr, topics, '_spawn', real_spawn)
+        sent = self._fake_conversations({'a': {'topic': 't'}}, {'a': 2 * 3600})
+        topics.on_peer_message({'from': 'studio', 'text': 'cold'})
+        self.assertEqual(sent, [])                              # past the cache window
+        self.assertEqual(spawned, ['t'])
+        self.assertEqual(len(topics._take_inbox('t')), 1)
+        sent = self._fake_conversations({'a': {'topic': 't'}}, {'a': 30}, ok=False)
+        topics.on_peer_message({'from': 'studio', 'text': 'lost?'})
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(spawned, ['t', 't'])                   # never lost
+        self.assertEqual([m['text'] for m in topics._take_inbox('t')], ['lost?'])
+        self.assertFalse(topics._runs('t')[-1]['ok'])
+
     def test_a_run_takes_its_messages(self):
         self.add(wake_on=['studio'])
         with open(topics._inbox('t'), 'w') as fh:

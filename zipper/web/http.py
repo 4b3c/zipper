@@ -564,6 +564,9 @@ class Handler(BaseHTTPRequestHandler):
                 from .. import scoops
                 if scoops.is_enabled('topics'):
                     text = scoops.load('topics').conversation(body['topic'], text)
+                    # Remembered on the row, so a peer's message for this topic can
+                    # find the conversation while it is warm (topics: routed).
+                    conversations.touch(str(tid), topic=body['topic'])
             # The first message after a stop tells Claude its last turn was cut off.
             text = stopturn.take_note(tid) + text
             chat.discord_typing(True, tid)
