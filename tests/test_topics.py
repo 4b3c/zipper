@@ -164,7 +164,39 @@ class Topics(unittest.TestCase):
                         setattr(conversations, 'deliver', real[2]))
         return sent
 
+    def _inline_threads(self):
+        """The handover runs on a thread in production; here, at once, in order."""
+        import threading
+        real = topics.threading.Thread
+
+        class Now:
+            def __init__(self, target, args=(), daemon=None):
+                self.go = lambda: target(*args)
+
+            def start(self):
+                self.go()
+        topics.threading.Thread = Now
+        self.addCleanup(setattr, topics.threading, 'Thread', real)
+
+    def test_handover_does_not_hold_the_sender(self):
+        self.add(wake_on=['studio'])
+        import threading, time
+        gate = threading.Event()
+        self._fake_conversations({'a': {'topic': 't'}}, {'a': 30})
+        from zipper import conversations
+        conversations.deliver = lambda tid, text, source='discord': gate.wait(5) and {'ok': True}
+        t0 = time.time()
+        topics.on_peer_message({'from': 'studio', 'text': 'slow resume'})
+        self.assertLess(time.time() - t0, 1.0)                  # returned before the handover
+        gate.set()
+        for _ in range(50):
+            if topics._runs('t'):
+                break
+            time.sleep(0.05)
+        self.assertEqual(topics._runs('t')[-1]['routed_to'], 'a')
+
     def test_warm_conversation_takes_the_message(self):
+        self._inline_threads()
         self.add(wake_on=['studio'])
         sent = self._fake_conversations(
             {'a': {'topic': 't'}, 'b': {'topic': 't'}, 'c': {'topic': 'other'},
@@ -183,6 +215,7 @@ class Topics(unittest.TestCase):
         self.assertEqual(topics._runs('t')[-1]['routed_to'], 'b')
 
     def test_cold_or_failed_handover_falls_back_to_a_run(self):
+        self._inline_threads()
         self.add(wake_on=['studio'])
         spawned = []
         real_spawn = topics._spawn
