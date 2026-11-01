@@ -57,7 +57,7 @@ new conversation's first prompt carries the purpose and the context (`conversati
 It is not a run: nothing is locked or recorded, and the owner is watching. It updates
 context.md only for what the next run must know, and not while a run holds the lock.
 """
-import datetime, json, os, shutil, subprocess, sys, uuid
+import datetime, json, os, shutil, subprocess, sys, threading, uuid
 
 from zipper import core, settings
 
@@ -135,14 +135,26 @@ def on_peer_message(msg):
     for n, t in (settings.get('scoops.topics.topics') or {}).items():
         if msg.get('from') in (t.get('wake_on') or []):
             os.makedirs(_dir(n), exist_ok=True)
-            if _to_warm_conversation(n, msg):
+            tid = _warm_conversation(n)
+            if tid:
+                # Off the request: the sender (the studio) gives up after 20 s and
+                # retries, and resuming a conversation can take longer -- waiting
+                # here would turn one slow handover into the same report twice.
+                # The web server is long-lived, so the thread outlives the request.
+                threading.Thread(target=_route, args=(n, tid, msg), daemon=True).start()
                 continue
-            with open(_inbox(n), 'a', encoding='utf-8') as fh:
-                fh.write(json.dumps(msg) + '\n')
-            if _running(n):
-                open(_pending(n), 'w').close()
-            else:
-                _spawn(n)
+            _queue_for_run(n, msg)
+
+
+def _queue_for_run(n, msg):
+    """The inbox and a run: how a peer's message reaches a topic with nobody talking."""
+    os.makedirs(_dir(n), exist_ok=True)
+    with open(_inbox(n), 'a', encoding='utf-8') as fh:
+        fh.write(json.dumps(msg) + '\n')
+    if _running(n):
+        open(_pending(n), 'w').close()
+    else:
+        _spawn(n)
 
 
 ROUTED = """## A message for the topic "%(name)s"
@@ -179,24 +191,19 @@ def _warm_conversation(topic, now=None):
     return best
 
 
-def _to_warm_conversation(topic, msg):
+def _route(topic, tid, msg):
     """Hand a peer's message to a warm conversation about the topic, instead of a run.
 
     The owner is in that conversation and its context is cached; a fresh run would
     redo, from context.md, what the conversation already knows. Delivery goes through
     the same door as a Discord message (`deliver` writes the reply fingerprint, so the
     Stop hook posts the answer in the thread). A conversation mid-turn queues it.
-    False on no warm conversation or a failed handover: the caller falls back to a
-    run, so a message is never lost to this path.
+    A failed handover falls back to a run, so a message is never lost to this path.
     """
-    tid = _warm_conversation(topic)
-    if not tid:
-        return False
     from zipper import conversations
-    ctx_path = _context(topic)[0]
     text = ROUTED % {'name': topic, 'sender': msg.get('from', '?'), 'at': msg.get('at', '?'),
                      'text': (msg.get('text') or '').replace('\n', '\n  '),
-                     'context_path': ctx_path}
+                     'context_path': _context(topic)[0]}
     try:
         res = conversations.deliver(str(tid), text, 'peer')
     except Exception as e:                      # never lose the message to this path
@@ -204,7 +211,8 @@ def _to_warm_conversation(topic, msg):
     _record(topic, {'at': datetime.datetime.now().isoformat(timespec='seconds'),
                     'routed_to': str(tid), 'ok': bool(res.get('ok')),
                     'error': res.get('error') or ''})
-    return bool(res.get('ok'))
+    if not res.get('ok'):
+        _queue_for_run(topic, msg)
 
 
 def _spawn(topic):
