@@ -234,15 +234,29 @@ the terminal.
 
 
 def _hand_check(topic, tid, msgs):
-    """Give the timer's check to a warm conversation about the topic. The result of
-    `deliver`; a failure is returned, not raised, so the caller can run instead."""
-    from zipper import conversations
+    """Give the timer's check to a warm conversation about the topic: `{'ok': True}`
+    once the web server holds it, or why not, so the caller can run instead.
+
+    **Through the web server, never `conversations.deliver` here.** This runs in the
+    detached child, which exits when the run does; `deliver` returns once a message
+    is echoed or queued and leaves the turn to a thread in the calling process, so
+    from here a check queued behind a busy turn died with the child and was recorded
+    as delivered. The server is long-lived and is the door Discord messages and
+    review verdicts already use (`review.report`), so it owns the turn to the end.
+    """
+    import urllib.request
     text = CHECK % {'name': topic, 'context_path': _context(topic)[0],
                     'messages': _messages_block(msgs)}
+    url = (os.environ.get('ZIPPER_URL') or 'http://127.0.0.1:8800').rstrip('/') + '/discord'
+    req = urllib.request.Request(url, data=json.dumps(
+        {'discord_thread_id': str(tid), 'content': text, 'source': 'topic'}).encode(),
+        headers={'Content-Type': 'application/json'})
     try:
-        return conversations.deliver(str(tid), text, 'topic')
-    except Exception as e:
-        return {'ok': False, 'error': repr(e)}
+        with urllib.request.urlopen(req, timeout=300) as fh:
+            res = json.loads(fh.read() or b'{}')
+    except Exception as e:                      # a 503 (undelivered) lands here too
+        return {'ok': False, 'error': repr(e)[:400]}
+    return res if res.get('ok') else dict(res, ok=False, error=res.get('error') or 'refused')
 
 
 def _spawn(topic):

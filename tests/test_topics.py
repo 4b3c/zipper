@@ -373,18 +373,57 @@ class Topics(unittest.TestCase):
         self.assertEqual(sent[0], ('cut.mp4', f, '9'))
         self.assertIn('/nope.mp4: not found', sent[1][0])
 
-    def test_the_timers_check_goes_to_a_warm_conversation(self):
-        self.add()
-        os.environ['FAKE_RESULT'] = 'NOTIFY: yes\\nfresh run'
+    def _web(self, status=200, body=None):
+        """A stand-in web server on ZIPPER_URL; returns the posts it took."""
+        import http.server, threading
+        posts = []
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                n = int(self.headers.get('Content-Length', 0))
+                posts.append((self.path, json.loads(self.rfile.read(n))))
+                out = json.dumps(body if body is not None else {'ok': status == 200}).encode()
+                self.send_response(status)
+                self.send_header('Content-Length', str(len(out)))
+                self.end_headers()
+                self.wfile.write(out)
+
+            def log_message(self, *a):
+                pass
+        srv = http.server.ThreadingHTTPServer(('127.0.0.1', 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(srv.server_close)
+        self.addCleanup(srv.shutdown)
+        old = os.environ.get('ZIPPER_URL')
+        os.environ['ZIPPER_URL'] = 'http://127.0.0.1:%d' % srv.server_address[1]
+        self.addCleanup(lambda: os.environ.__setitem__('ZIPPER_URL', old) if old
+                        else os.environ.pop('ZIPPER_URL', None))
+        return posts
+
+    def _no_tell(self):
         told = []
         real_tell = topics._tell
         topics._tell = lambda *a, **k: told.append(a)
         self.addCleanup(setattr, topics, '_tell', real_tell)
-        sent = self._fake_conversations({'a': {'topic': 't'}, 'b': {'topic': 'other'}},
-                                        {'a': 120, 'b': 1})
+        return told
+
+    def test_the_timers_check_goes_to_a_warm_conversation(self):
+        self.add()
+        os.environ['FAKE_RESULT'] = 'NOTIFY: yes\\nfresh run'
+        told = self._no_tell()
+        # Never the in-process door: the run's child exits and would take the turn with it.
+        local = self._fake_conversations({'a': {'topic': 't'}, 'b': {'topic': 'other'}},
+                                         {'a': 120, 'b': 1})
+        posts = self._web(body={'ok': True, 'queued': True})   # busy: the server holds it
+        with open(topics._inbox('t'), 'w') as fh:
+            fh.write(json.dumps({'from': 'studio', 'text': 'draft ready'}) + '\n')
         self.assertEqual(topics.cmd_topic(ns()), 0)
-        self.assertEqual([s[0] for s in sent], ['a'])           # handed over, not run
-        self.assertIn('scheduled check', sent[0][1])
+        self.assertEqual(local, [])
+        self.assertEqual([p[0] for p in posts], ['/discord'])
+        sent = posts[0][1]
+        self.assertEqual(sent['discord_thread_id'], 'a')
+        self.assertIn('scheduled check', sent['content'])
+        self.assertIn('draft ready', sent['content'])           # the inbox goes with it
         self.assertEqual(told, [])                              # no new thread
         last = topics._runs('t')[-1]
         self.assertEqual(last['routed_to'], 'a')
@@ -394,20 +433,26 @@ class Topics(unittest.TestCase):
     def test_a_failed_check_handover_runs_instead(self):
         self.add()
         os.environ['FAKE_RESULT'] = 'NOTIFY: yes\\nfresh run'
-        told = []
-        real_tell = topics._tell
-        topics._tell = lambda *a, **k: told.append(a)
-        self.addCleanup(setattr, topics, '_tell', real_tell)
-        self._fake_conversations({'a': {'topic': 't'}}, {'a': 120}, ok=False)
+        told = self._no_tell()
+        self._fake_conversations({'a': {'topic': 't'}}, {'a': 120})
+        self._web(status=503, body={'ok': False, 'error': 'boom'})
+        with open(topics._inbox('t'), 'w') as fh:
+            fh.write(json.dumps({'from': 'studio', 'text': 'kept'}) + '\n')
         self.assertEqual(topics.cmd_topic(ns()), 0)
         last = topics._runs('t')[-1]
-        self.assertEqual(last['handover_error'], 'boom')
+        self.assertIn('503', last['handover_error'])
+        self.assertEqual(last['messages'], 1)                   # the run had the message
         self.assertTrue(last['context_updated'])
         self.assertEqual(len(told), 1)
+        os.environ['ZIPPER_URL'] = 'http://127.0.0.1:9'         # server down: a run too
+        self.assertEqual(topics.cmd_topic(ns()), 0)
+        self.assertIn('handover_error', topics._runs('t')[-1])
+        self.assertEqual(len(told), 2)
         self._fake_conversations({'a': {'topic': 't'}}, {'a': 2 * 3600})  # cold: plain run
         self.assertEqual(topics.cmd_topic(ns()), 0)
         self.assertNotIn('routed_to', topics._runs('t')[-1])
-        self.assertEqual(len(told), 2)
+        self.assertNotIn('handover_error', topics._runs('t')[-1])
+        self.assertEqual(len(told), 3)
 
     def test_a_notify_thread_is_about_the_topic(self):
         from zipper import scheduled, conversations, scoops
