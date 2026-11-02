@@ -373,6 +373,57 @@ class Topics(unittest.TestCase):
         self.assertEqual(sent[0], ('cut.mp4', f, '9'))
         self.assertIn('/nope.mp4: not found', sent[1][0])
 
+    def test_the_timers_check_goes_to_a_warm_conversation(self):
+        self.add()
+        os.environ['FAKE_RESULT'] = 'NOTIFY: yes\\nfresh run'
+        told = []
+        real_tell = topics._tell
+        topics._tell = lambda *a, **k: told.append(a)
+        self.addCleanup(setattr, topics, '_tell', real_tell)
+        sent = self._fake_conversations({'a': {'topic': 't'}, 'b': {'topic': 'other'}},
+                                        {'a': 120, 'b': 1})
+        self.assertEqual(topics.cmd_topic(ns()), 0)
+        self.assertEqual([s[0] for s in sent], ['a'])           # handed over, not run
+        self.assertIn('scheduled check', sent[0][1])
+        self.assertEqual(told, [])                              # no new thread
+        last = topics._runs('t')[-1]
+        self.assertEqual(last['routed_to'], 'a')
+        self.assertFalse(last['context_updated'])               # the fake claude never ran
+        self.assertFalse(os.path.exists(topics._lock('t')))
+
+    def test_a_failed_check_handover_runs_instead(self):
+        self.add()
+        os.environ['FAKE_RESULT'] = 'NOTIFY: yes\\nfresh run'
+        told = []
+        real_tell = topics._tell
+        topics._tell = lambda *a, **k: told.append(a)
+        self.addCleanup(setattr, topics, '_tell', real_tell)
+        self._fake_conversations({'a': {'topic': 't'}}, {'a': 120}, ok=False)
+        self.assertEqual(topics.cmd_topic(ns()), 0)
+        last = topics._runs('t')[-1]
+        self.assertEqual(last['handover_error'], 'boom')
+        self.assertTrue(last['context_updated'])
+        self.assertEqual(len(told), 1)
+        self._fake_conversations({'a': {'topic': 't'}}, {'a': 2 * 3600})  # cold: plain run
+        self.assertEqual(topics.cmd_topic(ns()), 0)
+        self.assertNotIn('routed_to', topics._runs('t')[-1])
+        self.assertEqual(len(told), 2)
+
+    def test_a_notify_thread_is_about_the_topic(self):
+        from zipper import scheduled, conversations, scoops
+        self.add(channel='200')
+        rows = []
+        saved = (scheduled._open_thread, conversations.touch, scoops.is_enabled)
+        scheduled._open_thread = lambda m, n, c=None: '7'
+        conversations.touch = lambda tid, **k: rows.append((tid, k))
+        scoops.is_enabled = lambda name, *a, **k: True
+        try:
+            topics._tell('t', 'sid', 'hello')
+        finally:
+            scheduled._open_thread, conversations.touch, scoops.is_enabled = saved
+        self.assertEqual(rows[0][0], '7')
+        self.assertEqual(rows[0][1]['topic'], 't')
+
 
 if __name__ == '__main__':
     unittest.main()
