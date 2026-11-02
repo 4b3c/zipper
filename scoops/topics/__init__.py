@@ -29,6 +29,10 @@ the topic in its channel and that conversation did something within the cache wi
 (IDLE_NOTICE), the message is delivered there, not to a run: the conversation already
 knows what a run would rebuild from context.md, and the answer lands where the owner
 is. A failed handover falls back to the run. runs.jsonl records it as `routed_to`.
+The timer's check does the same: with a warm conversation about the topic, the check
+is handed to it rather than run fresh in a new thread, so two conversations never
+review the same thing at once (the owner, 2026-11-01). A thread a run opened to
+notify is a conversation about the topic too: replying there is talking about it.
 
 **Usage has a ceiling.** With `scoops.topics.max_usage` set (a percentage), a run
 that would start while the plan's 5-hour session or 7-day window is at or over it is
@@ -213,6 +217,46 @@ def _route(topic, tid, msg):
                     'error': res.get('error') or ''})
     if not res.get('ok'):
         _queue_for_run(topic, msg)
+
+
+CHECK = """## The scheduled check of the topic "%(name)s"
+Its timer came due while you are talking with the owner about this topic, so the check \
+comes to you instead of a fresh run in a new thread (the owner asked for this, \
+2026-11-01: two conversations reviewing the same thing). Do what a run would do now, \
+per the purpose, and keep %(context_path)s current for the next run, condensed like the \
+rest.
+
+%(messages)sThen reply to the owner here: only what needs them, briefly; if nothing does, \
+one line saying so. No NOTIFY line. To send a file (8 MB at most), \
+`python3 -m zipper discord send "<one line>" --file <path>`; the reply itself stays in \
+the terminal.
+"""
+
+
+def _hand_check(topic, tid, msgs):
+    """Give the timer's check to a warm conversation about the topic: `{'ok': True}`
+    once the web server holds it, or why not, so the caller can run instead.
+
+    **Through the web server, never `conversations.deliver` here.** This runs in the
+    detached child, which exits when the run does; `deliver` returns once a message
+    is echoed or queued and leaves the turn to a thread in the calling process, so
+    from here a check queued behind a busy turn died with the child and was recorded
+    as delivered. The server is long-lived and is the door Discord messages and
+    review verdicts already use (`review.report`), so it owns the turn to the end.
+    """
+    import urllib.request
+    text = CHECK % {'name': topic, 'context_path': _context(topic)[0],
+                    'messages': _messages_block(msgs)}
+    url = (os.environ.get('ZIPPER_URL') or 'http://127.0.0.1:8800').rstrip('/') + '/discord'
+    req = urllib.request.Request(url, data=json.dumps(
+        {'discord_thread_id': str(tid), 'content': text, 'source': 'topic'}).encode(),
+        headers={'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=300) as fh:
+            res = json.loads(fh.read() or b'{}')
+    except Exception as e:                      # a 503 (undelivered) lands here too
+        return {'ok': False, 'error': repr(e)[:400]}
+    return res if res.get('ok') else dict(res, ok=False, error=res.get('error') or 'refused')
 
 
 def _spawn(topic):
@@ -431,22 +475,32 @@ def _exec(topic):
     rec = {'start': start.isoformat(timespec='seconds'), 'session': sid,
            'messages': len(msgs)}
     try:
-        claude = shutil.which('claude') or os.path.expanduser('~/.local/bin/claude')
-        mode = os.environ.get('ZIPPER_PERMISSION_MODE', 'auto')
-        argv = [claude, '-p', '--session-id', sid, '--permission-mode', mode,
-                '--output-format', 'json', prompt(topic, messages=msgs)]
-        if conf.get('model'):
-            argv[2:2] = ['--model', conf['model']]
-        r = subprocess.run(argv, cwd=d, env=scheduled._env(), capture_output=True, text=True,
-                           timeout=int(conf.get('timeout') or 30) * 60)
-        try:
-            result = json.loads(r.stdout).get('result', '') or ''
-        except ValueError:
-            raise RuntimeError('claude gave no result (exit %d): %s'
-                               % (r.returncode, (r.stderr or r.stdout)[-400:]))
-        notify, message = scheduled.parse(result)
-        message, files = _attachments(message)
-        rec.update(ok=True, notify=notify, message=message[:2000], files=files)
+        # Checked under the lock: a conversation can't be handed the check while a
+        # run is also doing it, and a message that lands now marks `pending`.
+        tid = _warm_conversation(topic)
+        res = _hand_check(topic, tid, msgs) if tid else None
+        if res and res.get('ok'):
+            notify, message = False, ''
+            rec.update(ok=True, notify=False, routed_to=str(tid))
+        else:
+            if res:
+                rec['handover_error'] = (res.get('error') or 'refused')[:400]
+            claude = shutil.which('claude') or os.path.expanduser('~/.local/bin/claude')
+            mode = os.environ.get('ZIPPER_PERMISSION_MODE', 'auto')
+            argv = [claude, '-p', '--session-id', sid, '--permission-mode', mode,
+                    '--output-format', 'json', prompt(topic, messages=msgs)]
+            if conf.get('model'):
+                argv[2:2] = ['--model', conf['model']]
+            r = subprocess.run(argv, cwd=d, env=scheduled._env(), capture_output=True, text=True,
+                               timeout=int(conf.get('timeout') or 30) * 60)
+            try:
+                result = json.loads(r.stdout).get('result', '') or ''
+            except ValueError:
+                raise RuntimeError('claude gave no result (exit %d): %s'
+                                   % (r.returncode, (r.stderr or r.stdout)[-400:]))
+            notify, message = scheduled.parse(result)
+            message, files = _attachments(message)
+            rec.update(ok=True, notify=notify, message=message[:2000], files=files)
     except subprocess.TimeoutExpired:
         notify, message = True, 'Topic %s ran out of time and was stopped.' % topic
         rec.update(ok=False, notify=True, message=message)
@@ -486,7 +540,9 @@ def _tell(topic, sid, message, files=()):
     title = 'Topic %s · %s' % (topic, datetime.datetime.now().strftime('%a %-I%p').lower().capitalize())
     try:
         tid = scheduled._open_thread(message, title, (_conf(topic) or {}).get('channel'))
-        conversations.touch(tid, title=title, session_id=sid, session_fixed=True)
+        # `topic` on the row: replying here is talking about the topic, so while the
+        # thread is warm the next check and a peer's message come here, not a new one.
+        conversations.touch(tid, title=title, session_id=sid, session_fixed=True, topic=topic)
     except Exception as e:
         print('topic %s: could not post to Discord: %s' % (topic, e))
         return
