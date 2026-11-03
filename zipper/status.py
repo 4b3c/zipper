@@ -89,7 +89,10 @@ def cmd_status(a):
     mentioned = {}
     for f in recent:
         for link in ANCHOR_RE.findall(open(f, encoding='utf-8').read()):
-            mentioned[link.strip()] = mentioned.get(link.strip(), 0) + 1
+            link = link.strip()
+            if DATE_RE.match(link):   # the log chain (sync.chain_logs), not attention
+                continue
+            mentioned[link] = mentioned.get(link, 0) + 1
     L += ['', '## Attention, last 14 days', '',
           '%d log entr%s.' % (len(recent), 'y' if len(recent) == 1 else 'ies'), '']
     for k, v in sorted(mentioned.items(), key=lambda x: -x[1])[:15]:

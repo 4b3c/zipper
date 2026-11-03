@@ -2,7 +2,7 @@
 
 Evidence -> dates. Reads Log/ backlinks; only ever moves them forward.
 """
-import os, datetime, glob
+import os, re, datetime, glob
 
 from .core import *          # noqa: F401,F403 -- the shared vocabulary
 from . import core
@@ -99,6 +99,7 @@ date: {date}
 - 
 
 ## Tomorrow
+- [[{tomorrow}]]
 - 
 """
 
@@ -109,8 +110,42 @@ def cmd_today(a):
     if not os.path.exists(p):
         dt = datetime.date(*[int(x) for x in day.split('-')])
         with open(p, 'w', encoding='utf-8') as fh:
-            fh.write(LOG_TEMPLATE.format(date=day, day=dt.strftime('%A')))
+            fh.write(LOG_TEMPLATE.format(date=day, day=dt.strftime('%A'),
+                                         tomorrow=dt + datetime.timedelta(days=1)))
         print('created %s' % rel(p))
+        chain_logs()
     else:
         print('exists  %s' % rel(p))
     return 0
+
+
+CHAIN_RE = re.compile(r'^## Tomorrow[ \t]*\n- \[\[(\d{4}-\d\d-\d\d)\]\]\n', re.M)
+
+def chain_logs():
+    """Point each log's first `## Tomorrow` line at the next log, so the days read
+    as one string in Obsidian. The newest points at the day after it, which
+    resolves once that log exists. Logs are skipped by `sync`'s writer, so these
+    links are never read as evidence of work. Returns the logs rewritten."""
+    logs = sorted(p for p in glob.glob(os.path.join(LOGDIR, '*.md'))
+                  if DATE_RE.match(title_of(p)))
+    n = 0
+    for i, p in enumerate(logs):
+        day = title_of(p)
+        nxt = (title_of(logs[i + 1]) if i + 1 < len(logs) else
+               (datetime.date.fromisoformat(day) + datetime.timedelta(days=1)).isoformat())
+        with open(p, encoding='utf-8') as fh:
+            text = fh.read()
+        m = CHAIN_RE.search(text)
+        if m and m.group(1) == nxt:
+            continue
+        if m:
+            new = text[:m.start(1)] + nxt + text[m.end(1):]
+        elif re.search(r'^## Tomorrow[ \t]*$', text, re.M):
+            new = re.sub(r'^## Tomorrow[ \t]*\n?', '## Tomorrow\n- [[%s]]\n' % nxt, text,
+                         count=1, flags=re.M)
+        else:
+            new = text.rstrip('\n') + '\n\n## Tomorrow\n- [[%s]]\n' % nxt
+        with open(p, 'w', encoding='utf-8') as fh:
+            fh.write(new)
+        n += 1
+    return n

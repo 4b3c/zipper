@@ -449,7 +449,6 @@ def cmd_commit(a):
     same claim, that everything in this pass has been looked at and its
     consequences written down.
     """
-    changes = note_changes()
     from . import serve
     live = live_others()
     if live and not getattr(a, 'force', False):
@@ -457,6 +456,9 @@ def cmd_commit(a):
               'sweep up their half-finished edits.' % len(live))
         print('  check with `python3 -m zipper conversations`, then re-run with --force')
         return 1
+    from .sync import chain_logs
+    chain_logs()   # before the diff, so a log made by hand joins the chain
+    changes = note_changes()
     serve.feed_load()
     marked = serve.feed_mark_all()['marked']
     paths = [c['path'] for c in changes]
