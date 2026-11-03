@@ -12,7 +12,8 @@ os.environ.update(ZIPPER_SETTINGS=os.path.join(TMP, 'settings.json'),
                   ZIPPER_VAULT=os.path.join(TMP, 'vault'))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from zipper import sync      # noqa: E402
+from zipper import sync, status, core      # noqa: E402
+import datetime                           # noqa: E402
 
 LOG = os.path.join(TMP, 'vault', 'Log')
 
@@ -55,6 +56,43 @@ class Chain(unittest.TestCase):
                          {'2026-09-04', '2026-09-05'})   # read as links...
         # ...but the writer only touches notes iter_notes() yields, and Log/ is skipped
         self.assertIn('Log', sync.core.SKIP_DIRS)
+
+    def test_heading_with_trailing_space_is_reused(self):
+        write('2026-09-03', '# a\n\n## Tomorrow \n- \n')
+        sync.chain_logs()
+        self.assertEqual(read('2026-09-03').count('## Tomorrow'), 1)
+        self.assertIn('## Tomorrow\n- [[2026-09-04]]\n', read('2026-09-03'))
+
+
+class Attention(unittest.TestCase):
+    """The chain must not crowd notes out of Status's attention tally."""
+
+    def setUp(self):
+        os.makedirs(LOG, exist_ok=True)
+        for f in os.listdir(LOG):
+            os.remove(os.path.join(LOG, f))
+
+    def attention(self):
+        status.cmd_status(None)
+        with open(os.path.join(core.METADIR, 'Status.md')) as fh:
+            text = fh.read()
+        return text.split('## Attention, last 14 days')[1].split('\n## ')[0]
+
+    def test_chain_links_are_not_attention(self):
+        for i in range(13):
+            day = (core.TODAY - datetime.timedelta(days=i)).isoformat()
+            write(day, '# d\n- [[Note%d]]\n' % i)
+        sync.chain_logs()
+        sec = self.attention()
+        self.assertNotRegex(sec, r'\[\[\d{4}-\d\d-\d\d\]\]')
+        for i in range(13):
+            self.assertIn('[[Note%d]]' % i, sec)
+
+    def test_chain_alone_still_reads_as_nothing_logged(self):
+        for i in range(3):
+            write((core.TODAY - datetime.timedelta(days=i)).isoformat(), '# d\n')
+        sync.chain_logs()
+        self.assertIn('Nothing logged', self.attention())
 
 
 if __name__ == '__main__':

@@ -119,7 +119,7 @@ def cmd_today(a):
     return 0
 
 
-CHAIN_RE = re.compile(r'^## Tomorrow\n- \[\[(\d{4}-\d\d-\d\d)\]\]\n', re.M)
+CHAIN_RE = re.compile(r'^## Tomorrow[ \t]*\n- \[\[(\d{4}-\d\d-\d\d)\]\]\n', re.M)
 
 def chain_logs():
     """Point each log's first `## Tomorrow` line at the next log, so the days read
@@ -140,8 +140,8 @@ def chain_logs():
             continue
         if m:
             new = text[:m.start(1)] + nxt + text[m.end(1):]
-        elif re.search(r'^## Tomorrow$', text, re.M):
-            new = re.sub(r'^## Tomorrow\n?', '## Tomorrow\n- [[%s]]\n' % nxt, text,
+        elif re.search(r'^## Tomorrow[ \t]*$', text, re.M):
+            new = re.sub(r'^## Tomorrow[ \t]*\n?', '## Tomorrow\n- [[%s]]\n' % nxt, text,
                          count=1, flags=re.M)
         else:
             new = text.rstrip('\n') + '\n\n## Tomorrow\n- [[%s]]\n' % nxt
