@@ -327,8 +327,10 @@ def cmd_brief(a):
     return 0
 
 SYSTEM_LABEL = {'github': 'GitHub', 'calendar': 'Calendar', 'canvas': 'Canvas', 'gmail': 'Gmail',
-                'vault': 'Vault', 'zipper': 'Zipper', 'error': 'Errors', 'other': 'Other'}
-SYSTEM_ORDER = ('github', 'canvas', 'calendar', 'gmail', 'zipper', 'vault', 'error', 'other')
+                'slack': 'Slack', 'vault': 'Vault', 'zipper': 'Zipper', 'error': 'Errors',
+                'other': 'Other'}
+SYSTEM_ORDER = ('github', 'canvas', 'calendar', 'gmail', 'slack', 'zipper', 'vault', 'error',
+                'other')
 
 
 def _ev_line(e):
