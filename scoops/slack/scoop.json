@@ -1,0 +1,13 @@
+{
+  "title": "Slack",
+  "about": "direct messages, mentions and watched channels, as queue rows: who, where and a pointer, never the text",
+  "defaults": {
+    "poll_minutes": 15,
+    "dms": true,
+    "mentions": true,
+    "channels": []
+  },
+  "secrets": ["SLACK_TOKENS", "SLACK_COOKIE"],
+  "env": {},
+  "name": "slack"
+}

@@ -89,6 +89,13 @@ def main():
     s.add_argument('--file', metavar='LABEL', help='move message <id> into LABEL, out of the inbox')
     s.set_defaults(fn=_needs('gmail', _mod('scoops.gmail', 'cmd_gmail')))
 
+    s = sub.add_parser('slack', help='recent Slack messages the queue saw, or read one')
+    s.add_argument('id', nargs='?', help='a message id from a queue row (#<channel>-<ts>)')
+    s.add_argument('--limit', type=int, default=15)
+    s.add_argument('--channels', action='store_true',
+                   help='the channels the tokens can see, with the ids scoops.slack.channels takes')
+    s.set_defaults(fn=_needs('slack', _mod('scoops.slack', 'cmd_slack')))
+
     s = sub.add_parser('hours', help='the timesheet ledger')
     hs = s.add_subparsers(dest='action')
     s.set_defaults(fn=_needs('hours', hours.cmd_hours))
