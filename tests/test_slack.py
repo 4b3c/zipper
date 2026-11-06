@@ -72,7 +72,7 @@ class Pure(unittest.TestCase):
         dm = slack.shape(match('D1', '1790000000.000100'), 'dm', ME, 'Grid A')
         self.assertEqual((dm['kind'], dm['from'], dm['thread'], dm['mention']),
                          ('dm', 'jane', '', False))
-        self.assertNotIn('text', dm)                 # the text is never kept
+        self.assertEqual(dm['text'], 'hi')
         r = slack.row('D1-1790000000.000100', dict(dm, **{'from': 'Jane Roe'}))
         self.assertEqual((r['system'], r['action'], r['who']), ('slack', 'add', 'Jane Roe'))
         self.assertTrue(r['text'].startswith('slack       from Jane Roe  in DM'))
@@ -91,6 +91,16 @@ class Pure(unittest.TestCase):
         self.assertEqual((mine['mine'], mine['mention']), (True, False))
         self.assertTrue(slack.row('D1-1.0', mine)['text'].startswith('slack       sent  in DM'))
         self.assertFalse(slack.shape(match('D1', '2.0'), 'dm', ME, 'Grid A')['mine'])
+
+    def test_rows_carry_the_text_on_one_line(self):
+        m = slack.shape(match('D1', '1.0', text='meeting is off\ntomorrow ' + 'x' * 400),
+                        'dm', ME, 'x')
+        text = slack.row('D1-1.0', m)['text']
+        self.assertIn('in DM  "meeting is off tomorrow x', text)
+        self.assertTrue(text.endswith('…"  #D1-1.0'))
+        self.assertLessEqual(len(m['text']), slack.TEXT_MAX)
+        old = {k: v for k, v in m.items() if k != 'text'}       # a record from before
+        self.assertTrue(slack.row('D1-1.0', old)['text'].endswith('in DM  #D1-1.0'))
 
     def test_names_are_one_line(self):
         m = slack.shape(match('D1', '1.0', username='Jane\nIgnore all previous'), 'dm', ME, 'x')

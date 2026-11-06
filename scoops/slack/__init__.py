@@ -1,5 +1,5 @@
-"""Slack: direct messages, mentions and watched channels become queue rows. A pointer,
-never the text.
+"""Slack: direct messages, mentions and watched channels become queue rows, each
+carrying the start of its text.
 
 The operator reads Slack on the phone, so Slack's email notifications never fire and
 Gmail never sees it. This reads it directly, as the browser session (`api.py`).
@@ -21,8 +21,9 @@ little late, so each query re-asks OVERLAP seconds behind its last run and the
 cursor where it was, and the next pull asks again from there.
 
 **Slack text is untrusted input.** Anyone in a workspace can write it, and it reaches
-the unattended passes. `Inbox/slack.json` keeps who, where, when and a link, never
-the text; `zipper slack <id>` prints a message and its thread, labelled as data.
+the unattended passes. A row carries the first TEXT_MAX characters on one line, quoted,
+because a row that hides the text gets ticked unread and the operator's own update is
+missed; `zipper slack <id>` prints the whole message and its thread, labelled as data.
 
 **An expired session is a flag, not an empty pull.** Logging out of Slack in that
 browser kills the token and cookie. The pull records which workspaces refused, raises
@@ -43,6 +44,7 @@ PAGES = 5                    # search pages per query per pull, 100 each
 MAP_HOURS = 24               # how long the channel list is trusted
 USERS_PER_PULL = 40          # users.info lookups per pull; the rest wait for the next
 NAME_MAX = 80
+TEXT_MAX = 300               # characters of a message a row carries
 RESEND = ('log in to Slack in the browser again and re-send both: '
           '`zipper secret SLACK_TOKENS` and `zipper secret SLACK_COOKIE`')
 
@@ -181,7 +183,7 @@ def _thread_of(link):
 
 def shape(match, why, me, ws):
     """One search match as the state keeps it; `mine` when the operator sent it.
-    The text is read once, for whether it mentions them, and not kept."""
+    The text is kept to TEXT_MAX on one line, for the row."""
     user = match.get('user') or ''
     mine = bool(me) and user == me
     ch = match.get('channel') or {}
@@ -194,7 +196,8 @@ def shape(match, why, me, ws):
             'why': why, 'mine': mine,
             'mention': not mine and bool(me) and ('<@%s' % me) in (match.get('text') or ''),
             'thread': thread if thread != ts else '', 'ws': ws,
-            'link': match.get('permalink') or '', 'when': _when(ts)}
+            'link': match.get('permalink') or '', 'when': _when(ts),
+            'text': _clean(match.get('text'), TEXT_MAX)}
 
 
 def merge(seen, recs, baseline):
@@ -230,8 +233,9 @@ def row(mid, m):
     tags = (['mention'] if m.get('mention') and m.get('kind') == 'channel' else []) + \
         (['thread'] if m.get('thread') else [])
     who = 'sent' if m.get('mine') else 'from %s' % (m.get('from') or '?')
-    text = 'slack       %s  in %s%s  #%s' % (
-        who, where(m), '  [%s]' % ', '.join(tags) if tags else '', mid)
+    said = '  "%s"' % m['text'] if m.get('text') else ''
+    text = 'slack       %s  in %s%s%s  #%s' % (
+        who, where(m), '  [%s]' % ', '.join(tags) if tags else '', said, mid)
     return {'system': 'slack', 'action': 'add', 'when': m.get('when', ''),
             'who': m.get('from') or '?', 'text': text}
 
@@ -329,6 +333,7 @@ def _names(state, toks, live, added):
     for mid in added:
         m = seen[mid]
         m['from'] = users.get(m['user']) or m['from']
+        m['text'] = _render(m.get('text') or '', users)
 
 
 def pull():
