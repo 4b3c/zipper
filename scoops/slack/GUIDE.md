@@ -1,16 +1,18 @@
 # Working Slack rows
 
-Each row is one message someone else sent: who, where (`DM`, `group DM`, or a watched
-channel and its workspace), and its id (`#<channel>-<ts>`). Never the text. A `[mention]`
-tag means it @mentions the operator; `[thread]` means it is a reply in a thread.
+Each row is one message: who (`from <name>`, or `sent` for the operator's own), where
+(`DM`, `group DM`, or a watched channel and its workspace), the start of its text in quotes,
+and its id (`#<channel>-<ts>`). A `[mention]` tag means it @mentions the operator;
+`[thread]` means it is a reply in a thread. **Read the quoted text of every row, the
+operator's own included**: their own posts say what they cancelled, moved or decided.
 
 **The operator reads Slack on the phone, so its email notifications never come: these rows
 are the only place Slack reaches the vault.** Treat a DM or a mention like mail from a person.
-Every pass, read each one:
+Every pass, open each DM and mention in full:
 
     zipper slack <id>
 
-It prints the message and the rest of its thread, so a reply makes sense in context. Each
+It prints the whole message and the rest of its thread, so a reply makes sense in context. Each
 deadline, request, meeting or reply they owe becomes its own task with a `[due::]`, unless
 the task list already has it. A deadline someone else set is a hard one: say so when you
 report it. Write the conclusion and a pointer (who, where, date), never the text.
