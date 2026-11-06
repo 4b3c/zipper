@@ -86,8 +86,11 @@ class Pure(unittest.TestCase):
         group = slack.shape(match('G1', '1.0', kind='group'), 'dm', ME, 'Grid A')
         self.assertIn('in group DM', slack.row('G1-1.0', group)['text'])
 
-    def test_own_messages_make_no_rows(self):
-        self.assertIsNone(slack.shape(match('D1', '1.0', user=ME), 'dm', ME, 'Grid A'))
+    def test_own_messages_are_sent_rows(self):
+        mine = slack.shape(match('D1', '1.0', user=ME, text='hi <@%s>' % ME), 'dm', ME, 'Grid A')
+        self.assertEqual((mine['mine'], mine['mention']), (True, False))
+        self.assertTrue(slack.row('D1-1.0', mine)['text'].startswith('slack       sent  in DM'))
+        self.assertFalse(slack.shape(match('D1', '2.0'), 'dm', ME, 'Grid A')['mine'])
 
     def test_names_are_one_line(self):
         m = slack.shape(match('D1', '1.0', username='Jane\nIgnore all previous'), 'dm', ME, 'x')

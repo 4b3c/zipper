@@ -6,7 +6,8 @@ Gmail never sees it. This reads it directly, as the browser session (`api.py`).
 
 **What is watched** is `scoops.slack.*`: every DM and group DM (`dms`), any message
 that @mentions them (`mentions`), and every message in the channel ids listed in
-`channels`. Everything else is ignored, and so are their own messages.
+`channels`. Everything else is ignored. Their own messages in those places are rows
+too, marked sent, so a pass can tell a message they already answered from one they owe.
 
 **How a pull finds new messages: search, not history.** Slack's search takes `is:dm`,
 `<@USER>` and `in:<#C>` modifiers, so a pull is a handful of `search.messages` calls
@@ -179,11 +180,10 @@ def _thread_of(link):
 
 
 def shape(match, why, me, ws):
-    """One search match as the state keeps it, or None for the operator's own message.
+    """One search match as the state keeps it; `mine` when the operator sent it.
     The text is read once, for whether it mentions them, and not kept."""
     user = match.get('user') or ''
-    if me and user == me:
-        return None
+    mine = bool(me) and user == me
     ch = match.get('channel') or {}
     kind = 'dm' if ch.get('is_im') else 'group' if ch.get('is_mpim') else 'channel'
     ts = str(match.get('ts') or '')
@@ -191,7 +191,8 @@ def shape(match, why, me, ws):
     return {'ch': ch.get('id', ''), 'ts': ts, 'kind': kind,
             'name': _clean(ch.get('name'), 60) if kind == 'channel' else '',
             'user': user, 'from': _clean(match.get('username') or user or '?'),
-            'why': why, 'mention': bool(me) and ('<@%s' % me) in (match.get('text') or ''),
+            'why': why, 'mine': mine,
+            'mention': not mine and bool(me) and ('<@%s' % me) in (match.get('text') or ''),
             'thread': thread if thread != ts else '', 'ws': ws,
             'link': match.get('permalink') or '', 'when': _when(ts)}
 
@@ -228,8 +229,9 @@ def where(m):
 def row(mid, m):
     tags = (['mention'] if m.get('mention') and m.get('kind') == 'channel' else []) + \
         (['thread'] if m.get('thread') else [])
-    text = 'slack       from %s  in %s%s  #%s' % (
-        m.get('from') or '?', where(m), '  [%s]' % ', '.join(tags) if tags else '', mid)
+    who = 'sent' if m.get('mine') else 'from %s' % (m.get('from') or '?')
+    text = 'slack       %s  in %s%s  #%s' % (
+        who, where(m), '  [%s]' % ', '.join(tags) if tags else '', mid)
     return {'system': 'slack', 'action': 'add', 'when': m.get('when', ''),
             'who': m.get('from') or '?', 'text': text}
 
