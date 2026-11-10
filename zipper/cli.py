@@ -238,6 +238,16 @@ def main():
     s.add_argument('argv', nargs=argparse.REMAINDER)
     s.set_defaults(fn=_mod('supervise', 'cmd_when_idle'))
 
+    s = sub.add_parser('later', help='wake this Discord conversation after a delay or a command')
+    s.add_argument('delay', nargs='?', help='90s, 5m, 1h30m (a bare number is minutes)')
+    s.add_argument('note', nargs='?', help='what to do when it wakes')
+    s.add_argument('--after', metavar='CMD', help='instead of a delay: run CMD, wake when it exits')
+    s.add_argument('--list', action='store_true', help='show pending wakeups')
+    s.set_defaults(fn=_mod('later', 'cmd_later'))
+    s = sub.add_parser('_later')        # internal: the detached runner
+    s.add_argument('job')
+    s.set_defaults(fn=_mod('later', 'cmd_run'))
+
     s = sub.add_parser('host', help='ask the host daemon: status, services, approved root commands')
     s.add_argument('verb'); s.add_argument('args', nargs=argparse.REMAINDER)
     s.set_defaults(fn=_needs('host', _mod('scoops.host', 'cmd_host')))

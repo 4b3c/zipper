@@ -1107,5 +1107,49 @@ class ForwardWakeup(unittest.TestCase):
         self.assertEqual((users, reply), (['second'], 'two'))
 
 
+class Later(unittest.TestCase):
+    """`zipper later`: the wait happens outside Claude, the wake is a delivery."""
+
+    def setUp(self):
+        from zipper import later
+        self.later = later
+
+    def test_durations(self):
+        p = self.later.parse_delay
+        self.assertEqual([p('90s'), p('5m'), p('1h30m'), p('2h'), p('10')],
+                         [90, 300, 5400, 7200, 600])
+        for bad in ('', 'soon', '5x', '5m later'):
+            with self.assertRaises(ValueError):
+                p(bad)
+
+    def test_message_says_nobody_typed_it(self):
+        job = {'set_at': '2026-11-09T21:30:00', 'note': 'check the build', 'after': 'make'}
+        m = self.later.message(job, {'code': 2, 'secs': 61, 'out': 'error: boom'})
+        self.assertIn('Not a new message from the operator', m)
+        self.assertIn('check the build', m)
+        self.assertIn('exit code 2', m)
+        self.assertIn('error: boom', m)
+
+    def test_runner_delivers_to_the_job_thread(self):
+        from unittest import mock
+        from zipper import conversations
+        job = {'id': 'testjob1', 'thread': '123', 'note': 'n', 'after': 'echo hi',
+               'delay': None, 'cwd': TMP, 'set_at': '2026-11-09T21:30:00',
+               'state': 'waiting', 'pid': None}
+        self.later._save(job)
+        with mock.patch.object(conversations, 'deliver', return_value={'ok': True}) as d:
+            self.assertEqual(self.later.run('testjob1'), 0)
+        tid, text = d.call_args[0]
+        self.assertEqual(tid, '123')
+        self.assertIn('hi', text)
+        self.assertEqual(self.later._load('testjob1')['state'], 'delivered')
+
+    def test_refused_outside_discord(self):
+        import argparse
+        os.environ.pop('ZIPPER_DISCORD_THREAD', None)
+        a = argparse.Namespace(list=False, delay='5m', note='x', after=None)
+        self.assertEqual(self.later.cmd_later(a), 1)
+
+
 if __name__ == '__main__':
     unittest.main()

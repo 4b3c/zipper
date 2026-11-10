@@ -157,6 +157,11 @@ python3 -m zipper discord read --limit 5
 python3 -m zipper discord status
 ```
 
+**A background shell does not outlive a Discord turn** -- each turn is its own `claude -p`
+process and exits with its reply. To come back later, `zipper later 5m "note"` or
+`zipper later --after "<command>" "note"`: a detached runner waits, then delivers a message
+that starts a normal turn, forwarded like any other. `zipper later --list` shows what's pending.
+
 A Discord message is a request like any other; the same rules govern what it may ask for.
 
 **Hook wiring** is in `~/.claude/settings.json`, outside both repos: one `Stop` entry running
