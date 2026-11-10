@@ -82,6 +82,14 @@ def _text_blocks(row):
     return []
 
 
+def _is_wakeup(row, body):
+    """Did the harness open this turn to report a background task? `origin` is
+    the marker; the tag is how a transcript without `origin` says it."""
+    if (row.get('origin') or {}).get('kind') == 'task-notification':
+        return True
+    return body.lstrip().startswith('<task-notification>')
+
+
 def read_turn(path, limit=1_000_000):
     """The last user message, and the last assistant text of this turn.
 
@@ -131,6 +139,21 @@ def read_turn(path, limit=1_000_000):
                 continue
             blocks = _text_blocks(row)
             body = '\n'.join(b for b in blocks if b.strip())
+            if _is_wakeup(row, body):
+                # **A wakeup is not a person speaking either, but it does start
+                # a turn.** A background shell or agent finishing, or a timer
+                # firing, opens a fresh turn with a `<task-notification>` row --
+                # none of the three markers above -- and taking it as the
+                # prompt meant no delivery matched, so the reply to every
+                # "remind me in 5 minutes" was called typed and dropped: 59 of
+                # them between 2026-10-29 and 2026-11-09. The wakeup belongs to
+                # whoever started the work it reports on, so the turn keeps the
+                # prompts before it and is routed the way they were.
+                if turn_users:
+                    last_asst, uuid_, closed = '', '', False
+                # With no prompt in view, `started` stays False and the
+                # fallback below reads the whole file to find one.
+                continue
             if body.strip():
                 last_user, last_asst, uuid_, closed = body, '', '', False
                 # A `user` row starts a new turn, so the previous turn's

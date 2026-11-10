@@ -1054,5 +1054,58 @@ class Gmail(unittest.TestCase):
         self.assertEqual(self.g._text(rich), 'Hi & bye\n\nnext')
 
 
+class ForwardWakeup(unittest.TestCase):
+    """A turn opened by a background task is routed like the prompt before it."""
+
+    def setUp(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            'forward_reply', os.path.join(ROOT, 'hooks', 'forward_reply.py'))
+        self.hook = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.hook)
+
+    def _turn(self, rows):
+        path = os.path.join(TMP, 'wakeup.jsonl')
+        with open(path, 'w') as fh:
+            fh.writelines(json.dumps(r) + '\n' for r in rows)
+        return self.hook.read_turn(path)
+
+    @staticmethod
+    def _asst(text, uuid):
+        return {'type': 'assistant', 'uuid': uuid,
+                'message': {'stop_reason': 'end_turn', 'content': [{'type': 'text', 'text': text}]}}
+
+    def test_wakeup_keeps_the_prompt_that_started_the_work(self):
+        note = '<task-notification>\n<task-id>b1</task-id>\n</task-notification>'
+        last, reply, uuid, closed, users = self._turn([
+            {'type': 'user', 'message': {'content': 'remind me in 5 min'}},
+            self._asst('Set.', 'a1'),
+            {'type': 'user', 'origin': {'kind': 'task-notification'},
+             'message': {'content': note}},
+            self._asst('Five minutes are up.', 'a2'),
+        ])
+        self.assertEqual(users, ['remind me in 5 min'])
+        self.assertEqual((reply, uuid, closed), ('Five minutes are up.', 'a2', True))
+
+    def test_wakeup_without_origin_is_still_a_wakeup(self):
+        note = '<task-notification>\n<task-id>b1</task-id>\n</task-notification>'
+        _, reply, _, _, users = self._turn([
+            {'type': 'user', 'message': {'content': 'run the build'}},
+            self._asst('Started.', 'a1'),
+            {'type': 'user', 'message': {'content': [{'type': 'text', 'text': note}]}},
+            self._asst('Build passed.', 'a2'),
+        ])
+        self.assertEqual((users, reply), (['run the build'], 'Build passed.'))
+
+    def test_a_real_prompt_still_starts_a_new_turn(self):
+        _, reply, _, _, users = self._turn([
+            {'type': 'user', 'message': {'content': 'first'}},
+            self._asst('one', 'a1'),
+            {'type': 'user', 'message': {'content': 'second'}},
+            self._asst('two', 'a2'),
+        ])
+        self.assertEqual((users, reply), (['second'], 'two'))
+
+
 if __name__ == '__main__':
     unittest.main()
