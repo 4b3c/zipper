@@ -14,7 +14,8 @@ So the wait happens outside Claude. `later` records a job under
 `supervise.when_idle`), and returns. The runner waits -- for a duration, or for
 a shell command to finish -- then hands the conversation a message through
 `conversations.deliver`, the same door a Discord message uses. That message
-starts an ordinary turn, so its reply is forwarded by the Stop hook like any
+starts an ordinary turn, and the runner stays until that turn has finished, so
+its reply is forwarded by the Stop hook like any
 other, and a turn already in flight is waited for by the turn lock.
 
 A job is one file, rewritten whole at each step, so a runner killed at any line
@@ -128,7 +129,19 @@ def run(jid):
             time.sleep(min(left, 30))
     job['state'] = 'delivering'
     _save(job)
-    r = conversations.deliver(job['thread'], message(job, result))
+    # **Wait for the whole turn, not the echo.** `conversations.deliver` returns
+    # on the echo and leaves the turn -- reading claude's output, the wait behind
+    # a turn already running -- to a daemon thread, which is right in the web
+    # server and fatal here: the runner exits, the thread dies, and claude
+    # breaks its pipe before the Stop hook ever forwards the reply. So this
+    # takes the same steps itself, with `wait='turn'`.
+    from . import convhead
+    text = message(job, result)
+    conversations.note_delivery(job['thread'], text)
+    r = convhead.deliver(job['thread'], text, wait='turn')
+    if not r.get('echoed'):
+        conversations.clear_delivery(job['thread'])
+        convhead._refused(job['thread'], r)     # the usage limit says so in the thread
     job['state'] = 'delivered' if r.get('ok') else 'failed'
     job['done_at'] = _now()
     if not r.get('ok'):
@@ -169,6 +182,9 @@ def cmd_later(a):
         a.note, a.delay = a.delay, None     # `--after CMD "note"`: the note is the one positional
     if bool(a.after) == bool(a.delay):
         print('later: give a delay (5m) or --after "<command>", not both')
+        return 1
+    if not (a.note or '').strip():
+        print('later: say what to do when it wakes: zipper later 5m "check the build"')
         return 1
     try:
         delay = parse_delay(a.delay) if a.delay else None
