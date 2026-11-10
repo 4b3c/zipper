@@ -308,6 +308,20 @@ everywhere else.
 **Nothing locks the vault between conversations.** Deliberate (2026-09-06). Don't work one
 project in two threads at once; if that becomes a problem, the lock belongs in `convcore.py`.
 
+## The fan-out check
+
+`zipper/fanout.py`, run by the vault's `pre-commit` hook. When a staged note changes `status`,
+`stage`, `revenue_to_date`, `paying_users` or `customers`, it lists every line in an undated
+note (not `log`, `tasks`, `event`, `decision` or `view`) that links that note, and the hook
+refuses the commit until it is re-run with `ZIPPER_FANOUT_CHECKED=1`. The point is the list:
+copies of a fact elsewhere go stale silently, and an edit-date freshness check passes them.
+Staged notes are listed too, since a note its own commit edited can still carry the old value.
+
+`zipper commit` runs it before ticking rows. `zipper pull` and `init` install the hook,
+pointing at the checkout that installed it; a hook without the `# zipper fanout hook` line is
+never overwritten. The hook fails open: only the check's own exit code (3) blocks a commit, so
+a broken checkout can't stop the vault committing.
+
 ## Timers
 
 `zipper-fetch.timer` runs `zipper pull --due` every five minutes; under `zipper run` the

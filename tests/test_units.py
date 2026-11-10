@@ -449,6 +449,78 @@ class InitVault(unittest.TestCase):
         self.assertTrue(setup._has_notes(path))
 
 
+class Fanout(unittest.TestCase):
+    """A project's numbers change; every undated note linking it gets listed."""
+    def setUp(self):
+        from zipper import core, fanout
+        self.core, self.fanout = core, fanout
+        self.v = tempfile.mkdtemp(dir=TMP)
+        self.old, core.VAULT = core.VAULT, self.v
+        self.git('init', '-q', '-b', 'main')
+        self.git('config', 'user.name', 't'); self.git('config', 'user.email', 't@t')
+        self.write('Projects/Shop.md', 'type: project\nstatus: active\nrevenue_to_date: 100', 'Body.')
+        self.write('Areas/Money.md', 'type: area\nstatus: active',
+                   'The [[Shop]] has made ~$100.\nUnrelated line.\nSee [[Shop|the shop]].')
+        self.write('Log/2026-01-01.md', 'type: log\nstatus: past', 'Worked on [[Shop]].')
+        self.write('Tasks/Main.md', 'type: tasks\nstatus: living', '- [ ] Sell [project:: [[Shop]]]')
+        self.git('add', '-A'); self.git('commit', '-q', '-m', 'init')
+
+    def tearDown(self):
+        self.core.VAULT = self.old
+        os.environ.pop(self.fanout.OK_ENV, None)
+
+    def git(self, *a):
+        return subprocess.run(['git', '-C', self.v] + list(a), capture_output=True, text=True)
+
+    def write(self, rel, fm, body):
+        path = os.path.join(self.v, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as fh:
+            fh.write('---\n%s\n---\n\n%s\n' % (fm, body))
+
+    def test_lists_undated_mentions_and_blocks(self):
+        import io
+        self.write('Projects/Shop.md', 'type: project\nstatus: active\nrevenue_to_date: 1720', 'Body.')
+        self.git('add', '-A')
+        out = io.StringIO()
+        self.assertEqual(self.fanout.check(staged=True, out=out), self.fanout.BLOCKED)
+        text = out.getvalue()
+        self.assertIn('revenue_to_date 100 -> 1720', text)
+        self.assertIn('Areas/Money.md:6', text)
+        self.assertIn('Areas/Money.md:8', text)
+        self.assertNotIn('Unrelated', text)
+        self.assertNotIn('Log/', text)
+        self.assertNotIn('Tasks/', text)
+        os.environ[self.fanout.OK_ENV] = '1'
+        self.assertEqual(self.fanout.check(staged=True, out=io.StringIO()), 0)
+
+    def test_body_edits_and_new_notes_pass(self):
+        import io
+        self.write('Projects/Shop.md', 'type: project\nstatus: active\nrevenue_to_date: 100', 'New body.')
+        self.write('Projects/New.md', 'type: project\nstatus: active', '[[Shop]]')
+        self.git('add', '-A')
+        self.assertEqual(self.fanout.check(staged=True, out=io.StringIO()), 0)
+
+    def test_hook_blocks_git_commit_until_acknowledged(self):
+        self.assertTrue(self.fanout.install_hook(self.v))
+        self.write('Projects/Shop.md', 'type: project\nstatus: dormant\nrevenue_to_date: 100', 'Body.')
+        self.git('add', '-A')
+        r = self.git('commit', '-q', '-m', 'x')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('status active -> dormant', r.stderr)
+        env = dict(os.environ, **{self.fanout.OK_ENV: '1'})
+        r = subprocess.run(['git', '-C', self.v, 'commit', '-q', '-m', 'x'],
+                           capture_output=True, text=True, env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_a_hook_someone_wrote_is_left_alone(self):
+        path = os.path.join(self.v, '.git', 'hooks', 'pre-commit')
+        with open(path, 'w') as fh:
+            fh.write('#!/bin/sh\nexit 0\n')
+        self.assertFalse(self.fanout.install_hook(self.v))
+        self.assertEqual(open(path).read(), '#!/bin/sh\nexit 0\n')
+
+
 class Backup(unittest.TestCase):
     def git(self, path, *args, **env):
         return subprocess.run(['git', '-C', path] + list(args), capture_output=True, text=True,

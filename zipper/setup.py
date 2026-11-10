@@ -67,6 +67,8 @@ def init_vault(path, owner='', zid='', git_name='', git_email='', backup='', sta
     ident = (git_name or zid or 'zipper', git_email or '%s@zipper.local' % (zid or 'zipper'))
     subprocess.run(['git', '-C', path, 'config', 'user.name', ident[0]], check=True)
     subprocess.run(['git', '-C', path, 'config', 'user.email', ident[1]], check=True)
+    from . import fanout
+    fanout.install_hook(path)
     # The one settings file lives in the vault, beside the notes and the
     # dashboard's cards: everything personal except secrets.
     sj = os.path.join(path, 'settings.json')

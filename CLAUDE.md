@@ -25,6 +25,7 @@ Dependencies are allowed where they earn their place; `requirements.txt` lists t
 | `zipper/core.py` | Vault paths, frontmatter, shared helpers |
 | `zipper/cli.py` | The whole command surface |
 | `zipper/lint.py` `sync.py` `status.py` | Validation, evidence, the snapshot |
+| `zipper/fanout.py` | The vault's pre-commit check: notes to re-read when a project's numbers or status change |
 | `zipper/ics.py` `events.py` | Calendars, recurrence, event notes |
 | `zipper/scoops.py` | The scoop loader and registry. See `zipper/README.md` § Scoops |
 | `scoops/<name>/` | One scoop each: `scoop.json` (manifest) and `__init__.py` (code, imported only when enabled) |
