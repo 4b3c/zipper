@@ -141,14 +141,30 @@ def run(jid):
     r = convhead.deliver(job['thread'], text, wait='turn')
     if not r.get('echoed'):
         conversations.clear_delivery(job['thread'])
-        convhead._refused(job['thread'], r)     # the usage limit says so in the thread
     job['state'] = 'delivered' if r.get('ok') else 'failed'
     job['done_at'] = _now()
     if not r.get('ok'):
         job['error'] = str(r.get('error') or 'delivery failed')
+        _say_failed(job, r)
     _save(job)
     print('[later] %s  %s %s %s' % (_now(), jid, job['state'], job.get('error', '')), flush=True)
     return 0 if r.get('ok') else 1
+
+
+def _say_failed(job, r):
+    """**A failed wakeup must not vanish.** No Stop hook fires on a turn that
+    never finished, so nothing else will post. A refusal -- the usage limit, most
+    often -- is echoed first and is named by `_refused`, as on the Discord door;
+    anything else gets one line saying the wakeup did not run."""
+    from . import chat, convhead
+    try:
+        convhead._refused(job['thread'], r)
+        if not r.get('refused'):
+            chat.discord_send('[zipper later] The wakeup set at %s did not run (%s). '
+                              'Note: %s' % (job['set_at'][11:16], job['error'], job['note']),
+                              thread_id=job['thread'])
+    except Exception as e:
+        print('[later] %s  %s could not tell the thread: %r' % (_now(), job['id'], e), flush=True)
 
 
 def jobs():

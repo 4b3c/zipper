@@ -1157,11 +1157,26 @@ class Later(unittest.TestCase):
                'delay': 0, 'due': '2026-01-01T00:00:00', 'cwd': TMP,
                'set_at': '2026-11-09T21:30:00', 'state': 'waiting', 'pid': None}
         self.later._save(job)
+        from zipper import chat, turnstatus
         half = {'ok': False, 'echoed': True, 'error': 'acknowledged but the turn did not complete'}
         with mock.patch.object(conversations, 'note_delivery'), \
-             mock.patch.object(convhead, 'deliver', return_value=half):
+             mock.patch.object(convhead, 'deliver', return_value=dict(half)), \
+             mock.patch.object(turnstatus, 'api_error', return_value=None), \
+             mock.patch.object(chat, 'discord_send') as send:
             self.assertEqual(self.later.run('testjob2'), 1)
         self.assertEqual(self.later._load('testjob2')['state'], 'failed')
+        self.assertIn('did not run', send.call_args[0][0])        # said, not silent
+
+        # An echoed refusal -- the usage limit -- is named in the thread, once.
+        self.later._save(dict(job, id='testjob3', state='waiting'))
+        with mock.patch.object(conversations, 'note_delivery'), \
+             mock.patch.object(convhead, 'deliver', return_value=dict(half)), \
+             mock.patch.object(turnstatus, 'api_error', return_value="You've hit your limit"), \
+             mock.patch.object(chat, 'discord_status'), \
+             mock.patch.object(chat, 'discord_send') as send:
+            self.assertEqual(self.later.run('testjob3'), 1)
+        self.assertEqual(send.call_count, 1)
+        self.assertIn('[Out of usage]', send.call_args[0][0])
 
     def test_refused_outside_discord(self):
         import argparse
