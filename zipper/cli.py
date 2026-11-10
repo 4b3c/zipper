@@ -55,6 +55,9 @@ def main():
 
     s = sub.add_parser('today');   s.add_argument('--date'); s.set_defaults(fn=sync.cmd_today)
     s = sub.add_parser('lint');    s.set_defaults(fn=lint.cmd_lint)
+    s = sub.add_parser('fanout', help='notes to re-read when a project\'s numbers or status change')
+    s.add_argument('--staged', action='store_true', help='check the index (the pre-commit hook)')
+    s.set_defaults(fn=_mod('fanout', 'cmd_fanout'))
     s = sub.add_parser('status');  s.set_defaults(fn=status.cmd_status)
     s = sub.add_parser('sync');    s.set_defaults(fn=sync.cmd_sync)
     s = sub.add_parser('metrics'); s.set_defaults(fn=metrics.cmd_metrics)

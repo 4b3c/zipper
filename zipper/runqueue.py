@@ -260,7 +260,8 @@ def cmd_pull(a):
     `zipper pull --due` every few minutes. A bookkeeping pass does the same first,
     so the brief it reads is never staler than the scoops' own intervals.
     """
-    from . import serve
+    from . import serve, fanout
+    fanout.install_hook()     # every pass, so a vault made before the hook gets it
     serve.feed_load()
     names = list(getattr(a, 'names', None) or [])
     if getattr(a, 'due', False):
@@ -461,9 +462,14 @@ def cmd_commit(a):
     from .sync import chain_logs
     chain_logs()   # before the diff, so a log made by hand joins the chain
     changes = note_changes()
+    paths = [c['path'] for c in changes]
+    # Before ticking: a pass the hook would refuse must not mark its rows done.
+    from . import fanout
+    if fanout.check(paths=paths) == fanout.BLOCKED:
+        print('commit: nothing ticked or committed.')
+        return 1
     serve.feed_load()
     marked = serve.feed_mark_all()['marked']
-    paths = [c['path'] for c in changes]
     if paths:
         # Not check=False-and-forget. `git add` aborts the entire batch if one
         # pathspec matches nothing, so a single unreadable path silently took
@@ -489,8 +495,9 @@ def cmd_commit(a):
     print('commit: %d event(s) ticked, %s'
           % (marked, 'committed %d note(s)' % len(paths) if ok
              else 'nothing to commit'))
-    if not ok and r.stdout.strip():
-        print('  ' + r.stdout.strip().split('\n')[0])
+    if not ok:
+        for ln in ((r.stderr or '') + (r.stdout or '')).strip().split('\n')[:20]:
+            print('  ' + ln)
     for w in inputs.on_commit():
         print('  WARNING: %s' % w)
 
