@@ -1107,5 +1107,89 @@ class ForwardWakeup(unittest.TestCase):
         self.assertEqual((users, reply), (['second'], 'two'))
 
 
+class Later(unittest.TestCase):
+    """`zipper later`: the wait happens outside Claude, the wake is a delivery."""
+
+    def setUp(self):
+        from zipper import later
+        self.later = later
+
+    def test_durations(self):
+        p = self.later.parse_delay
+        self.assertEqual([p('90s'), p('5m'), p('1h30m'), p('2h'), p('10')],
+                         [90, 300, 5400, 7200, 600])
+        for bad in ('', 'soon', '5x', '5m later'):
+            with self.assertRaises(ValueError):
+                p(bad)
+
+    def test_message_says_nobody_typed_it(self):
+        job = {'set_at': '2026-11-09T21:30:00', 'note': 'check the build', 'after': 'make'}
+        m = self.later.message(job, {'code': 2, 'secs': 61, 'out': 'error: boom'})
+        self.assertIn('Not a new message from the operator', m)
+        self.assertIn('check the build', m)
+        self.assertIn('exit code 2', m)
+        self.assertIn('error: boom', m)
+
+    def test_runner_delivers_to_the_job_thread(self):
+        from unittest import mock
+        from zipper import conversations
+        job = {'id': 'testjob1', 'thread': '123', 'note': 'n', 'after': 'echo hi',
+               'delay': None, 'cwd': TMP, 'set_at': '2026-11-09T21:30:00',
+               'state': 'waiting', 'pid': None}
+        self.later._save(job)
+        from zipper import convhead
+        done = {'ok': True, 'echoed': True, 'turn_ok': True}
+        with mock.patch.object(conversations, 'note_delivery') as nd, \
+             mock.patch.object(convhead, 'deliver', return_value=done) as d:
+            self.assertEqual(self.later.run('testjob1'), 0)
+        tid, text = d.call_args[0]
+        self.assertEqual(tid, '123')
+        self.assertIn('hi', text)
+        # The runner exits after this call, so it must wait for the turn itself.
+        self.assertEqual(d.call_args[1].get('wait'), 'turn')
+        self.assertEqual(nd.call_args[0], ('123', text))
+        self.assertEqual(self.later._load('testjob1')['state'], 'delivered')
+
+    def test_unfinished_turn_is_not_delivered(self):
+        from unittest import mock
+        from zipper import conversations, convhead
+        job = {'id': 'testjob2', 'thread': '124', 'note': 'n', 'after': None,
+               'delay': 0, 'due': '2026-01-01T00:00:00', 'cwd': TMP,
+               'set_at': '2026-11-09T21:30:00', 'state': 'waiting', 'pid': None}
+        self.later._save(job)
+        from zipper import chat, turnstatus
+        half = {'ok': False, 'echoed': True, 'error': 'acknowledged but the turn did not complete'}
+        with mock.patch.object(conversations, 'note_delivery'), \
+             mock.patch.object(convhead, 'deliver', return_value=dict(half)), \
+             mock.patch.object(turnstatus, 'api_error', return_value=None), \
+             mock.patch.object(chat, 'discord_send') as send:
+            self.assertEqual(self.later.run('testjob2'), 1)
+        self.assertEqual(self.later._load('testjob2')['state'], 'failed')
+        self.assertIn('did not run', send.call_args[0][0])        # said, not silent
+
+        # An echoed refusal -- the usage limit -- is named in the thread, once.
+        self.later._save(dict(job, id='testjob3', state='waiting'))
+        with mock.patch.object(conversations, 'note_delivery'), \
+             mock.patch.object(convhead, 'deliver', return_value=dict(half)), \
+             mock.patch.object(turnstatus, 'api_error', return_value="You've hit your limit"), \
+             mock.patch.object(chat, 'discord_status'), \
+             mock.patch.object(chat, 'discord_send') as send:
+            self.assertEqual(self.later.run('testjob3'), 1)
+        self.assertEqual(send.call_count, 1)
+        self.assertIn('[Out of usage]', send.call_args[0][0])
+
+    def test_refused_outside_discord(self):
+        import argparse
+        os.environ.pop('ZIPPER_DISCORD_THREAD', None)
+        a = argparse.Namespace(list=False, delay='5m', note='x', after=None)
+        self.assertEqual(self.later.cmd_later(a), 1)
+        os.environ['ZIPPER_DISCORD_THREAD'] = '125'
+        try:
+            a = argparse.Namespace(list=False, delay='5m', note=None, after=None)
+            self.assertEqual(self.later.cmd_later(a), 1)     # no note
+        finally:
+            del os.environ['ZIPPER_DISCORD_THREAD']
+
+
 if __name__ == '__main__':
     unittest.main()
