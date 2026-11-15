@@ -794,7 +794,7 @@ def _row(it, showat=True, showdue=False, pill=False):
     d = it.get('desc') or ''
     if it.get('source') == 'canvas' and len(d) > 140:
         d = ''
-    desc = '<span class="rowdesc">%s</span>' % esc(plain(d)) if d else ''
+    desc = '<span class="rowdesc">%s</span>' % plain(d) if d else ''   # plain() escapes
     # A task opens even with no description: inside is the box for closing it
     # with a reason (closewhy.py).
     form = close_form(it)
