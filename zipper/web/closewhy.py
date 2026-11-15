@@ -33,9 +33,13 @@ def reason_line(reason, today=None):
 CLOSE_CSS = """
 .closewhy{display:none;gap:6px;align-items:center;padding:4px 0 2px}
 .row.open .closewhy{display:flex}
-.closewhy input{flex:1;min-width:0;font:13px/1.4 var(--sans);padding:5px 8px;
-  border:1px solid rgba(127,127,127,.35);border-radius:6px;background:transparent;color:inherit}
+.closewhy input{flex:1;min-width:0;font:13px/1.4 var(--sans);padding:6px 10px;
+  -webkit-appearance:none;appearance:none;border:1px solid transparent;border-radius:7px;
+  background:var(--paper,rgba(127,127,127,.12));color:inherit;outline:none}
+.closewhy input::placeholder{color:var(--dim,inherit);opacity:.8}
+.closewhy input:focus{border-color:var(--line,rgba(127,127,127,.35))}
 .closewhy button{font:11px/1 var(--mono);letter-spacing:.04em;padding:6px 10px;
+  -webkit-appearance:none;appearance:none;
   border-radius:99px;border:1px solid currentColor;background:transparent;color:inherit;
   cursor:pointer;opacity:.75}
 .closewhy button:hover{opacity:1}
