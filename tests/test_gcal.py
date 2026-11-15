@@ -53,7 +53,10 @@ class ZipperCalendar(unittest.TestCase):
         self._call = gcal._call
         gcal._call = self.fake
         os.environ.pop('ZIPPER_GCAL_ID', None)
-        open(os.environ['ZIPPER_ENV_FILE'], 'w').close()
+        # core and google keep whichever env path loaded first; when another test
+        # module set it, its teardown may have removed the folder.
+        os.makedirs(os.path.dirname(google.ENV), exist_ok=True)
+        open(google.ENV, 'w').close()
 
     def tearDown(self):
         gcal._call = self._call
@@ -84,7 +87,7 @@ class ZipperCalendar(unittest.TestCase):
         gcal.put('b', 'Two', '2026-11-18')
         self.assertEqual(len(self.fake.calendars), 1)
         self.assertIn('ZIPPER_GCAL_ID=cal0@group.calendar.google.com',
-                      open(os.environ['ZIPPER_ENV_FILE']).read())
+                      open(google.ENV).read())
 
     def test_remove_missing_is_not_an_error(self):
         gcal.put('a', 'One', '2026-11-17')
@@ -104,6 +107,21 @@ class ZipperCalendar(unittest.TestCase):
     def test_no_calendar_yet_reads_as_empty(self):
         self.assertEqual(gcal.events(), [])
         self.assertEqual(self.fake.calls, [])
+
+
+class Errors(unittest.TestCase):
+    def _err(self, code, message):
+        body = json.dumps({'error': {'code': code, 'message': message}}).encode()
+        return urllib.error.HTTPError('u', code, 'x', {}, io.BytesIO(body))
+
+    def test_disabled_api_is_not_called_a_scope_problem(self):
+        msg = gcal._explain(self._err(403, 'Google Calendar API has not been used in project 1'))
+        self.assertIn('has not been used', msg)
+        self.assertNotIn('--auth', msg)
+
+    def test_missing_scope_says_sign_in_again(self):
+        msg = gcal._explain(self._err(403, 'Request had insufficient authentication scopes.'))
+        self.assertIn('zipper google --auth', msg)
 
 
 class Scopes(unittest.TestCase):

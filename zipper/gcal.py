@@ -204,16 +204,24 @@ def sync():
 
 
 def ready():
-    """Configured and holding the calendar scope -- the refresh token is the same
-    one Sheets and Gmail use, so 'authorized' alone says nothing about this."""
+    """Google configured and authorized. Whether the token holds the calendar
+    scope only shows when Google answers, so `_explain` reads the refusal."""
     return google.configured() and google.authorized()
 
 
-def _scope_hint(e):
-    if _status(e) in (401, 403):
-        return ('Google refused: the token predates calendar access. Run '
+def _explain(e):
+    """Google's own reason, which says which fix applies. A 403 is either a token
+    without the calendar scope or the Calendar API switched off in the client's
+    Cloud project, and guessing sent the operator to sign in again for nothing."""
+    reason = ''
+    try:
+        reason = json.loads(e.read().decode() or '{}').get('error', {}).get('message', '')
+    except Exception:
+        pass
+    if _status(e) in (401, 403) and 'insufficient' in reason.lower():
+        return ('Google refused: the token lacks calendar access. Run '
                 '`zipper google --auth` and sign in again to grant it.')
-    return 'Google error %s' % (_status(e) or e)
+    return 'Google error %s: %s' % (_status(e) or '?', reason or e)
 
 
 def cmd_cal(a):
@@ -242,6 +250,9 @@ def cmd_cal(a):
             if not any(e['start'][:10] >= today for e in evs):
                 print('(nothing upcoming on the Zipper calendar)')
     except urllib.error.HTTPError as e:
-        print(_scope_hint(e))
+        print(_explain(e))
+        return 1
+    except (urllib.error.URLError, OSError, RuntimeError, KeyError) as e:
+        print('could not reach Google: %s' % e)     # network, or the token refresh
         return 1
     return 0
