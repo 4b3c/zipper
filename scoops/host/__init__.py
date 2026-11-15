@@ -5,7 +5,10 @@ over the socket mounted into it (settings `host.socket`); without one, the host
 is simply out of reach and this says so.
 
     zipper host verbs
-    zipper host status | containers
+    zipper host status | containers | disk
+    zipper host site.status|site.logs|site.restart|site.deploy <site> [lines]
+                                          its own sites (host config); deploy pulls clean
+                                          main and rebuilds; none needs approval
     zipper host service.status|service.logs|service.restart <name> [lines]
     zipper host container.restart
     zipper host run --why "<reason>" <command...>

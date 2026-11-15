@@ -178,6 +178,22 @@ class HostTiers(unittest.TestCase):
         self.assertIn('not yours', hostd._approve(st, 'zipper-1', ['1', code])['error'])
         self.assertIn(1, st.pending)
 
+    def test_sites_are_per_zipper_and_need_no_code(self):
+        cfg = dict(self.cfg, sites={'shop': '/opt/shop', 'other': '/opt/other'},
+                   zippers={'zipper-0': {'tiers': ['read', 'routine'], 'sites': ['shop']}})
+        tier, what, _ = hostd.classify(cfg, 'zipper-0', 'site.deploy', ['shop'])
+        self.assertEqual(tier, 'routine')
+        self.assertIn("cd /opt/shop &&", what)
+        self.assertIn('pull --ff-only', what)
+        self.assertEqual(hostd.classify(cfg, 'zipper-0', 'site.logs', ['shop', '50'])[0], 'read')
+        for args in (['other'], ['shop; rm -rf /'], ['nope'], []):
+            with self.assertRaises(ValueError):
+                hostd.classify(cfg, 'zipper-0', 'site.restart', args)
+        with self.assertRaises(ValueError):       # another zipper's site
+            hostd.classify(cfg, 'zipper-1', 'site.deploy', ['shop'])
+        with self.assertRaises(ValueError):       # lines must be a number
+            hostd.classify(cfg, 'zipper-0', 'site.logs', ['shop', '5; id'])
+
     def test_routine_commands_match_exactly(self):
         cfg = dict(self.cfg, routine_commands=['systemctl restart zipper-bridge'])
         self.assertEqual(hostd.classify(cfg, 'zipper-0', 'run',
