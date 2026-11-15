@@ -54,7 +54,7 @@ Standard library only; this is the most security-sensitive file in the repo, so
 it stays small enough to read in one sitting.
 """
 import base64, datetime, hashlib, hmac, json, os, secrets, socketserver, struct
-import subprocess, sys, threading, time, urllib.request
+import shlex, subprocess, sys, threading, time, urllib.request
 
 CONFIG = os.environ.get('ZIPPER_HOSTD_CONFIG', '/etc/zipper-hostd.json')
 LOG = os.environ.get('ZIPPER_HOSTD_LOG', '/var/log/zipper-hostd.log')
@@ -74,6 +74,10 @@ DEFAULT_CONFIG = {
     'services': ['zipper-web', 'zipper-discord'],   # service.* may name only these
     'restart_auto': ['zipper-web', 'zipper-discord'],  # restarted without approval
     'routine_commands': [],     # `run` commands, matched exactly, that need no code
+    # Sites: name -> a git checkout with a compose file. A zipper may manage the
+    # ones its own entry lists (`zippers.<id>.sites`): deploy from clean main,
+    # restart, status and logs, none of which needs a code.
+    'sites': {},
     'window_minutes': 15,       # after an approval, advanced requests run without one
     'systemctl': 'systemctl',
     'journalctl': 'journalctl',
@@ -172,6 +176,19 @@ def _run(argv, shell=False):
 
 # ---------------------------------------------------------------- verbs
 
+def _site(cfg, zid, args):
+    mine = cfg['zippers'].get(zid, {}).get('sites', [])
+    if len(args) < 1 or args[0] not in mine or args[0] not in cfg.get('sites', {}):
+        raise ValueError('not one of this zipper\'s sites (allowed: %s)'
+                         % ', '.join(s for s in mine if s in cfg.get('sites', {})))
+    return args[0], cfg['sites'][args[0]]
+
+
+def _in_site(cfg, d, cmd):
+    # The directory comes from the host's config, never from the request.
+    return 'cd %s && %s' % (shlex.quote(d), cmd)
+
+
 def _service(cfg, args):
     if len(args) < 1 or args[0] not in cfg['services']:
         raise ValueError('not an allowed service (allowed: %s)' % ', '.join(cfg['services']))
@@ -200,6 +217,29 @@ def classify(cfg, zid, verb, args):
         # Only its own container: a zipper restarting another would be one
         # tenant reaching into another's life.
         return 'routine', [cfg['docker'], 'restart', zid], 'docker restart %s' % zid
+    if verb == 'disk':
+        return 'read', ('df -h /; echo; du -sh /opt/* /var/lib/docker 2>/dev/null | sort -rh; '
+                        'echo; journalctl --disk-usage'), 'disk'
+    if verb in ('site.status', 'site.logs', 'site.restart', 'site.deploy'):
+        s, d = _site(cfg, zid, args)
+        dc = '%s compose' % cfg['docker']
+        if verb == 'site.status':
+            return 'read', _in_site(cfg, d, '%s ps -a' % dc), 'site.status %s' % s
+        if verb == 'site.logs':
+            n = str(int(args[1])) if len(args) > 1 else '100'
+            return 'read', _in_site(cfg, d, '%s logs --no-color --tail %s' % (dc, n)), \
+                'site.logs %s' % s
+        if verb == 'site.restart':
+            return 'routine', _in_site(cfg, d, '%s restart' % dc), 'site.restart %s' % s
+        # Only what is merged on main, with nothing local in the way: a deploy
+        # can't ship a branch or a hand edit, so it needs no code.
+        git = 'git -c safe.directory=%s' % shlex.quote(d)
+        return 'routine', _in_site(cfg, d, (
+            '[ "$(%(g)s branch --show-current)" = main ] '
+            '|| { echo "not on main"; exit 1; }; '
+            '%(g)s diff --quiet HEAD || { echo "uncommitted changes"; exit 1; }; '
+            '%(g)s pull --ff-only && %(dc)s up -d --build') % {'g': git, 'dc': dc}), \
+            'site.deploy %s' % s
     if verb == 'run':
         cmd = ' '.join(args).strip()
         if not cmd:
@@ -240,9 +280,11 @@ def handle(state, zid, req):
 
     if verb == 'verbs':
         return {'ok': True, 'tiers': allowed,
-                'output': 'status, containers, service.status|logs|restart <%s>, '
+                'output': 'status, containers, disk, service.status|logs|restart <%s>, '
+                          'site.status|logs|restart|deploy <%s>, '
                           'container.restart, run --why "<reason>" <command>'
-                          % '|'.join(cfg['services'])}
+                          % ('|'.join(cfg['services']),
+                             '|'.join(cfg['zippers'].get(zid, {}).get('sites', [])))}
 
     if verb == 'approve':
         return _approve(state, zid, args)

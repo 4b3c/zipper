@@ -289,7 +289,10 @@ anything else only on a code from the operator's authenticator app, posted with 
 plain-English reason and the exact command through a webhook the containers cannot see.
 An approved code opens a window (`window_minutes`, 15 by default) in which that zipper's
 next requests run without one, each still announced; commands listed exactly in
-`routine_commands` never need one. `zipper hostd init`, then `install`.
+`routine_commands` never need one. Neither do a zipper's own *sites*: `sites` in the
+config maps a name to a git checkout with a compose file, and `zippers.<id>.sites` says which
+ones that zipper may deploy (pull clean `main`, rebuild), restart and read the logs of.
+`zipper hostd init`, then `install`.
 
 ### Deployment (systemd)
 
