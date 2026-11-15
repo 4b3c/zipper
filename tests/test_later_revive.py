@@ -35,7 +35,9 @@ class Revive(unittest.TestCase):
         for f in os.listdir(later.DIR):
             os.remove(os.path.join(later.DIR, f))
         self.spawned = []
-        self.p = mock.patch.object(later, '_spawn', side_effect=self.spawned.append)
+        self.p = mock.patch.object(later, '_spawn',
+                                   side_effect=lambda jid, lock: (self.spawned.append(jid),
+                                                                  lock.close()))
         self.p.start()
 
     def tearDown(self):
@@ -69,6 +71,39 @@ class Revive(unittest.TestCase):
         finally:
             p.kill(); p.wait()
         self.assertFalse(later._alive('legacy', p.pid))
+
+    def test_a_new_job_is_claimed_before_its_runner_starts(self):
+        # The tester's race: revive() right after schedule(), while the runner is
+        # still booting. The lock goes to the child before Popen returns, so the
+        # job must not look orphaned.
+        self.p.stop()
+        kept = []
+
+        class Child:
+            def __init__(self, argv, **kw):
+                kept.extend(os.dup(fd) for fd in kw['pass_fds'])   # the child's copy
+
+        try:
+            with mock.patch('subprocess.Popen', Child):
+                j = later.schedule('1', 'race', after='true')
+                self.assertEqual(later.revive(), [])
+                self.assertTrue(later._alive(j['id']))
+                self.assertNotIn('revived_at', later._load(j['id']))
+        finally:
+            for fd in kept:
+                os.close(fd)
+            self.p.start()
+        self.assertFalse(later._alive(j['id']))            # child gone, lock free
+
+    def test_runner_uses_the_lock_it_was_handed(self):
+        job('handed')
+        lock = later._take('handed')
+        fd = os.dup(lock.fileno())
+        lock.close()
+        with mock.patch.dict(os.environ, {later.LOCK_FD: str(fd)}), \
+             mock.patch.object(later, '_load', side_effect=lambda jid: {'state': 'done'}):
+            self.assertEqual(later.run('handed'), 0)        # didn't exit as "taken"
+            self.assertNotIn(later.LOCK_FD, os.environ)      # not passed to the command
 
     def test_second_runner_exits_when_the_lock_is_taken(self):
         job('busy')

@@ -28,8 +28,9 @@ long as it lives, so a free lock on a waiting job means the runner is gone, and
 one. A timed job sleeps to its recorded due time, so it fires on time, or at
 once if the restart outlasted it. An `--after` job is not re-run: the command
 may not be safe twice, so the conversation is woken and told the wait was cut
-off and to check for itself. Two revivers at once can each start a runner; the
-second one finds the lock taken and exits.
+off and to check for itself. The lock is taken *before* a runner starts and
+handed to it (`_spawn`), so a job is never unclaimed: not in the seconds a new
+runner takes to boot, and not between two revivers racing for the same job.
 """
 import datetime, fcntl, json, os, re, subprocess, sys, time, uuid
 
@@ -94,6 +95,10 @@ def _alive(jid, pid=None):
     if fh is None:
         return True
     fh.close()
+    return _legacy_alive(jid, pid)
+
+
+def _legacy_alive(jid, pid):
     try:
         with open('/proc/%d/cmdline' % int(pid), 'rb') as c:
             argv = c.read().split(b'\0')
@@ -102,11 +107,23 @@ def _alive(jid, pid=None):
         return False
 
 
-def _spawn(jid):
-    return subprocess.Popen([sys.executable, '-m', 'zipper', '_later', jid],
-                            cwd=settings.ROOT, start_new_session=True,
-                            stdin=subprocess.DEVNULL, stdout=open(LOG, 'a'),
-                            stderr=subprocess.STDOUT)
+LOCK_FD = 'ZIPPER_LATER_LOCK_FD'
+
+
+def _spawn(jid, lock):
+    """Start a runner that inherits `lock`, already held. The job is never
+    unclaimed: taken here before the runner starts, so the seconds Python takes
+    to boot can't look like a dead runner to `revive()`, and a probe can't
+    steal the lock from a runner on its way up."""
+    env = dict(os.environ, **{LOCK_FD: str(lock.fileno())})
+    try:
+        return subprocess.Popen([sys.executable, '-m', 'zipper', '_later', jid],
+                                cwd=settings.ROOT, start_new_session=True,
+                                stdin=subprocess.DEVNULL, stdout=open(LOG, 'a'),
+                                stderr=subprocess.STDOUT, pass_fds=(lock.fileno(),),
+                                env=env)
+    finally:
+        lock.close()            # the runner's copy keeps the lock; this one goes
 
 
 def _now():
@@ -122,7 +139,7 @@ def schedule(thread_id, note, delay=None, after=None):
         job['due'] = (datetime.datetime.now()
                       + datetime.timedelta(seconds=delay)).isoformat(timespec='seconds')
     _save(job)
-    _spawn(job['id'])
+    _spawn(job['id'], _take(job['id']))
     return job
 
 
@@ -133,14 +150,22 @@ def revive():
     is visible where a lost wakeup is not."""
     started = []
     for job in jobs():
-        if job.get('state') not in ('waiting', 'delivering') or _alive(job['id'], job.get('pid')):
+        if job.get('state') not in ('waiting', 'delivering'):
+            continue
+        # Taken and kept, not probed: whoever gets it starts the runner, so two
+        # revivers can't both start one, and it goes straight to the runner.
+        lock = _take(job['id'])
+        if lock is None:
+            continue
+        if _legacy_alive(job['id'], job.get('pid')):
+            lock.close()
             continue
         job['revived'] = job.get('revived', 0) + 1
         job['revived_at'] = _now()
         job['cut_off'] = job['state']
         job['state'] = 'waiting'
         _save(job)
-        _spawn(job['id'])
+        _spawn(job['id'], lock)
         started.append(job['id'])
         print('[later] %s  %s revived (runner gone while %s)' % (_now(), job['id'], job['cut_off']),
               flush=True)
@@ -173,9 +198,12 @@ def message(job, result=None):
 def run(jid):
     """The detached runner: wait, then deliver."""
     from . import conversations
-    lock = _take(jid)
+    fd = os.environ.pop(LOCK_FD, None)
+    # Handed down by whoever started us (it already holds the job), or taken
+    # here when the runner was started by hand.
+    lock = os.fdopen(int(fd), 'a') if fd else _take(jid)
     if lock is None:
-        return 0                # another runner has it (two revivers raced)
+        return 0                # another runner has it
     job = _load(jid)
     if job.get('state') not in ('waiting', 'delivering'):
         return 0
