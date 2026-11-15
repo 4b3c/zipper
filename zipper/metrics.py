@@ -2,7 +2,7 @@
 
 The numbers: metric rows, budget totals, and the execution score.
 """
-import os, re, csv, json, datetime, glob
+import os, re, csv, json, datetime, glob, contextlib, fcntl
 
 from .core import *          # noqa: F401,F403 -- the shared vocabulary
 from . import core
@@ -134,9 +134,32 @@ def _ledger_update(tasks):
     for t in vanished:
         led[t]['renamed_on' if not shrank else 'dropped_on'] = now
     meta['count'] = len(tasks)
-    with open(LEDGER, 'w', encoding='utf-8') as fh:
-        json.dump(led, fh, indent=1, sort_keys=True)
+    ledger_write(led)
     return led
+
+
+def ledger_write(led):
+    """Replace the task ledger whole. The timer's `pull --due` and a
+    conversation's pass both rewrite it, and `compute_score` reads it from the
+    dashboard: an in-place write is a torn file to any of them, and a process
+    killed mid-write left one that broke every later brief. A per-process temp
+    name, so two writers never share one."""
+    tmp = '%s.%d.tmp' % (LEDGER, os.getpid())
+    with open(tmp, 'w', encoding='utf-8') as fh:
+        json.dump(led, fh, indent=1, sort_keys=True)
+    os.replace(tmp, LEDGER)
+
+
+@contextlib.contextmanager
+def ledger_lock():
+    """One read-modify-write of the task ledger at a time, across processes."""
+    os.makedirs(os.path.dirname(LEDGER), exist_ok=True)
+    with open(LEDGER + '.lock', 'a') as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lk, fcntl.LOCK_UN)
 
 def compute_score(window=30):
     led = json.load(open(LEDGER, encoding='utf-8')) if os.path.exists(LEDGER) else {}

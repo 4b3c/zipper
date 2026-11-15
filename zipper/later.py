@@ -140,7 +140,7 @@ def run(jid):
     conversations.note_delivery(job['thread'], text)
     r = convhead.deliver(job['thread'], text, wait='turn')
     if not r.get('echoed'):
-        conversations.clear_delivery(job['thread'])
+        conversations.clear_delivery(job['thread'], text)
     job['state'] = 'delivered' if r.get('ok') else 'failed'
     job['done_at'] = _now()
     if not r.get('ok'):
