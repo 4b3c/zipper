@@ -17,6 +17,8 @@ why it is the only one that raises a flag. Everything else is reporting.
 The sheet is one tab per semester, so row positions never shift under an older
 term, and the writer only ever has to understand the current one.
 """
+import contextlib
+import fcntl
 import json
 import os
 import re
@@ -51,9 +53,24 @@ def _load():
     return d
 
 
+@contextlib.contextmanager
+def _locked():
+    """One read-modify-write of the ledger at a time, across processes. The
+    hours timer's `pull` reconciles while a conversation runs `hours add`; the
+    slower one saved a ledger read before the other's change, and a pending
+    hour that vanishes is an hour never chased into the sheet."""
+    os.makedirs(INBOX, exist_ok=True)
+    with open(LEDGER + '.lock', 'a') as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lk, fcntl.LOCK_UN)
+
+
 def _save(d):
     os.makedirs(INBOX, exist_ok=True)
-    tmp = LEDGER + '.tmp'
+    tmp = '%s.%d.tmp' % (LEDGER, os.getpid())
     with open(tmp, 'w') as f:
         json.dump(d, f, indent=1, sort_keys=False)
     os.replace(tmp, LEDGER)
@@ -136,6 +153,11 @@ def key_of(date, start, end, hours, rendered=False):
 
 def add(date, start=None, end=None, hours=None, note='', source='discord'):
     """Capture one entry. Times optional; hours required if they are absent."""
+    with _locked():
+        return _add(date, start, end, hours, note, source)
+
+
+def _add(date, start, end, hours, note, source):
     d = _load()
     date = str(date)
     dt.date.fromisoformat(date)              # raises on a malformed date
@@ -162,6 +184,11 @@ def add(date, start=None, end=None, hours=None, note='', source='discord'):
 
 
 def remove(key):
+    with _locked():
+        return _remove(key)
+
+
+def _remove(key):
     d = _load()
     before = len(d['entries'])
     d['entries'] = [e for e in d['entries'] if e['key'] != key]
@@ -192,6 +219,12 @@ def reconcile(rows, tab=None, complete=False, force=False):
 
     `rows` are dicts: date, start, end, hours, note, submitted.
     """
+    rows = list(rows)                   # read the sheet before taking the lock
+    with _locked():
+        return _reconcile(rows, tab, complete, force)
+
+
+def _reconcile(rows, tab, complete, force):
     d = _load()
     by_key = {e['key']: e for e in d['entries']}
     seen, adopted, confirmed = set(), 0, 0

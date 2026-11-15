@@ -27,7 +27,7 @@ import os, re, json, datetime, glob, subprocess
 from .core import *          # noqa: F401,F403 -- the shared vocabulary
 from . import core
 from .events import resolve_events
-from .metrics import _ledger_update
+from .metrics import _ledger_update, ledger_lock, ledger_write
 from . import ics, status, sync, views
 from . import scoops as inputs
 
@@ -295,18 +295,21 @@ def cmd_brief(a):
     # tree. A rescheduled meeting rewrites its note, and doing that afterwards
     # would leave the rewrite sitting uncommitted with nothing explaining it.
     evrecs = resolve_events(fix=True)
-    led = _ledger_update(_tasks())
+    # Locked: the timer's `pull --due` runs this same brief every few minutes,
+    # and two passes interleaving here lose one's drops or double-report them.
+    tasks = _tasks()
+    with ledger_lock():
+        led = _ledger_update(tasks)
 
-    # Only this pass's drops. A 30-day window re-reported the same drop every
-    # run for a month, which made a single edit look like sustained abandonment.
-    seen = led.get('__meta__', {}).get('reported_at', '')
-    dropped = sorted(t for t, e in led.items()
-                     if t != '__meta__' and e.get('dropped_on', '') > seen)
-    renamed = sorted(t for t, e in led.items()
-                     if t != '__meta__' and e.get('renamed_on', '') > seen)
-    led.setdefault('__meta__', {})['reported_at'] = datetime.datetime.now().isoformat()
-    with open(LEDGER, 'w', encoding='utf-8') as fh:
-        json.dump(led, fh, indent=1, sort_keys=True)
+        # Only this pass's drops. A 30-day window re-reported the same drop every
+        # run for a month, which made a single edit look like sustained abandonment.
+        seen = led.get('__meta__', {}).get('reported_at', '')
+        dropped = sorted(t for t, e in led.items()
+                         if t != '__meta__' and e.get('dropped_on', '') > seen)
+        renamed = sorted(t for t, e in led.items()
+                         if t != '__meta__' and e.get('renamed_on', '') > seen)
+        led.setdefault('__meta__', {})['reported_at'] = datetime.datetime.now().isoformat()
+        ledger_write(led)
 
     fl = flags(evrecs)
     for t in dropped:
@@ -319,8 +322,10 @@ def cmd_brief(a):
     q = {'generated': datetime.datetime.now().isoformat(timespec='seconds'),
          'events': rows, 'notes_uncommitted': changes, 'guides': guides,
          'tasks_dropped': dropped, 'tasks_renamed': renamed, 'flags': fl}
-    with open(QUEUE_JSON, 'w', encoding='utf-8') as fh:
+    tmp = '%s.%d.tmp' % (QUEUE_JSON, os.getpid())
+    with open(tmp, 'w', encoding='utf-8') as fh:
         json.dump(q, fh, indent=1)
+    os.replace(tmp, QUEUE_JSON)     # read by other processes; never half a file
     _write_brief(q)
     print('brief: %d open event(s), %d uncommitted note(s), %d flag(s)'
           % (len(rows), len(changes), len(fl)))
@@ -402,7 +407,14 @@ def _write_brief(q):
           'with `python3 -m zipper commit "<message>"`.', '',
           'Related: [[Status]] · [[Now]] · [[Review]] · [[Home]]', '']
     os.makedirs(METADIR, exist_ok=True)     # a new vault has no Meta/ until now
-    open(os.path.join(METADIR, 'Queue.md'), 'w', encoding='utf-8').write('\n'.join(L))
+    out = os.path.join(METADIR, 'Queue.md')
+    # The temp file sits in Inbox/ (gitignored, same filesystem), so a writer
+    # killed mid-write leaves nothing in the notes.
+    os.makedirs(INBOX, exist_ok=True)
+    tmp = os.path.join(INBOX, '.Queue.md.%d.tmp' % os.getpid())
+    with open(tmp, 'w', encoding='utf-8') as fh:
+        fh.write('\n'.join(L))
+    os.replace(tmp, out)
 
 def live_others():
     """Conversations other than this one that are live right now. Shared by

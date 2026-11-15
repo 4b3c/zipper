@@ -233,7 +233,7 @@ def pull(name, log=print):
     else:
         last.pop(name + ':error', None)
     os.makedirs(core.INBOX, exist_ok=True)
-    tmp = PULLS + '.tmp'
+    tmp = '%s.%d.tmp' % (PULLS, os.getpid())     # the timer and a pass pull at once
     with open(tmp, 'w', encoding='utf-8') as fh:
         json.dump(last, fh, indent=1)
     os.replace(tmp, PULLS)

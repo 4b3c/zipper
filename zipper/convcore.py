@@ -735,7 +735,7 @@ def delivered(thread_id, text):
     return bool(d.get('key')) and d['key'] == key
 
 
-def clear_delivery(thread_id):
+def clear_delivery(thread_id, text=None):
     """Take back a delivery record for a message that never arrived.
 
     `note_delivery` has to run *before* the paste -- the turn it describes can
@@ -755,6 +755,10 @@ def clear_delivery(thread_id):
         row = d.get(str(thread_id))
         if row:
             row.pop('last_delivered', None)
+            # The set too, or `delivered` keeps matching: this text's newest entry.
+            keys = [isinstance(e, dict) and e.get('key') for e in row.get('deliveries') or []]
+            if text is not None and delivery_key(text) in keys:
+                del row['deliveries'][len(keys) - 1 - keys[::-1].index(delivery_key(text))]
 
 
 def deliver(thread_id, text, source='discord'):
@@ -785,7 +789,7 @@ def deliver(thread_id, text, source='discord'):
     note_delivery(thread_id, text)
     r = convhead.deliver(thread_id, text, wait='echo')
     if not r.get('ok'):
-        clear_delivery(thread_id)
+        clear_delivery(thread_id, text)
         return r
     # `state` is what the dashboard's status line reads. A resumed session and a
     # brand-new one are still worth telling apart; "live" is gone, because
