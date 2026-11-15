@@ -80,7 +80,8 @@ Events go on a calendar called Zipper that the engine creates in the Google acco
 `calendar.app.created`: it can't see or touch any other event). The same key updates one event
 rather than adding a second; the default key is the date and title. Each change, and each
 calendar pull, rewrites `Inbox/calendar-zipper.json`, so the events reach the agenda like any
-feed. The first use after this scope was added needs `zipper google --auth` again.
+feed. Every add, change and removal also leaves a calendar queue row marked "written by
+Zipper", so the next bookkeeping pass looks at it again (`scoops/calendar/GUIDE.md`).
 
 **Budget** — `python3 -m zipper ingest-budget transactions.csv`. Column detection is
 best-effort; only monthly totals are written.

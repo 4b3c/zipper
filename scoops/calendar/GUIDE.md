@@ -14,6 +14,15 @@ window doesn't invent events.
   ask how it went against **Going in**, write **How it went**, set `status: debriefed`, and
   turn follow-ups into tasks.
 
+## Rows Zipper wrote
+
+A row marked `zipper ... (written by Zipper)` is an event a session put on, changed or took
+off the Zipper calendar with `zipper cal`. It is there for a second look, not because
+anything happened. Check it against where it came from (the email, Slack message or task):
+the date and time, the details in the description, and that it really is something the
+operator can only do at that moment. If it replaced a task, the task should be gone from
+`Tasks/`. Fix what's wrong with `zipper cal add` under the same `--key`, or `zipper cal rm`.
+
 ## Don't
 
 - **Don't put a `- [ ]` checkbox in an event note.** Every checkbox is read as a task.

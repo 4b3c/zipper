@@ -224,6 +224,39 @@ def _explain(e):
     return 'Google error %s: %s' % (_status(e) or '?', reason or e)
 
 
+def _review_row(action, start, title):
+    """A queue row for every write, so the next bookkeeping pass looks at it again.
+
+    The calendar scoop's own rows come from diffing a pull against the one
+    before, and these writes refresh the agenda file themselves, so the next pull
+    sees nothing new and no row would appear. A Zipper write is exactly what
+    wants a second pair of eyes: the right date and time, the details in the
+    description, the task it replaces gone from Tasks/. The row says it was
+    Zipper's, which the guide uses. A failure here never undoes the write.
+    """
+    try:
+        from . import serve
+        mark = {'add': '+', 'update': '~', 'remove': '-'}[action]
+        serve.publish('diff', '%s zipper    %s  %s  (written by Zipper)'
+                      % (mark, start.replace('T', ' '), title),
+                      system='calendar', action='edit' if action == 'update' else action,
+                      when=start.replace('T', ' ')[:16], who='zipper', scoop='calendar')
+    except Exception as e:
+        print('(no queue row: %s)' % e)
+
+
+def _find(key):
+    """The synced copy of the event a key names, for saying what a removal removed."""
+    eid = event_id(key)
+    try:
+        for e in json.load(open(_out(), encoding='utf-8')).get('events', []):
+            if e.get('uid') == eid:
+                return e
+    except Exception:
+        pass
+    return None
+
+
 def cmd_cal(a):
     if not ready():
         print('Google is not set up: `zipper google --auth`')
@@ -235,12 +268,18 @@ def cmd_cal(a):
             key = a.key or '%s %s' % (a.start[:10], a.title)
             how = put(key, a.title, a.start, a.end, a.note or '', a.location or '')
             sync()
+            _review_row('add' if how == 'added' else 'update', a.start, a.title)
             print('%s: %s, %s (key: %s)' % (how, a.title, a.start, key))
         elif a.action == 'rm':
             if not a.key:
                 print('rm needs --key'); return 1
-            print('removed' if remove(a.key) else 'no such event')
+            old = _find(a.key)
+            gone = remove(a.key)
             sync()
+            if gone:
+                _review_row('remove', old['start'] if old else a.key[:10],
+                            old['summary'] if old else a.key)
+            print('removed' if gone else 'no such event')
         else:
             evs = sync()
             today = core.TODAY.isoformat()
