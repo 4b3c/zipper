@@ -74,6 +74,14 @@ scoop's first snapshot is a baseline and emits no rows.
 A URL is remembered in `Inbox/calendars.json` and refetched whenever the calendar scoop pulls; a file goes
 stale. The secret URL grants read access to anyone holding it, so it lives only in `Inbox/`.
 
+**Writing to Google Calendar** — `zipper cal add --title "..." --start 2026-11-17T18:00
+[--end ...] [--note "details"] [--key ...]`, `zipper cal list`, `zipper cal rm --key ...`.
+Events go on a calendar called Zipper that the engine creates in the Google account (scope
+`calendar.app.created`: it can't see or touch any other event). The same key updates one event
+rather than adding a second; the default key is the date and title. Each change, and each
+calendar pull, rewrites `Inbox/calendar-zipper.json`, so the events reach the agenda like any
+feed. The first use after this scope was added needs `zipper google --auth` again.
+
 **Budget** — `python3 -m zipper ingest-budget transactions.csv`. Column detection is
 best-effort; only monthly totals are written.
 
