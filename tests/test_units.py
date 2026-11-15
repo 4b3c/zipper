@@ -754,6 +754,33 @@ class QueueRows(unittest.TestCase):
         finally:
             upstream.SEEN = real
 
+    def test_commit_ticks_only_its_own_brief(self):
+        # The GEO email: a row that arrived after the pass's brief, or a commit
+        # from a conversation that never pulled one, must not get ticked.
+        from zipper.web import feed
+        real = runqueue.PASS_DIR, feed.FEED_JSON
+        runqueue.PASS_DIR = os.path.join(TMP, 'passes')
+        feed.FEED_JSON = os.path.join(TMP, 'feed.json')
+        try:
+            rows = [{'key': k, 'text': k} for k in ('seen1', 'seen2', 'late')]
+            json.dump({'rows': rows}, open(feed.FEED_JSON, 'w'))
+            os.environ['ZIPPER_PASS'] = 'pass-a'
+            runqueue.record_pass(rows[:2])
+            os.environ['ZIPPER_PASS'] = 'pass-b'
+            self.assertIsNone(runqueue.take_pass())          # never pulled: ticks nothing
+            os.environ['ZIPPER_PASS'] = 'pass-a'
+            keys = runqueue.take_pass()
+            self.assertEqual(sorted(keys), ['seen1', 'seen2'])
+            feed.feed_load()
+            self.assertEqual(feed.feed_mark_keys(keys)['marked'], 2)
+            left = [r['key'] for r in json.load(open(feed.FEED_JSON))['rows'] if not r.get('done')]
+            self.assertEqual(left, ['late'])
+            runqueue.end_pass()
+            self.assertIsNone(runqueue.take_pass())          # one brief, one commit
+        finally:
+            os.environ.pop('ZIPPER_PASS', None)
+            runqueue.PASS_DIR, feed.FEED_JSON = real
+
     def test_upstream_on_by_default(self):
         self.assertTrue(scoops.manifests()['upstream'].get('default_on'))
 

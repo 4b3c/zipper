@@ -138,7 +138,7 @@ def main():
     s.add_argument('--days', type=int, default=14); s.set_defaults(fn=runqueue.cmd_fetch)
     s = sub.add_parser('brief', help='rewrite the brief without pulling anything')
     s.add_argument('--days', type=int, default=14); s.set_defaults(fn=runqueue.cmd_brief)
-    s = sub.add_parser('commit', help='close a pass: tick every event, commit the notes')
+    s = sub.add_parser('commit', help='close a pass: tick the rows its brief showed, commit the notes')
     s.add_argument('message')
     s.add_argument('--force', action='store_true',
                    help='commit even while another conversation is live')

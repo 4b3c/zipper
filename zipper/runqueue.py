@@ -22,7 +22,7 @@ bookkeeping pass; `cmd_pull` pulls the scoops that are due and ends by calling i
 reading in between is not a command and cannot be one. `cmd_commit` ends the
 pass by ticking the rows and committing the notes.
 """
-import os, re, json, datetime, glob, subprocess
+import os, re, json, datetime, glob, subprocess, time
 
 from .core import *          # noqa: F401,F403 -- the shared vocabulary
 from . import core
@@ -34,6 +34,69 @@ from . import scoops as inputs
 
 QUEUE_JSON = os.path.join(INBOX, 'queue.json')
 FEED_JSON = os.path.join(INBOX, 'feed.json')
+# One file per pass, naming the rows its brief showed. `zipper commit` ticks
+# those and only those.
+PASS_DIR = os.path.join(INBOX, 'passes')
+PASS_MAX_AGE = 12 * 3600     # a brief older than this is no longer what the pass is working from
+
+
+def pass_id():
+    """Who is running this pass: the scheduled pass's session (`ZIPPER_PASS`),
+    else the conversation. None for the timer's `pull --due`, which is nobody's pass."""
+    from . import chat
+    return os.environ.get('ZIPPER_PASS') or chat.current_conversation()
+
+
+def _pass_file(pid):
+    return os.path.join(PASS_DIR, re.sub(r'[^A-Za-z0-9_.-]', '_', pid) + '.json')
+
+
+def record_pass(rows):
+    """Remember which rows this pass's brief showed. Rewritten on every brief
+    the pass pulls, so it is always the latest brief it was handed."""
+    pid = pass_id()
+    if not pid:
+        return
+    os.makedirs(PASS_DIR, exist_ok=True)
+    # Conversations that pulled and never committed leave a file; drop stale ones.
+    for f in glob.glob(os.path.join(PASS_DIR, '*.json')):
+        try:
+            if time.time() - os.path.getmtime(f) > PASS_MAX_AGE:
+                os.remove(f)
+        except OSError:
+            pass
+    out = _pass_file(pid)
+    tmp = '%s.%d.tmp' % (out, os.getpid())
+    with open(tmp, 'w', encoding='utf-8') as fh:
+        json.dump({'id': pid, 'at': datetime.datetime.now().isoformat(timespec='seconds'),
+                   'keys': [r['key'] for r in rows if r.get('key')]}, fh)
+    os.replace(tmp, out)
+
+
+def take_pass():
+    """The row keys this pass's brief showed, or None if this process never
+    pulled a brief (or pulled one too long ago). The id inside the file is
+    checked as well as its name, so two ids that sanitise alike can't trade rows."""
+    pid = pass_id()
+    if not pid:
+        return None
+    try:
+        rec = json.load(open(_pass_file(pid), encoding='utf-8'))
+        at = datetime.datetime.fromisoformat(rec['at'])
+    except Exception:
+        return None
+    if rec.get('id') != pid or (datetime.datetime.now() - at).total_seconds() > PASS_MAX_AGE:
+        return None
+    return rec.get('keys') or []
+
+
+def end_pass():
+    pid = pass_id()
+    if pid:
+        try:
+            os.remove(_pass_file(pid))
+        except OSError:
+            pass
 
 # ------------------------------------------------------------------ git
 
@@ -327,6 +390,7 @@ def cmd_brief(a):
         json.dump(q, fh, indent=1)
     os.replace(tmp, QUEUE_JSON)     # read by other processes; never half a file
     _write_brief(q)
+    record_pass(rows)
     print('brief: %d open event(s), %d uncommitted note(s), %d flag(s)'
           % (len(rows), len(changes), len(fl)))
     print('  -> Meta/Queue.md  +  Inbox/queue.json')
@@ -446,7 +510,15 @@ def live_others():
 
 
 def cmd_commit(a):
-    """Close a bookkeeping pass: tick every event and commit the notes.
+    """Close a bookkeeping pass: tick the rows its brief showed and commit the notes.
+
+    **Only the rows this pass was handed.** The timer pulls every few minutes,
+    so rows keep arriving while a pass works, and a commit from a conversation
+    that never pulled a brief has read none of them. Ticking everything open is
+    how an "action required" email got marked handled without anyone opening
+    it. So `zipper pull` (or `brief`) records the keys it showed, per pass, and
+    commit ticks exactly those. A commit with no brief behind it commits notes
+    and ticks nothing.
 
     The last of the pass's three steps -- fetch, reason, commit -- and the only
     other one that is a command. What happens in between is an agent reading
@@ -481,7 +553,14 @@ def cmd_commit(a):
         print('commit: nothing ticked or committed.')
         return 1
     serve.feed_load()
-    marked = serve.feed_mark_all()['marked']
+    keys = take_pass()
+    marked = serve.feed_mark_keys(keys)['marked'] if keys else 0
+    end_pass()
+    if keys is None:
+        left = len(open_rows())
+        if left:
+            print('commit: no brief pulled in this conversation, so no rows ticked '
+                  '(%d open, left for the next pass)' % left)
     if paths:
         # Not check=False-and-forget. `git add` aborts the entire batch if one
         # pathspec matches nothing, so a single unreadable path silently took
