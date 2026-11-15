@@ -12,7 +12,7 @@ from .conv import (PASTE_DIR, TTYD, _prune_pastes, _queue_prompt, close_conversa
                    conversation_rows,
                    current_conversation, new_conversation, newest_buffer,
                    open_conversation, start_session)
-from .data import delete_task, toggle_done, week_worklist
+from .data import close_task, delete_task, toggle_done, week_worklist
 from .live import live_sig
 from .feed import (SUBS, SUBS_LOCK, do_refresh, emit_diff, feed_load, feed_mark,
                    feed_mark_all, feed_rows, feed_watch, notes_watch, publish,
@@ -488,6 +488,14 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 key = json.loads(self.rfile.read(n).decode('utf-8'))['key']
                 self._send(200, json.dumps(toggle_done(key)), 'application/json')
+            except Exception as e:
+                self._send(400, json.dumps({'error': str(e)}), 'application/json')
+        elif self.path == '/api/closetask':
+            n = int(self.headers.get('Content-Length', 0))
+            try:
+                body = json.loads(self.rfile.read(n).decode('utf-8'))
+                self._send(200, json.dumps(close_task(body['key'], body.get('reason', ''))),
+                           'application/json')
             except Exception as e:
                 self._send(400, json.dumps({'error': str(e)}), 'application/json')
         elif self.path == '/api/deltask':

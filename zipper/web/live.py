@@ -91,7 +91,9 @@ LIVE_JS = """
   }
 
   async function poll(){
-    if(busy||document.hidden||Date.now()-touched<4000) return;
+    // Someone typing a reason into a task (closewhy.py): a swap would throw it away.
+    const ae=document.activeElement;
+    if(busy||document.hidden||Date.now()-touched<4000||(ae&&ae.closest&&ae.closest('.closewhy'))) return;
     busy=true;
     try{
       // Which board this is travels as `path`: /p/<key> fingerprints its own cards.

@@ -389,6 +389,48 @@ def delete_task(key):
     open(p, 'w', encoding='utf-8').write('\n'.join(lines))
     return {'ok': True, 'where': os.path.basename(p)}
 
+def close_task(key, reason):
+    """Tick a task and write why under it: the dashboard's close-with-a-reason.
+
+    The reason goes below the task's description, so the file keeps what was
+    asked and how it was answered together, and a queue row asks the next pass
+    to carry it into the notes it decides -- "Mini Charlotte will take all my
+    hours unless Orbitscape is allowed to" belongs on the lab and project notes,
+    not only under a ticked box.
+    """
+    from .closewhy import reason_line
+    from .feed import publish
+    if not key.startswith('task:'):
+        return {'ok': False, 'error': 'only tasks can be closed with a reason'}
+    if not ' '.join(str(reason or '').split()):
+        return {'ok': False, 'error': 'no reason given'}
+    p, lines, i = _find_task(key)
+    if p is None:
+        return {'ok': False, 'error': 'task not found'}
+    if generated(p):
+        return {'ok': False, 'error': 'read-only: change it on %s' % generated(p)}
+    m = core.TASK_RE.match(lines[i])
+    if m.group(1).lower() == 'x':
+        return {'ok': False, 'error': 'already ticked'}
+    lines[i] = lines[i].replace('[ ]', '[x]', 1)
+    j = i + 1
+    while j < len(lines) and lines[j].strip() and lines[j][:1] in (' ', '\t') \
+            and not core.TASK_RE.match(lines[j]):
+        j += 1
+    line = reason_line(reason)
+    lines.insert(j, line)
+    tmp = '%s.%d.tmp' % (p, os.getpid())
+    with open(tmp, 'w', encoding='utf-8') as fh:
+        fh.write('\n'.join(lines))
+    os.replace(tmp, p)
+    title = key.split('|', 1)[1]
+    publish('diff', 'closed      "%s"  %s  (%s)'
+            % (title, line.strip(), os.path.relpath(p, core.VAULT)),
+            system='tasks', action='edit', who='operator',
+            when=datetime.datetime.now().isoformat(timespec='minutes'))
+    return {'ok': True, 'where': os.path.basename(p)}
+
+
 def flags():
     try:
         return json.load(open(os.path.join(core.INBOX, 'queue.json'), encoding='utf-8')).get('flags', [])
