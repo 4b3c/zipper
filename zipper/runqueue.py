@@ -397,9 +397,10 @@ def cmd_brief(a):
     return 0
 
 SYSTEM_LABEL = {'github': 'GitHub', 'calendar': 'Calendar', 'canvas': 'Canvas', 'gmail': 'Gmail',
-                'slack': 'Slack', 'vault': 'Vault', 'zipper': 'Zipper', 'error': 'Errors',
+                'slack': 'Slack', 'tasks': 'Tasks closed with a reason', 'vault': 'Vault',
+                'zipper': 'Zipper', 'error': 'Errors',
                 'other': 'Other'}
-SYSTEM_ORDER = ('github', 'canvas', 'calendar', 'gmail', 'slack', 'zipper', 'vault', 'error',
+SYSTEM_ORDER = ('github', 'canvas', 'calendar', 'gmail', 'slack', 'tasks', 'zipper', 'vault', 'error',
                 'other')
 
 
@@ -443,6 +444,12 @@ def _write_brief(q):
             continue
         clears = 'commit' if sysname == 'vault' else 'tick'
         L += ['', '### %s  <sub>clears by %s</sub>' % (SYSTEM_LABEL[sysname], clears), '']
+        if sysname == 'tasks':
+            # Closed from the dashboard with the operator's own reason. The reason is
+            # an answer, usually a decision: it belongs in the notes it settles.
+            L += ['*The operator ticked these from the dashboard and said why. The reason '
+                  'is theirs: carry it into every note it settles (a choice is a '
+                  '`zipper decide`), and fix anything it makes false.*', '']
         # Only the guides this pass needs: a scoop with no rows costs no reading.
         have = set(q.get('guides') or ())
         need = sorted({inputs.row_scoop(e) for e in rows} & have)

@@ -27,6 +27,7 @@ from .base import *
 from .base import box, core, canvas, events, metrics, usage
 from .feed import feed_load, feed_rows, note_rows
 from .js import TICKJS
+from .closewhy import CLOSE_CSS, CLOSE_JS, close_form
 from .conv import _queue_prompt, current_conversation
 from .live import LIVE_JS, live_sig
 from .cards import CARD_CSS, CARD_JS
@@ -206,7 +207,7 @@ def _page(title, css, body, extra_js=''):
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
             '<title>%s</title><style>%s%s</style></head><body>%s'
             '<script>%s%s</script></body></html>'
-            % (esc(title), BASE_CSS, css, body, TICKJS, SCROLLJS + extra_js))
+            % (esc(title), BASE_CSS + CLOSE_CSS, css, body, TICKJS + CLOSE_JS, SCROLLJS + extra_js))
 
 
 SCROLLJS = """
@@ -218,7 +219,7 @@ document.addEventListener('click',e=>{
 // something: the tick box crosses it off, a link opens the assignment.
 document.addEventListener('click',e=>{
   const r=e.target.closest('li.row.has');
-  if(!r||e.target.closest('a')||e.target.closest('.tick')||e.target.closest('.del')) return;
+  if(!r||e.target.closest('a')||e.target.closest('.tick')||e.target.closest('.del')||e.target.closest('.closewhy')) return;
   r.classList.toggle('open');
 });
 // Delegated, not bound per panel: a live update swaps panels for new nodes.
@@ -794,14 +795,17 @@ def _row(it, showat=True, showdue=False, pill=False):
     if it.get('source') == 'canvas' and len(d) > 140:
         d = ''
     desc = '<span class="rowdesc">%s</span>' % esc(plain(d)) if d else ''
+    # A task opens even with no description: inside is the box for closing it
+    # with a reason (closewhy.py).
+    form = close_form(it)
     return ('<li class="row%s%s"><button class="tick%s" data-key="%s"%s>%s</button>'
-            '<span class="rowbody"><span class="rowtitle">%s</span>%s'
+            '<span class="rowbody"><span class="rowtitle">%s</span>%s%s'
             '<span class="rowmeta">%s</span></span>%s%s</li>'
-            % (' crossed' if it.get('done') else '', ' has' if desc else '',
+            % (' crossed' if it.get('done') else '', ' has' if desc or form else '',
                ' ghost' if it.get('readonly') else '', esc(it['key']),
                ' disabled title="submitted in Canvas"' if it.get('submitted')
                else ' title="read-only: change it on GitHub"' if it.get('readonly') else '',
-               '&#10003;' if it.get('done') else '', title, desc,
+               '&#10003;' if it.get('done') else '', title, desc, form,
                ' &middot; '.join(meta), tag, del_button(it)))
 
 
