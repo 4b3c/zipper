@@ -165,6 +165,14 @@ def _children():
 def _scheduler(stop):
     busy = threading.Lock()
     while not stop.wait(30):
+        # Wakeups whose runner a restart killed. Every tick, not only at start:
+        # a runner can die without the supervisor restarting, and the check is
+        # one lock attempt per pending job.
+        try:
+            from . import later
+            later.revive()
+        except Exception as e:
+            print('[run] later.revive failed: %s' % e, flush=True)
         if busy.locked():
             continue
         now = datetime.datetime.now()

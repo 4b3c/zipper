@@ -19,10 +19,20 @@ its reply is forwarded by the Stop hook like any
 other, and a turn already in flight is waited for by the turn lock.
 
 A job is one file, rewritten whole at each step, so a runner killed at any line
-leaves a job that still says what it was doing; `--list` reads the pid to tell
-a waiting job from one whose runner died (a container restart).
+leaves a job that still says what it was doing.
+
+**A job outlives its runner.** A container or host restart kills every runner
+(the box restarts itself monthly). Each runner holds a lock on its job for as
+long as it lives, so a free lock on a waiting job means the runner is gone, and
+`revive()` -- called by the supervisor's scheduler every tick -- starts a new
+one. A timed job sleeps to its recorded due time, so it fires on time, or at
+once if the restart outlasted it. An `--after` job is not re-run: the command
+may not be safe twice, so the conversation is woken and told the wait was cut
+off and to check for itself. The lock is taken *before* a runner starts and
+handed to it (`_spawn`), so a job is never unclaimed: not in the seconds a new
+runner takes to boot, and not between two revivers racing for the same job.
 """
-import datetime, json, os, re, subprocess, sys, time, uuid
+import datetime, fcntl, json, os, re, subprocess, sys, time, uuid
 
 from . import core, settings
 
@@ -59,12 +69,61 @@ def _load(jid):
         return json.load(fh)
 
 
-def _alive(pid):
+def _lock_path(jid):
+    return os.path.join(DIR, jid + '.lock')
+
+
+def _take(jid):
+    """The job's lock, held open for the runner's life, or None if a live runner
+    already has it. The kernel drops it when the process dies, however it dies."""
+    os.makedirs(DIR, exist_ok=True)
+    fh = open(_lock_path(jid), 'a')
     try:
-        os.kill(int(pid), 0)
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return fh
+    except OSError:
+        fh.close()
+        return None
+
+
+def _alive(jid, pid=None):
+    """Is a runner holding this job? The lock says, for every runner since locks
+    came in. A runner started before that holds none, so its pid counts too, but
+    only if that process is still `_later <jid>`: after a restart the number may
+    belong to anything."""
+    fh = _take(jid)
+    if fh is None:
         return True
+    fh.close()
+    return _legacy_alive(jid, pid)
+
+
+def _legacy_alive(jid, pid):
+    try:
+        with open('/proc/%d/cmdline' % int(pid), 'rb') as c:
+            argv = c.read().split(b'\0')
+        return b'_later' in argv and jid.encode() in argv
     except (OSError, TypeError, ValueError):
         return False
+
+
+LOCK_FD = 'ZIPPER_LATER_LOCK_FD'
+
+
+def _spawn(jid, lock):
+    """Start a runner that inherits `lock`, already held. The job is never
+    unclaimed: taken here before the runner starts, so the seconds Python takes
+    to boot can't look like a dead runner to `revive()`, and a probe can't
+    steal the lock from a runner on its way up."""
+    env = dict(os.environ, **{LOCK_FD: str(lock.fileno())})
+    try:
+        return subprocess.Popen([sys.executable, '-m', 'zipper', '_later', jid],
+                                cwd=settings.ROOT, start_new_session=True,
+                                stdin=subprocess.DEVNULL, stdout=open(LOG, 'a'),
+                                stderr=subprocess.STDOUT, pass_fds=(lock.fileno(),),
+                                env=env)
+    finally:
+        lock.close()            # the runner's copy keeps the lock; this one goes
 
 
 def _now():
@@ -80,13 +139,37 @@ def schedule(thread_id, note, delay=None, after=None):
         job['due'] = (datetime.datetime.now()
                       + datetime.timedelta(seconds=delay)).isoformat(timespec='seconds')
     _save(job)
-    proc = subprocess.Popen([sys.executable, '-m', 'zipper', '_later', job['id']],
-                            cwd=settings.ROOT, start_new_session=True,
-                            stdin=subprocess.DEVNULL, stdout=open(LOG, 'a'),
-                            stderr=subprocess.STDOUT)
-    job['pid'] = proc.pid
-    _save(job)
+    _spawn(job['id'], _take(job['id']))
     return job
+
+
+def revive():
+    """Start a runner for every waiting or delivering job that has none. Returns
+    the ids started. A job mid-delivery when its runner died is delivered again
+    and says so: the turn it started may or may not have finished, and a repeat
+    is visible where a lost wakeup is not."""
+    started = []
+    for job in jobs():
+        if job.get('state') not in ('waiting', 'delivering'):
+            continue
+        # Taken and kept, not probed: whoever gets it starts the runner, so two
+        # revivers can't both start one, and it goes straight to the runner.
+        lock = _take(job['id'])
+        if lock is None:
+            continue
+        if _legacy_alive(job['id'], job.get('pid')):
+            lock.close()
+            continue
+        job['revived'] = job.get('revived', 0) + 1
+        job['revived_at'] = _now()
+        job['cut_off'] = job['state']
+        job['state'] = 'waiting'
+        _save(job)
+        _spawn(job['id'], lock)
+        started.append(job['id'])
+        print('[later] %s  %s revived (runner gone while %s)' % (_now(), job['id'], job['cut_off']),
+              flush=True)
+    return started
 
 
 def message(job, result=None):
@@ -95,6 +178,15 @@ def message(job, result=None):
     head = ('[zipper later] Not a new message from the operator: a wakeup this '
             'conversation set at %s.' % job['set_at'])
     lines = [head, 'Note: %s' % (job['note'] or '(none)')]
+    if job.get('revived_at') and job.get('cut_off') == 'delivering':
+        lines.append('A restart cut this wakeup off while it was being delivered '
+                     '(revived %s), so it may already have run once: check before '
+                     'repeating anything.' % job['revived_at'])
+    if job.get('after') and result is None:
+        lines.append('The wait on `%s` was cut off by a restart (revived %s) and was '
+                     'not run again, since it may not be safe twice. Check the state '
+                     'yourself, and set the wakeup again if it is still needed.'
+                     % (job['after'], job.get('revived_at')))
     if result is not None:
         lines.append('Command `%s` finished with exit code %d after %ds. Output (tail):'
                      % (job['after'], result['code'], result['secs']))
@@ -106,11 +198,21 @@ def message(job, result=None):
 def run(jid):
     """The detached runner: wait, then deliver."""
     from . import conversations
+    fd = os.environ.pop(LOCK_FD, None)
+    # Handed down by whoever started us (it already holds the job), or taken
+    # here when the runner was started by hand.
+    lock = os.fdopen(int(fd), 'a') if fd else _take(jid)
+    if lock is None:
+        return 0                # another runner has it
     job = _load(jid)
+    if job.get('state') not in ('waiting', 'delivering'):
+        return 0
     job['pid'] = os.getpid()
     _save(job)
     result = None
-    if job.get('after'):
+    if job.get('after') and job.get('revived_at'):
+        pass                    # cut off by a restart: say so, don't re-run (message)
+    elif job.get('after'):
         t0 = time.time()
         p = subprocess.run(job['after'], shell=True, cwd=job.get('cwd') or core.VAULT,
                            stdin=subprocess.DEVNULL, capture_output=True, text=True,
@@ -183,7 +285,7 @@ def cmd_later(a):
     if a.list:
         rows = [j for j in jobs() if j.get('state') in ('waiting', 'delivering')]
         for j in rows:
-            state = j['state'] if _alive(j.get('pid')) else 'lost (runner died)'
+            state = j['state'] if _alive(j['id'], j.get('pid')) else 'runner gone (revived within a minute)'
             when = ('at %s' % j['due']) if j.get('due') else ('after `%s`' % j['after'])
             print('%s  %s  %s  thread %s  %s' % (j['id'], state, when, j['thread'], j['note']))
         if not rows:
