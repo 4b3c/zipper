@@ -7,7 +7,7 @@ want to know what zipper can do.
 import argparse
 
 from . import (canvas, chat, conversations, decisions, digest, events, ext, gh, ghapp,
-               google, hours, ics, lint, metrics, runqueue, settings, status, sync, views)
+               gcal, google, hours, ics, lint, metrics, runqueue, settings, status, sync, views)
 
 
 def _pass_cmd(a):
@@ -82,6 +82,14 @@ def main():
     s = sub.add_parser('google', help='the Google account behind the timesheet')
     s.add_argument('--auth', action='store_true', help='print the consent link')
     s.set_defaults(fn=_needs(('hours', 'gmail'), google.cmd_google))
+
+    s = sub.add_parser('cal', help="events on the Zipper calendar in the operator's Google Calendar")
+    s.add_argument('action', nargs='?', default='list', choices=('list', 'add', 'rm'))
+    s.add_argument('--title'); s.add_argument('--start', help="'2026-11-17T18:00' or '2026-11-17'")
+    s.add_argument('--end'); s.add_argument('--note', help='the details, as the event description')
+    s.add_argument('--location')
+    s.add_argument('--key', help='names the event: the same key updates it (default: date + title)')
+    s.set_defaults(fn=_needs(('hours', 'gmail'), gcal.cmd_cal))
 
     s = sub.add_parser('gmail', help='recent mail the queue saw, or read one message')
     s.add_argument('id', nargs='?', help='a message id from a queue row (#...)')

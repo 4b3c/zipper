@@ -15,6 +15,20 @@ CADENCE = {1: 'daily', 7: 'weekly', 14: 'fortnightly', 28: '4-weekly'}
 
 def pull():
     ics.cmd_calendars(argparse.Namespace(skip=claimed_calendars()))
+    _pull_zipper_calendar()
+
+
+def _pull_zipper_calendar():
+    """Refresh the Zipper calendar's file, so a move the operator made in Google
+    Calendar reaches the agenda. Only once the calendar exists; a failure keeps
+    the last file rather than stopping the ICS feeds, which already ran."""
+    from zipper import gcal
+    if not core.cfg('ZIPPER_GCAL_ID'):
+        return
+    try:
+        gcal.sync()
+    except Exception as e:
+        print('zipper calendar: %s' % e)
 
 
 def _files():

@@ -45,12 +45,16 @@ SCOPES = ['https://www.googleapis.com/auth/spreadsheets',
           'https://www.googleapis.com/auth/gmail.readonly']
 MODIFY = 'https://www.googleapis.com/auth/gmail.modify'
 
+# Calendar: only calendars Zipper itself creates (`gcal.py`). It can't read or
+# change any other event in the account.
+CALENDAR = 'https://www.googleapis.com/auth/calendar.app.created'
+
 
 def scopes():
     from . import settings
     if settings.get('scoops.gmail.folders'):
-        return SCOPES[:1] + [MODIFY]
-    return list(SCOPES)
+        return SCOPES[:1] + [MODIFY, CALENDAR]
+    return list(SCOPES) + [CALENDAR]
 
 # The file core reads, so the token lands where the next process looks. This
 # once built its own path beside the code, which stopped being where `.env`
