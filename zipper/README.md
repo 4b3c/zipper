@@ -142,7 +142,10 @@ Polled every 4s, because another conversation's edits write no file to watch.
 
 **The card is read-only.** A row means the vault hasn't accounted for something; the only
 thing that accounts for it is working out what it affected. So rows clear two ways:
-`zipper commit` closing a pass, or `--mark` from the session that did the work.
+`zipper commit` closing a pass, or `--mark` from the session that did the work. Commit ticks
+only the rows in the brief that pass pulled (`Inbox/passes/<id>.json`, per conversation, or
+per scheduled pass via `ZIPPER_PASS`); a commit from a conversation that never pulled ticks
+nothing, so a row that arrives mid-pass waits for the next one.
 
     python3 -m zipper.serve --queue           # list, with keys
     python3 -m zipper.serve --mark <key>      # key or unique prefix; toggles, so also undo

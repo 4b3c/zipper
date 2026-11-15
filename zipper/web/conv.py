@@ -39,7 +39,7 @@ def _queue_prompt():
               "guessing. Then tell me what you changed.\n\n"
               "Cross a single row off with its key:\n"
               "  python3 -m zipper.serve --mark <key>\n"
-              "Or end the whole pass — ticks every row and commits the notes:\n"
+              "Or end the whole pass — ticks the rows this brief showed and commits the notes:\n"
               "  python3 -m zipper commit \"<message>\"\n"
               "An open dashboard picks either up within a second.")
 

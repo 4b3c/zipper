@@ -128,6 +128,10 @@ def _open_thread(message, name, channel=None):
 
 def cmd_pass(a):
     from . import runqueue, conversations
+    # The session id is the pass's identity: the brief records its rows under
+    # it, and the Claude it starts commits under it (`_env` passes it on).
+    sid = str(uuid.uuid4())
+    os.environ['ZIPPER_PASS'] = sid
     runqueue.cmd_pull(argparse.Namespace(days=14, names=[], due=True))
     q = _brief()
     counts = {'events': len(q.get('events', [])), 'notes': len(q.get('notes_uncommitted', [])),
@@ -135,16 +139,19 @@ def cmd_pass(a):
     standing = _instructions()
     if not any(counts.values()) and not standing and not getattr(a, 'force', False):
         print('pass: the brief is empty -- nothing to do')
+        runqueue.end_pass()
         return 0
 
-    sid = str(uuid.uuid4())
     print('pass: %(events)d event(s), %(notes)d note(s), %(flags)d flag(s)' % counts
           + ' -- running Claude, session %s' % sid)
     now = datetime.datetime.now()
     prompt = PROMPT % counts + (STANDING % {'slot': _slot(now), 'file': standing,
                                             'now': now.strftime('%a %Y-%m-%d %H:%M')}
                                 if standing else '')
-    notify, message = parse(_run_claude(prompt, sid, timeout=getattr(a, 'timeout', 1800)))
+    try:
+        notify, message = parse(_run_claude(prompt, sid, timeout=getattr(a, 'timeout', 1800)))
+    finally:
+        runqueue.end_pass()     # a pass that didn't commit leaves its rows for the next one
     print(message)
     if not notify or getattr(a, 'dry_run', False):
         print('pass: %s' % ('dry run, nothing sent' if notify else 'routine, nothing sent'))

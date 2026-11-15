@@ -147,6 +147,21 @@ def feed_mark_all():
         return {'ok': True, 'marked': len(hits)}
 
 
+def feed_mark_keys(keys):
+    """Cross off the open rows whose key is in `keys`, in one write. What
+    `zipper commit` uses: a pass ticks the rows its brief showed, and a row that
+    arrived after that brief stays open for the next pass."""
+    keys = set(keys or ())
+    with feed_txn():
+        now = datetime.datetime.now().isoformat(timespec='seconds')
+        hits = [r for r in FEED if not r.get('done') and r.get('key') in keys]
+        for r in hits:
+            r['done'] = now
+        if hits:
+            feed_save()
+        return {'ok': True, 'marked': len(hits)}
+
+
 NOTES = [[], 0.0]        # last computed note changes, and when
 NOTES_TTL = 4.0
 

@@ -44,7 +44,7 @@ from .web.http import *                                        # noqa: F401,F403
 from .web.base import STATE, LOCK, HERE, freshness, ago
 from .web.conv import TTYD, PASTE_DIR, _queue_prompt
 from .web.feed import (FEED, FEED_JSON, FEED_MAX, FEED_LOCK, SUBS, SUBS_LOCK,
-                       feed_load, feed_rows, feed_mark, feed_mark_all,
+                       feed_load, feed_rows, feed_mark, feed_mark_all, feed_mark_keys,
                        feed_save, feed_prune, note_rows, publish,
                        snapshot_data, emit_diff, do_refresh)
 from .web.css import CSS
