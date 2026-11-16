@@ -97,8 +97,16 @@ class Login(unittest.TestCase):
         self.assertIn('Conversations can answer again', self.sent[-1][1])
 
     def test_begin_setup_opens_a_thread_starts_it_and_archives_the_login(self):
-        from zipper import chat, scheduled
-        posted, archived = [], []
+        from zipper import chat, conversations, scheduled
+        posted, archived, titled = [], [], []
+        p = mock.patch.object(conversations, 'touch',
+                              lambda tid, **kw: titled.append((tid, kw.get('title'))))
+        p.start()
+        self.addCleanup(p.stop)
+        known = {}
+        p = mock.patch.object(conversations, 'load', lambda: known)
+        p.start()
+        self.addCleanup(p.stop)
 
         class Resp:
             def read(self):
@@ -113,6 +121,17 @@ class Login(unittest.TestCase):
         self.assertEqual((body['discord_thread_id'], body['opening']), (99, True))
         self.assertTrue(posted[0].full_url.endswith('/discord'))
         self.assertEqual(archived, ['7'])
+        self.assertEqual(titled, [('99', 'Setup')])
+        # A login sent inside a real conversation leaves that thread open.
+        archived.clear()
+        known['7'] = {'title': 'hi'}
+        with mock.patch.object(scheduled, '_open_thread', return_value='100'), \
+                mock.patch('urllib.request.urlopen',
+                           lambda req, timeout=None: posted.append(req) or Resp()), \
+                mock.patch.object(chat, 'discord_archive', lambda tid: archived.append(tid)):
+            self.assertTrue(claudelogin.begin_setup('7'))
+        self.assertEqual(archived, [])
+        known.clear()
         # If the thread can't be opened, the login thread stays and says what to do.
         archived.clear()
         with mock.patch.object(scheduled, '_open_thread', side_effect=RuntimeError('no bot')), \
