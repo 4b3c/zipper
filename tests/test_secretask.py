@@ -118,6 +118,36 @@ class SecretFormTest(unittest.IsolatedAsyncioTestCase):
         with open(self.env) as fh:
             self.assertEqual(fh.read().count('KEY='), 1)
 
+    async def test_no_character_that_splits_a_line_gets_through(self):
+        # Everything str.splitlines() breaks on, plus other invisibles. Each would be a
+        # second .env variable the next time the file is rewritten.
+        for ch in '\n\r\x00\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029\x7f\t':
+            nonce = secretask.new_ask(555, 'KEY', 'k', 'env')
+            _, form = await self.tap_and_submit(nonce, 'abc%sINJECTED=1' % ch)
+            self.assertIn('line break', form.response.sent[0][0], repr(ch))
+        self.assertFalse(os.path.exists(self.env))
+        # And the writer itself refuses, whoever calls it.
+        from zipper import setup
+        with self.assertRaises(ValueError):
+            setup.env_set('KEY', 'abc\u2028INJECTED=1', self.env)
+
+    async def test_webcal_and_capitals_become_fetchable_links(self):
+        for given, want in (('webcal://cal.example/x.ics', 'https://cal.example/x.ics'),
+                            ('WEBCAL://cal.example/x.ics', 'https://cal.example/x.ics'),
+                            ('HTTPS://cal.example/x.ics', 'https://cal.example/x.ics')):
+            self.assertEqual(secretask.clean('calendar', given), (want, None))
+
+    async def test_a_failed_fetch_never_quotes_the_link(self):
+        def ingest(a):
+            print('fetch failed: <urlopen error bad path /feed/SECRETTOKEN123>')
+            return 1
+        with mock.patch('zipper.ics.cmd_ingest_ics', ingest), \
+                mock.patch('zipper.scoops.is_enabled', return_value=True):
+            said = secretask.store({'kind': 'calendar', 'name': 'canvas', 'label': 'Canvas'},
+                                   'https://canvas.example/feed/SECRETTOKEN123')
+        self.assertNotIn('SECRETTOKEN', said)
+        self.assertIn('could not be fetched', said)
+
     async def test_a_calendar_link_is_ingested_under_its_label(self):
         nonce = secretask.new_ask(555, 'canvas', 'Canvas feed', 'calendar')
         seen = {}

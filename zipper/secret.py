@@ -78,7 +78,11 @@ def serve(name, host, port, token, lifetime=LIFETIME):
             value = parse_qs(self.rfile.read(n).decode('utf-8')).get('value', [''])[0].strip()
             if not value:
                 return self._send(200, PAGE % {'name': html.escape(name)})
-            env_set(name, value)
+            try:
+                env_set(name, value)
+            except ValueError:
+                # A line break or control character: it would write a second line.
+                return self._send(200, PAGE % {'name': html.escape(name)})
             saved.set()
             self._send(200, DONE % {'name': html.escape(name)})
 
@@ -185,7 +189,11 @@ def cmd_secret(a):
             print('nothing entered; unchanged')
             return 1
         from .setup import env_set
-        env_set(name, v)
+        try:
+            env_set(name, v)
+        except ValueError as e:
+            print('secret: not saved -- %s' % e)
+            return 1
         print('saved %s to %s' % (name, core.ENV_FILE))
         return 0
     url = start_page(name, a.host)

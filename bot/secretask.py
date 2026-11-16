@@ -18,8 +18,13 @@ zippers share one bot through the gateway, and every one of them receives every
 click), and each button once, within an hour. Asks are kept in
 `Inbox/secret-asks.json`, so a button still works after the bot restarts.
 
-**Values never contain a line break.** `.env` is one `NAME=value` per line, and a
-newline in a pasted value would write a second variable of the sender's choosing.
+**Values are one printable line.** `.env` is one `NAME=value` per line and is re-read
+with `splitlines()`, which breaks on a dozen characters besides `\n` (U+2028, \x85,
+\x0b...); any of them in a pasted value would write a second variable of the sender's
+choosing. So anything `str.isprintable()` rejects is refused, not just newlines.
+
+**The conversation never hears the link, even in part.** What it is told is built
+from the ingest's counts, never from its output, which can quote the URL.
 """
 import asyncio, contextlib, io, json, os, re, secrets, threading, time, types
 
@@ -31,7 +36,8 @@ PATH = os.path.join(core.INBOX, 'secret-asks.json')
 TTL = 3600
 BUTTON, FORM = 'zsecret:', 'zsecretm:'
 CAL_LABEL = re.compile(r'^[a-z0-9][a-z0-9-]{0,23}$')
-CAL_URL = re.compile(r'^(https?|webcal)://\S+$', re.I)
+CAL_URL = re.compile(r'^(https?|webcal)://(\S+)$', re.I)
+COUNTS = re.compile(r'^\S+: (\d+) event\(s\), (\d+) upcoming')
 
 _lock = threading.Lock()
 
@@ -99,10 +105,15 @@ def clean(kind, value):
     value = (value or '').strip()
     if not value:
         return None, 'it was empty'
-    if '\n' in value or '\r' in value or '\x00' in value:
-        return None, 'it had a line break in it'
-    if kind == 'calendar' and not CAL_URL.match(value):
-        return None, "that isn't a calendar link (it should start with https:// or webcal://)"
+    if not value.isprintable() or len(value.splitlines()) != 1:
+        return None, 'it had a line break or an invisible character in it'
+    if kind == 'calendar':
+        m = CAL_URL.match(value)
+        if not m:
+            return None, "that isn't a calendar link (it should start with https:// or webcal://)"
+        # webcal:// is https:// by another name, and the fetcher only speaks http(s).
+        scheme = m.group(1).lower()
+        value = '%s://%s' % ('https' if scheme == 'webcal' else scheme, m.group(2))
     return value, None
 
 
@@ -118,12 +129,13 @@ def store(ask, value):
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         rc = ics.cmd_ingest_ics(types.SimpleNamespace(source=value, label=ask['name'], match=None))
-    said = ' '.join(ln.strip() for ln in out.getvalue().splitlines()
-                    if ln.strip() and value not in ln)
-    if rc:
-        return ('The %s link was saved but reading it failed (%s). Ask them to copy it again.'
-                % (ask['label'], said or 'no detail'))
-    return 'The %s link was saved and read as the "%s" calendar: %s' % (ask['label'], ask['name'], said)
+    counts = next((COUNTS.match(ln.strip()) for ln in out.getvalue().splitlines()
+                   if COUNTS.match(ln.strip())), None)
+    if rc or counts is None:
+        return ('The %s link could not be fetched or read. Ask them to copy it again from '
+                'the place the setup guide names, and post a new button.' % ask['label'])
+    return ('The %s link was saved and read as the "%s" calendar: %s events, %s upcoming.'
+            % (ask['label'], ask['name'], counts.group(1), counts.group(2)))
 
 
 def is_home(guild):
