@@ -20,10 +20,9 @@ How to work through it:
 - **Explain before asking.** For each section, say in a sentence or two what it is and
   what it would do for them, then ask. Don't dump the whole list at once.
 - **They decide; you do the typing.** Run every command yourself: `zipper <command>`.
-- **Nothing that needs a secret, yet.** Connecting things like email or a calendar needs
-  a password or key entered on a private page, and this zipper has no page to open it
-  on. If they ask for one, say it is coming and note it in *Standing context*; never ask
-  them to paste a password, key or token into Discord.
+- **No passwords, keys or tokens in Discord.** Calendar links are the one exception, and
+  their section says how to handle them. Email and other accounts need a sign-in this
+  zipper can't do yet: if they ask, say it is coming and note it in *Standing context*.
 - **When a section is finished -- done or skipped -- remove it** with
   `zipper setup done <section>` (the name after `setup:` in its marker).
   `zipper setup remaining` lists what is left.

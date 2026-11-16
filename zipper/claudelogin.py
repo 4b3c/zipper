@@ -197,12 +197,17 @@ def setup_pending():
         return False
 
 
+def _has_conversation(thread_id):
+    from . import conversations
+    return bool(conversations.load().get(str(thread_id)))
+
+
 def begin_setup(login_thread):
     """The first login's thread has done its job: close it, and start setup in a
     thread of its own, as if they had asked -- rather than telling them to go and
     send a message somewhere else. Only for a first login: a later /login usually
     happens inside a conversation whose sign-in lapsed, and that thread stays open."""
-    from . import chat, core, scheduled
+    from . import chat, conversations, core, scheduled
     import urllib.request
     try:
         tid = scheduled._open_thread('Setting up your zipper.', 'Setup')
@@ -213,12 +218,16 @@ def begin_setup(login_thread):
                              'discord_thread_id': int(tid), 'opening': True}).encode(),
             headers={'Content-Type': 'application/json'})
         urllib.request.urlopen(req, timeout=120).read()
+        conversations.touch(tid, title='Setup')     # not the prompt's first words
     except Exception as e:
         # The login stands either way; say how to carry on by hand.
         _send(login_thread, '[Login] Could not start setup by itself (%s). Send any message '
                             'in the main channel to begin.' % e)
         return False
-    chat.discord_archive(login_thread)
+    # Only a thread that was nothing but the login. One with a conversation behind
+    # it (they said hi first, and were told to log in there) stays open.
+    if not _has_conversation(login_thread):
+        chat.discord_archive(login_thread)
     return True
 
 

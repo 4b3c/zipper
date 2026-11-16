@@ -222,6 +222,11 @@ class RelayInitTest(unittest.TestCase):
         self.assertEqual(url, '/zipper/backup/vault.git')
         self.assertTrue(os.path.exists(os.path.join(home, 'backup', 'vault.git', 'HEAD')))
         self.assertNotIn('setup:gmail', guide)
+        # Calendars are the one scoop a Discord-only zipper can set up: a pasted link.
+        self.assertIn('<!-- setup:calendar -->', guide)
+        self.assertIn('Calendar Feed', guide)
+        self.assertLess(guide.index('setup:notes'), guide.index('setup:calendar'))
+        self.assertLess(guide.index('setup:calendar'), guide.index('setup:finish'))
         # Without the token in the environment it refuses rather than making a mute zipper.
         env.pop('ZIPPER_NEW_DISCORD_TOKEN')
         r = subprocess.run([sys.executable, '-m', 'zipper', 'init', home + '-b', '--id', 'zipper-8',

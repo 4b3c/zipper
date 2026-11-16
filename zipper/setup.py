@@ -219,6 +219,9 @@ def guide(subs, discord_only=False):
     for n in FIRST:
         out += _block(n, read(os.path.join(SETUP_DIR, n + '.md')))
     if discord_only:
+        # Calendars are the one scoop that needs no secret page: a link pasted into
+        # their own server. The rest wait for a way to sign in from Discord.
+        out += _block('calendar', read(os.path.join(SETUP_DIR, 'calendar-discord.md')))
         for n in LAST:
             out += _block(n, read(os.path.join(SETUP_DIR, n + '.md')))
         return out + GUIDE_CLOSE + '\n\n'
