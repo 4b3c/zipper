@@ -223,7 +223,7 @@ class Hub:
         return False
 
 
-SNOW = re.compile(r'^\d{5,25}$')
+SNOW = re.compile(r'^[0-9]{5,25}$')
 # A path segment as Discord's routes use them: ids, `@me`, words, and a
 # percent-encoded emoji. No dots, so no `..`; no encoded slash or dot either.
 SEGMENT = re.compile(r'^(?!.*%(2f|2e|5c))[A-Za-z0-9@_%:\-]+$', re.I)

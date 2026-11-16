@@ -402,7 +402,7 @@ def _valid_token(secret):
 def invite_redeem(state, zid, args, secret):
     """The gateway trades a code for a new zipper in a Discord server."""
     cfg = state.cfg
-    if len(args) != 3 or not all(a.isdigit() and 5 <= len(a) <= 25 for a in args[1:]):
+    if len(args) != 3 or not all(a.isascii() and a.isdigit() and 5 <= len(a) <= 25 for a in args[1:]):
         return {'ok': False, 'error': 'invite.redeem <code> <guild id> <channel id>'}
     if not _valid_token(secret):
         return {'ok': False, 'error': 'invite.redeem needs the new zipper\'s token as `secret`'}

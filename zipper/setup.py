@@ -336,7 +336,17 @@ def init_home(home, owner='', zid='zipper-0', starter=False, addr='127.0.0.1', p
                    'code': {'repo': '4b3c/Zipper', 'branch': 'main'},
                    'timezone': host_timezone(),
                    'scoops': {'backup': {'enabled': True}}})
+    container_backup(vault)
     return home
+
+
+def container_backup(vault):
+    """Point the vault's backup remote where the container will see it. init made
+    and pushed the bare repo at its path here, on the host; inside the container the
+    same folder is mounted at /zipper/backup (template/home/compose.yml), and a remote
+    left at the host path fails every push from there."""
+    subprocess.run(['git', '-C', vault, 'remote', 'set-url', 'origin',
+                    '/zipper/backup/vault.git'], check=True)
 
 
 RELAY_COMPOSE = """\
@@ -377,7 +387,7 @@ def init_relay_home(home, zid, relay, channel, token, network='zipper-gateway',
     home = os.path.abspath(os.path.expanduser(home))
     if os.path.exists(home) and os.listdir(home):
         raise RuntimeError('%s is not empty -- leaving it alone' % home)
-    if not re.match(r'^\d{5,25}$', str(channel)):
+    if not re.match(r'^[0-9]{5,25}$', str(channel)):
         raise RuntimeError('channel must be a Discord channel id')
     tz = tz or host_timezone()
     for d in ('config', 'backup', 'code', 'home'):
@@ -405,6 +415,7 @@ def init_relay_home(home, zid, relay, channel, token, network='zipper-gateway',
                    'discord': {'channel': str(channel)},
                    'scoops': {'backup': {'enabled': True}, 'discord': {'enabled': True},
                               'dashboard': {'enabled': False}}})
+    container_backup(os.path.join(home, 'vault'))
     return home
 
 
