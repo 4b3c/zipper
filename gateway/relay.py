@@ -43,8 +43,9 @@ GUILD_EVENTS = ('GUILD_CREATE', 'GUILD_UPDATE', 'GUILD_DELETE')
 class Conn:
     """One zipper's websocket."""
 
-    def __init__(self, ws, zid, guild):
-        self.ws, self.zid, self.guild = ws, zid, guild
+    def __init__(self, ws, zid, entry):
+        self.ws, self.zid, self.guild = ws, zid, entry['guild']
+        self.token_sha256 = entry['token_sha256']   # the token it identified with
         self.queue = asyncio.Queue(maxsize=QUEUE_MAX)
         self.seq = 0
         self.writer = None
@@ -92,6 +93,7 @@ class Hub:
             return
         if msg.get('op') != 0:
             return
+        self.prune_if_changed()
         t, d = msg.get('t'), msg.get('d') or {}
         self._remember(t, d)
         gid = str(d.get('id') if t in GUILD_EVENTS else d.get('guild_id') or '')
@@ -164,12 +166,23 @@ class Hub:
         asyncio.ensure_future(conn.ws.close(code=4004, message=why.encode()[:120]))
 
     def prune(self):
-        """Close connections whose zipper was unlinked or moved to another server:
-        a token checked at identify must not outlive its entry."""
+        """Close every connection whose token is no longer its zipper's current one:
+        unlinked, moved to another server, or re-linked with a new token. A token
+        checked at identify must not outlive its entry -- re-linking is how a leaked
+        token is rotated, and the event stream is what it would leak."""
         live = self.registry.zippers()
         for conn in list(self.conns):
-            if live.get(conn.zid, {}).get('guild') != conn.guild:
+            entry = live.get(conn.zid) or {}
+            if entry.get('guild') != conn.guild or entry.get('token_sha256') != conn.token_sha256:
                 self._drop(conn, 'unlinked')
+        self._registry_seen = self.registry.version()
+
+    def prune_if_changed(self):
+        """Prune before delivering, whenever the registry file changed since the last
+        look: one stat per event, so a rotation takes effect at the very next event
+        rather than at the next timed sweep."""
+        if self.registry.version() != getattr(self, '_registry_seen', None):
+            self.prune()
 
     def detach(self, conn):
         self.conns.discard(conn)
@@ -301,7 +314,7 @@ def app(hub):
                     except asyncio.TimeoutError:
                         await sock.close(code=4000, message=b'gateway not connected to Discord')
                         break
-                    conn = Conn(sock, zid, entry['guild'])
+                    conn = Conn(sock, zid, entry)
                     conn.writer = asyncio.ensure_future(conn.drain())
                     hub.attach(conn, ws_url(request))
                     print('[gateway] %s connected' % zid)

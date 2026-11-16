@@ -5,7 +5,7 @@ Nothing here touches Discord. The upstream is an aiohttp app standing in for
 discord.com's REST API, and its gateway events are fed to the hub by hand -- the
 same raw JSON the upstream client would pass on.
 """
-import asyncio, json, os, sys, tempfile, unittest
+import asyncio, json, os, subprocess, sys, tempfile, unittest
 
 import aiohttp
 from aiohttp import web
@@ -227,6 +227,30 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
         await self.settle()
         self.assertNotIn('after', c.seen)
 
+    async def test_rotating_a_token_closes_the_socket_on_the_old_one(self):
+        # Re-linking is how a leaked token is rotated, so the stream must stop at
+        # once -- at the very next event, with no sweep in between.
+        c = await self.zipper(self.tok1)
+        self.reg.add('zipper-2', G1, C1)
+        self.hub.feed(raw('MESSAGE_CREATE', message('800000000000000005', G1, C1, 'rotated')))
+        await self.settle()
+        self.assertNotIn('rotated', c.seen)
+        self.assertEqual(len(self.hub.conns), 0)
+
+    async def test_remove_then_add_closes_the_old_socket(self):
+        c = await self.zipper(self.tok1)
+        self.reg.remove('zipper-2')
+        new = self.reg.add('zipper-2', G1, C1)
+        self.hub.feed(raw('MESSAGE_CREATE', message('800000000000000006', G1, C1, 're-added')))
+        await self.settle()
+        self.assertNotIn('re-added', c.seen)
+        # The new token connects and sees the server.
+        c2 = await self.zipper(new)
+        self.hub.feed(raw('MESSAGE_CREATE', message('800000000000000007', G1, C1, 'fresh')))
+        await self.settle()
+        self.assertEqual(c2.seen, ['fresh'])
+        self.assertEqual([x.zid for x in self.hub.conns], ['zipper-2'])
+
     async def test_new_threads_are_scoped_by_the_event_that_made_them(self):
         thread = {'id': '333333333333333333', 'type': 11, 'name': 't', 'guild_id': G1,
                   'parent_id': C1, 'owner_id': BOT['id'], 'thread_metadata':
@@ -241,6 +265,18 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
 
 
 class RegistryTest(unittest.TestCase):
+
+    def test_two_processes_adding_at_once_both_land(self):
+        path = os.path.join(tempfile.mkdtemp(), 'r.json')
+        code = ('import sys; sys.path.insert(0, %r)\n'
+                'from gateway import registry\n'
+                'r = registry.Registry(%r)\n'
+                'for i in range(15):\n'
+                '    r.add("z%%s-%%d" %% (sys.argv[1], i), sys.argv[1] + "%%05d" %% i)\n') % (ROOT, path)
+        procs = [subprocess.Popen([sys.executable, '-c', code, n]) for n in ('11111', '22222', '33333')]
+        for pr in procs:
+            self.assertEqual(pr.wait(timeout=60), 0)
+        self.assertEqual(len(registry.Registry(path).zippers()), 45)
 
     def test_tokens_are_stored_hashed_and_servers_have_one_owner(self):
         path = os.path.join(tempfile.mkdtemp(), 'r.json')
