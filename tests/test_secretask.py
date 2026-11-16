@@ -203,5 +203,57 @@ class RelayInteractionTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('4000000003', hub.interactions)
 
 
+class RelayInteractionHttpTest(unittest.IsolatedAsyncioTestCase):
+    """Over HTTP, as discord.py sends it: a reply to a click has no Authorization."""
+
+    async def test_a_click_reply_needs_its_token_not_a_zipper_token(self):
+        import aiohttp
+        from aiohttp import web
+        seen = []
+
+        async def fake(request):
+            seen.append((request.method, request.path, request.headers.get('Authorization')))
+            return web.Response(status=204)
+        up = web.Application()
+        up.router.add_route('*', '/api/v10/{p:.*}', fake)
+        upr = web.AppRunner(up)
+        await upr.setup()
+        site = web.TCPSite(upr, '127.0.0.1', 0)
+        await site.start()
+        old = relay.UPSTREAM_API
+        relay.UPSTREAM_API = 'http://127.0.0.1:%d/api' % site._server.sockets[0].getsockname()[1]
+        reg = registry.Registry(os.path.join(tempfile.mkdtemp(), 'r.json'))
+        hub = relay.Hub(reg, 'real')
+        hub.feed(json.dumps({'op': 0, 't': 'READY', 'd': {
+            'user': {'id': '900'}, 'application': {'id': '900', 'flags': 0}, 'guilds': []}}))
+        hub.feed(json.dumps({'op': 0, 't': 'INTERACTION_CREATE', 'd': {
+            'id': '4000000001', 'token': 'tok.A', 'guild_id': '111111'}}))
+        rr = web.AppRunner(relay.app(hub))
+        await rr.setup()
+        site = web.TCPSite(rr, '127.0.0.1', 0)
+        await site.start()
+        url = 'http://127.0.0.1:%d/api/v10/' % site._server.sockets[0].getsockname()[1]
+        try:
+            async with aiohttp.ClientSession() as s:
+                async with s.post(url + 'interactions/4000000001/tok.A/callback?with_response=1',
+                                  json={'type': 9}) as r:
+                    self.assertEqual(r.status, 204)
+                async with s.patch(url + 'webhooks/900/tok.A/messages/@original', json={}) as r:
+                    self.assertEqual(r.status, 204)
+                for bad in ('interactions/4000000001/tok.B/callback',
+                            'interactions/4000000002/tok.A/callback',
+                            'webhooks/901/tok.A/messages/@original',
+                            'channels/111111/messages'):
+                    async with s.post(url + bad, json={}) as r:
+                        self.assertIn(r.status, (401, 403), bad)
+            self.assertEqual(len(seen), 2)
+        finally:
+            relay.UPSTREAM_API = old
+            await rr.cleanup()
+            await upr.cleanup()
+            if hub.session:
+                await hub.session.close()
+
+
 if __name__ == '__main__':
     unittest.main()

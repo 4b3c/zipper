@@ -209,6 +209,15 @@ class Hub:
         return await self.session.request(method, url, headers=headers,
                                           allow_redirects=False, **kw)
 
+    def interaction_guild(self, parts):
+        """The guild of a click whose reply path this is, if its token matches."""
+        if len(parts) >= 3 and parts[0] in ('interactions', 'webhooks'):
+            tok = parts[2]
+            for iid, (g, t, _) in self.interactions.items():
+                if secrets.compare_digest(t, tok) and (parts[0] == 'webhooks' or iid == parts[1]):
+                    return g
+        return None
+
     async def guild_of(self, channel_id):
         """The guild a channel or thread is in ('' for a DM or one that doesn't exist)."""
         cid = str(channel_id)
@@ -283,12 +292,19 @@ def ws_url(request):
 
 def app(hub):
     async def rest(request):
-        zid, entry = hub.registry.lookup(request.headers.get('Authorization'))
-        if zid is None:
-            return _error(401, '401: Unauthorized')
         path, parts = split_path(request.raw_path)
         if path is None:
             return _error(400, '400: Bad Request')
+        zid, entry = hub.registry.lookup(request.headers.get('Authorization'))
+        if zid is None:
+            # Replies to a click carry no Authorization: discord.py sends them as a
+            # webhook, and the click's own token is the credential. The relay only
+            # ever handed that token to the zipper whose server the click came from,
+            # so holding it is the proof -- `allowed` checks it against that server.
+            guild = hub.interaction_guild(parts)
+            if guild is None:
+                return _error(401, '401: Unauthorized')
+            zid, entry = 'interaction', {'guild': guild}
         if parts[0] == 'gateway' and request.method == 'GET':
             return _json({'url': ws_url(request), 'shards': 1,
                                       'session_start_limit': {'total': 1000, 'remaining': 1000,
