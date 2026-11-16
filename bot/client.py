@@ -385,6 +385,16 @@ def is_home(message):
 
 
 @client.event
+async def on_interaction(interaction: discord.Interaction):
+    # Buttons and forms: today only the private secret form (bot/secretask.py).
+    from bot import secretask
+    try:
+        await secretask.on_interaction(interaction)
+    except Exception as e:
+        print(f"[discord] interaction failed: {type(e).__name__}: {e}")
+
+
+@client.event
 async def on_message(message: discord.Message):
     if message.author == client.user:
         return

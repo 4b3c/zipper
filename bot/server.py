@@ -350,8 +350,33 @@ async def handle_status(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=500)
 
 
+async def handle_secretask(request: web.Request) -> web.Response:
+    """Post a button that opens a private form for one secret (bot/secretask.py)."""
+    from bot import secretask
+    try:
+        body = await request.json()
+        thread_id = int(body.get("thread_id") or 0)
+        name = str(body.get("name") or "")
+        kind = str(body.get("kind") or "env")
+        label = " ".join(str(body.get("label") or name).split())[:80] or name
+        bad = secretask.check(name, kind)
+        if bad:
+            return web.json_response({"error": bad}, status=400)
+        if not client.is_ready():
+            return web.json_response({"error": "discord client not ready"}, status=503)
+        thread = await resolve_thread(thread_id)
+        if thread is None or not secretask.is_home(getattr(thread, "guild", None)):
+            return web.json_response({"error": "no such thread in this zipper's server"}, status=404)
+        nonce = secretask.new_ask(thread_id, name, label, kind)
+        msg = await secretask.post(thread, nonce, label)
+        return web.json_response({"ok": True, "message_id": str(msg.id)})
+    except Exception as e:
+        return web.json_response({"error": f"{type(e).__name__}: {e}"}, status=500)
+
+
 def setup_routes(app: web.Application):
     app.router.add_post("/send", handle_send)
+    app.router.add_post("/secretask", handle_secretask)
     app.router.add_post("/history", handle_history)
     app.router.add_post("/edit", handle_edit)
     app.router.add_post("/react", handle_react)

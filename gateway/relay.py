@@ -17,7 +17,7 @@ and a slow zipper can never hold up the others.
 identifies again and receives a fresh snapshot. The relay keeps no per-zipper
 history, so after its own restart there is nothing to resume from anyway.
 """
-import asyncio, copy, json, os, re, secrets
+import asyncio, copy, json, os, re, secrets, time
 
 import aiohttp
 import yarl
@@ -29,6 +29,7 @@ HEARTBEAT_MS = 41250
 READY_WAIT = 30             # seconds an identify waits for the upstream to be ready
 MAX_BODY = 30 * 1024 * 1024  # Discord's own upload ceiling, with room for the form
 QUEUE_MAX = 5000            # a zipper this far behind is disconnected, not waited for
+INTERACTION_TTL = 15 * 60   # how long Discord accepts replies to a click
 
 # Request headers a zipper may pass on; everything else (above all Authorization)
 # is the relay's to set.
@@ -79,6 +80,11 @@ class Hub:
         self.application = None
         self.guilds = {}            # guild id -> its GUILD_CREATE payload, kept current
         self.channel_guild = {}     # channel or thread id -> guild id ('' for none)
+        # Interactions (button clicks, form submits) by id: (guild, token, when). A
+        # reply to one goes to /interactions/<id>/<token>/callback and its follow-ups
+        # to /webhooks/<application>/<token>/..., paths that name no channel, so this
+        # is the only way to tell whose click it was.
+        self.interactions = {}
         self.conns = set()
         self.ready = asyncio.Event()
         self.session = None
@@ -104,7 +110,12 @@ class Hub:
                 self._drop(conn, 'fell %d events behind' % QUEUE_MAX)
 
     def _remember(self, t, d):
-        if t == 'READY':
+        if t == 'INTERACTION_CREATE' and d.get('guild_id') and d.get('token'):
+            now = time.time()
+            self.interactions = {k: v for k, v in self.interactions.items()
+                                 if now - v[2] < INTERACTION_TTL}
+            self.interactions[str(d['id'])] = (str(d['guild_id']), str(d['token']), now)
+        elif t == 'READY':
             self.user, self.application = d.get('user'), d.get('application')
             self.ready.set()
         elif t == 'GUILD_CREATE':
@@ -220,13 +231,23 @@ class Hub:
             return SNOW.match(parts[1]) is not None and await self.guild_of(parts[1]) == guild
         if len(parts) >= 2 and parts[0] == 'guilds':
             return parts[1] == guild
+        # Answering a click: only one from this zipper's guild, with its own token.
+        if len(parts) == 4 and parts[0] == 'interactions' and parts[3] == 'callback':
+            rec = self.interactions.get(parts[1])
+            return method == 'POST' and rec is not None and rec[0] == guild \
+                and secrets.compare_digest(rec[1], parts[2])
+        if len(parts) >= 3 and parts[0] == 'webhooks':
+            app = str((self.application or {}).get('id') or (self.user or {}).get('id') or '')
+            return parts[1] == app and any(
+                g == guild and secrets.compare_digest(tok, parts[2])
+                for g, tok, _ in self.interactions.values())
         return False
 
 
 SNOW = re.compile(r'^[0-9]{5,25}$')
-# A path segment as Discord's routes use them: ids, `@me`, words, and a
-# percent-encoded emoji. No dots, so no `..`; no encoded slash or dot either.
-SEGMENT = re.compile(r'^(?!.*%(2f|2e|5c))[A-Za-z0-9@_%:\-]+$', re.I)
+# A path segment as Discord's routes use them: ids, `@me`, words, interaction
+# tokens, and a percent-encoded emoji. Never `.` or `..`, and no encoded slash or dot.
+SEGMENT = re.compile(r'^(?!\.{1,2}$)(?!.*%(2f|2e|5c))[A-Za-z0-9@_%:.\-]+$', re.I)
 PREFIX = '/api/v%d/' % API_VERSION
 
 

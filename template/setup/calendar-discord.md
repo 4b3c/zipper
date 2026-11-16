@@ -14,18 +14,20 @@ Ask which they have, one at a time:
 - **Outlook / school email calendar:** Outlook on the web → Settings → Calendar →
   *Shared calendars* → *Publish a calendar* → copy the ICS link.
 
-**Say plainly before they paste:** the link works like a password -- anyone who has it can
-read that calendar -- so it should only go here, in their own server. You keep it in the
-zipper's private files (`Inbox/`), never in a note, and never repeat it back.
+The link works like a password -- anyone who has it can read that calendar -- so it
+**never goes into the chat**. For each calendar, post a button that opens a private form,
+with a short label (`canvas` for Canvas: that label cleans up its course-code titles):
 
-When a link arrives, turn the scoop on once and store each feed with a short label
-(`canvas` for Canvas: that label cleans up its course-code titles):
+    zipper secret canvas --calendar --discord "Canvas calendar feed link"
+    zipper secret google --calendar --discord "Google Calendar secret iCal address"
 
-    zipper scoop enable calendar
-    zipper ingest-ics "<the link>" --label google
-    zipper ingest-ics "<the link>" --label canvas
+Tell them to tap the button and paste the link into the form, then end your turn. What
+they paste goes straight to the zipper's private files; you get a `[secret] ...` message
+saying it was saved and read, never the link itself. If they paste a link into the chat
+anyway, store it with `zipper ingest-ics "<link>" --label <label>`, and tell them to
+delete that message.
 
-Then **show them it worked**, from `zipper agenda --days 7`: the next few days in a few
+When it is saved, **show them it worked**, from `zipper agenda --days 7`: the next few days in a few
 plain lines, and every assignment due this week with its day. That is the moment the
 zipper starts paying for itself; don't skip it. If a fetch fails, say so and ask them to
 copy the link again -- a link copied from the wrong place is the usual cause.

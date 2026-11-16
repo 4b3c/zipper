@@ -313,6 +313,10 @@ def main():
     s.add_argument('name'); s.add_argument('--check', action='store_true', help='say whether it is set')
     s.add_argument('--tty', action='store_true', help='hidden prompt in this terminal instead of a link')
     s.add_argument('--host', default='127.0.0.1', help='address the page listens on (default loopback)')
+    s.add_argument('--discord', metavar='LABEL',
+                   help='in a Discord conversation: post a button that opens a private form')
+    s.add_argument('--calendar', action='store_true',
+                   help='with --discord: NAME is a calendar label and the value its iCal link')
     s.set_defaults(fn=_mod('secret', 'cmd_secret'))
     s = sub.add_parser('_secret_page')      # internal: the detached page
     for x in ('name', 'host', 'port', 'token'):

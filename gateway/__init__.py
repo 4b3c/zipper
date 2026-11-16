@@ -19,9 +19,10 @@ never seen the real token, and nothing about conversations lives here.
 - *Inbound.* An event reaches a zipper only if it belongs to that zipper's guild.
   READY lists only that guild; a DM, or another server's message, goes nowhere.
 - *Outbound.* A REST call passes only if it names a channel or thread in that
-  guild, or the guild itself; reading the bot's own user and application, and
-  gateway discovery, are the only exceptions. Everything else is refused with
-  403 before Discord sees it.
+  guild, or the guild itself, or answers a button click or form (an interaction)
+  that came from that guild, with that click's own token. Reading the bot's own
+  user and application, and gateway discovery, are the only other exceptions.
+  Everything else is refused with 403 before Discord sees it.
 
 The upstream connection (`upstream.py`) is a plain discord.py client whose raw
 events feed the relay. It also signs people up: in a server no zipper owns, a pasted
