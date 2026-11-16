@@ -29,7 +29,11 @@ import bot.client as _client_mod
 from bot.server import setup_routes, SEND_MAX_BYTES
 
 BOT_PORT = int(os.environ.get("BOT_PORT", 4200))
-BOT_HOST = os.environ.get("BOT_HOST", "0.0.0.0")
+# Loopback only. This API is for this zipper's own processes (the Stop hook, `zipper
+# discord`, the web), and `/inject` hands a prompt straight to a Claude conversation:
+# on any other address, every container on the Docker network -- other people's
+# zippers, the shared gateway -- could talk to this zipper's Claude.
+BOT_HOST = os.environ.get("BOT_HOST", "127.0.0.1")
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 
 # Expose channel ID to client module
