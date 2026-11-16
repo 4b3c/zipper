@@ -78,7 +78,11 @@ def serve(name, host, port, token, lifetime=LIFETIME):
             value = parse_qs(self.rfile.read(n).decode('utf-8')).get('value', [''])[0].strip()
             if not value:
                 return self._send(200, PAGE % {'name': html.escape(name)})
-            env_set(name, value)
+            try:
+                env_set(name, value)
+            except ValueError:
+                # A line break or control character: it would write a second line.
+                return self._send(200, PAGE % {'name': html.escape(name)})
             saved.set()
             self._send(200, DONE % {'name': html.escape(name)})
 
@@ -144,8 +148,35 @@ def _spawn(name, host, port, token):
     time.sleep(0.3)
 
 
+def ask_discord(name, label, calendar=False):
+    """Post a button in this conversation's thread that opens a private form
+    (bot/secretask.py). Returns the exit code."""
+    tid = os.environ.get('ZIPPER_DISCORD_THREAD')
+    if not tid:
+        print('secret: --discord works in a Discord conversation; here, use the page '
+              '(`zipper secret %s`)' % name)
+        return 1
+    from . import chat
+    try:
+        res = chat._bot('/secretask', {'thread_id': tid, 'name': name, 'label': label or name,
+                                        'kind': 'calendar' if calendar else 'env'})
+    except Exception as e:
+        body = getattr(e, 'read', lambda: b'')()
+        print('secret: the bot refused: %s %s' % (e, body.decode('utf-8', 'replace')[:200]))
+        return 1
+    print('Posted a button in this thread. Whatever they paste goes straight to %s; you '
+          'will get a "[secret] ..." message saying it was saved, never the value. '
+          'End your turn now.' % ('the "%s" calendar' % name if calendar else '.env as ' + name))
+    return 0
+
+
 def cmd_secret(a):
     name = a.name.strip()
+    if getattr(a, 'discord', None) is not None:
+        return ask_discord(name, a.discord, calendar=a.calendar)
+    if getattr(a, 'calendar', False):
+        print('secret: --calendar goes with --discord')
+        return 1
     if not valid_name(name):
         print('secret: %r is not a variable name (A-Z, 0-9, _)' % name)
         return 1
@@ -158,7 +189,11 @@ def cmd_secret(a):
             print('nothing entered; unchanged')
             return 1
         from .setup import env_set
-        env_set(name, v)
+        try:
+            env_set(name, v)
+        except ValueError as e:
+            print('secret: not saved -- %s' % e)
+            return 1
         print('saved %s to %s' % (name, core.ENV_FILE))
         return 0
     url = start_page(name, a.host)

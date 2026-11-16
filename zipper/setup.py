@@ -127,6 +127,11 @@ def env_set(key, value, path=None):
     """Set one line of `.env`, keeping every other line (and comment) as it was.
     Written 600: it is the file of secrets. `path`: another zipper's, for init."""
     ENV_FILE = path or globals()['ENV_FILE']
+    # One printable line, or it becomes more than one variable: this file is re-read
+    # with splitlines(), which also breaks on U+2028, \x85, \x0b and others.
+    value = str(value)
+    if not value.isprintable() or len(value.splitlines()) > 1:
+        raise ValueError('%s: a value must be one line of printable text' % key)
     lines = []
     if os.path.exists(ENV_FILE):
         with open(ENV_FILE, encoding='utf-8') as fh:

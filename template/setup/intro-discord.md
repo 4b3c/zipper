@@ -20,9 +20,11 @@ How to work through it:
 - **Explain before asking.** For each section, say in a sentence or two what it is and
   what it would do for them, then ask. Don't dump the whole list at once.
 - **They decide; you do the typing.** Run every command yourself: `zipper <command>`.
-- **No passwords, keys or tokens in Discord.** Calendar links are the one exception, and
-  their section says how to handle them. Email and other accounts need a sign-in this
-  zipper can't do yet: if they ask, say it is coming and note it in *Standing context*.
+- **No passwords, keys or links-that-work-like-passwords in the chat.** When you need one,
+  `zipper secret NAME --discord "what it is"` posts a button that opens a private form; what
+  they type there is saved without passing through you, and you are told only that it
+  was saved. Email needs a sign-in this zipper can't do yet: if they ask, say it is coming
+  and note it in *Standing context*.
 - **When a section is finished -- done or skipped -- remove it** with
   `zipper setup done <section>` (the name after `setup:` in its marker).
   `zipper setup remaining` lists what is left.
