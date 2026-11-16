@@ -12,7 +12,7 @@ import contextlib, datetime, fcntl, hashlib, json, os, re, secrets, threading
 
 PATH = os.environ.get('GATEWAY_STATE', '/zipper/gateway/registry.json')
 ZID = re.compile(r'^[a-z0-9][a-z0-9-]{0,31}$')
-SNOWFLAKE = re.compile(r'^\d{5,25}$')
+SNOWFLAKE = re.compile(r'^[0-9]{5,25}$')     # ASCII only: \d also takes '１'
 
 
 def new_token():

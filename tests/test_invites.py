@@ -101,6 +101,13 @@ class HostdInviteTest(unittest.TestCase):
         self.st.cfg['provision']['max'] = 1
         self.assertIn('no room', self.redeem(make_code(self.st), guild='333333333333333333')['error'])
 
+    def test_ids_are_ascii_digits_only(self):
+        code = make_code(self.st)
+        wide = '\uff11' * 18                                  # fullwidth "1"s
+        self.assertIn('invite.redeem', self.redeem(code, guild=wide)['error'])
+        self.assertIsNone(registry.SNOWFLAKE.match(wide))
+        self.assertTrue(self.redeem(code)['ok'])
+
     def test_expired_codes_do_nothing(self):
         code = make_code(self.st)
         with mock.patch.object(hostd.time, 'time', return_value=time.time() + 8 * 86400):
@@ -209,6 +216,11 @@ class RelayInitTest(unittest.TestCase):
         with open(os.path.join(home, 'vault', 'CLAUDE.md')) as fh:
             guide = fh.read()
         self.assertIn('only through Discord', guide)
+        # The backup remote is where the container sees it, not the host path.
+        url = subprocess.run(['git', '-C', os.path.join(home, 'vault'), 'remote', 'get-url',
+                              'origin'], capture_output=True, text=True).stdout.strip()
+        self.assertEqual(url, '/zipper/backup/vault.git')
+        self.assertTrue(os.path.exists(os.path.join(home, 'backup', 'vault.git', 'HEAD')))
         self.assertNotIn('setup:gmail', guide)
         # Without the token in the environment it refuses rather than making a mute zipper.
         env.pop('ZIPPER_NEW_DISCORD_TOKEN')
