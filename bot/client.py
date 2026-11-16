@@ -369,9 +369,26 @@ async def on_ready():
     status._ensure_loop()
 
 
+def home_guild_id():
+    """The server this zipper's channel is in, or None until the client can see it."""
+    channel = client.get_channel(DISCORD_CHANNEL_ID)
+    return channel.guild.id if channel is not None and getattr(channel, 'guild', None) else None
+
+
+def is_home(message):
+    """Is this message in this zipper's own server? A bot can sit in several -- the
+    same bot as the shared gateway, or one someone added elsewhere -- and a message
+    from any other server is somebody else's, never a conversation here. DMs too.
+    Until the home channel is visible nothing is accepted: unknown is not home."""
+    home = home_guild_id()
+    return home is not None and message.guild is not None and message.guild.id == home
+
+
 @client.event
 async def on_message(message: discord.Message):
     if message.author == client.user:
+        return
+    if not is_home(message):
         return
 
     # Message in a thread — continue that conversation, if there is one.
