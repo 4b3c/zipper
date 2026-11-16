@@ -13,6 +13,18 @@ load_dotenv()
 from zipper import settings as _settings
 _settings.apply()
 
+# Through the shared gateway instead of Discord itself (gateway/): the same bot,
+# with discord.py's REST and websocket pointed at the relay, and DISCORD_TOKEN the
+# token the gateway minted for this zipper, which Discord itself would refuse.
+DISCORD_RELAY = os.environ.get("DISCORD_RELAY", "").rstrip("/")
+if DISCORD_RELAY:
+    import discord.gateway
+    import discord.http
+    import yarl
+    discord.http.Route.BASE = DISCORD_RELAY + "/api/v10"
+    discord.gateway.DiscordWebSocket.DEFAULT_GATEWAY = yarl.URL(
+        DISCORD_RELAY.replace("http", "ws", 1) + "/ws")
+
 import bot.client as _client_mod
 from bot.server import setup_routes, SEND_MAX_BYTES
 

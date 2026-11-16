@@ -12,6 +12,11 @@ bot/
 └── server.py        # HTTP: /send /history /edit /react /inject /typing /status /thread /threadinfo /threadrename
 ```
 
+**Its own bot, or the shared one.** With `DISCORD_RELAY` set, discord.py talks to the
+shared gateway (`gateway/`) instead of Discord, and `DISCORD_TOKEN` is the token the
+gateway minted for this zipper. Nothing else in this package changes: the gateway shows
+it only its own server and refuses calls outside it.
+
 ## Inbound
 
 1. A message in the channel opens a thread; a message in a thread stays there.

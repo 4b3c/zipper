@@ -55,6 +55,7 @@ Dependencies are allowed where they earn their place; `requirements.txt` lists t
 | `zipper/usage.py` | Plan usage meters. The OAuth token is read at call time, never stored |
 | `hooks/forward_reply.py` | The `Stop` hook that posts a reply to its Discord thread |
 | `bot/` | Gateway client and HTTP surface. Saves attachments to `/tmp/zipper-discord-files/<message id>/` |
+| `gateway/` | One Discord bot shared by zippers without their own: a relay that looks like Discord to each zipper's `bot/`, scoped to its server. See its `__init__.py` |
 | `utils/` | `constants.py`, `text.py` — the bot's only dependencies |
 | `extension/` | The browser collector. **Collects, never concludes.** See its README |
 | `zipper/README.md` | The operating reference. Read before changing anything |
