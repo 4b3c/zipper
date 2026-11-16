@@ -204,17 +204,24 @@ def _block(name, text):
     return '<!-- setup:%s -->\n%s\n<!-- /setup:%s -->\n\n' % (name, text.strip(), name)
 
 
-def guide(subs):
-    """The setup guide: the intro, then one removable block per step and per scoop."""
+def guide(subs, discord_only=False):
+    """The setup guide: the intro, then one removable block per step and per scoop.
+    `discord_only`: a zipper reached only through the shared gateway, with no
+    dashboard to open a secret page in -- its own intro, and no scoop sections."""
     def read(p):
         with open(p, encoding='utf-8') as fh:
             t = fh.read()
         for k, v in subs.items():
             t = t.replace(k, v)
         return t
-    out = GUIDE_OPEN + '\n' + read(os.path.join(SETUP_DIR, 'intro.md')) + '\n'
+    intro = 'intro-discord.md' if discord_only else 'intro.md'
+    out = GUIDE_OPEN + '\n' + read(os.path.join(SETUP_DIR, intro)) + '\n'
     for n in FIRST:
         out += _block(n, read(os.path.join(SETUP_DIR, n + '.md')))
+    if discord_only:
+        for n in LAST:
+            out += _block(n, read(os.path.join(SETUP_DIR, n + '.md')))
+        return out + GUIDE_CLOSE + '\n\n'
     pdir = os.path.join(ROOT, 'scoops')
     have = sorted(n for n in os.listdir(pdir) if os.path.exists(os.path.join(pdir, n, 'SETUP.md')))
     for n in [x for x in SCOOP_ORDER if x in have] + [x for x in have if x not in SCOOP_ORDER]:
@@ -332,6 +339,75 @@ def init_home(home, owner='', zid='zipper-0', starter=False, addr='127.0.0.1', p
     return home
 
 
+RELAY_COMPOSE = """\
+# {{ID}}: one zipper, reached only through the shared Discord gateway. No dashboard and
+# no published port: nothing outside this container can reach anything in it.
+# From this folder: docker compose up -d
+services:
+  zipper:
+    image: {{IMAGE}}
+    container_name: {{ID}}
+    hostname: {{ID}}
+    restart: unless-stopped
+    mem_limit: {{MEM}}
+    environment:
+      TZ: {{TZ}}
+    env_file: [./config/.env]
+    volumes:
+      - ./config:/zipper/config
+      - ./vault:/zipper/vault
+      - ./backup:/zipper/backup
+      - ./code:/zipper/code
+      - ./home:/zipper/home
+    networks: [{{NETWORK}}]
+
+networks:
+  {{NETWORK}}:
+    external: true
+"""
+
+
+def init_relay_home(home, zid, relay, channel, token, network='zipper-gateway',
+                    image='zipper:local', mem='1g', tz=''):
+    """A zipper whose only door is the shared gateway: Discord already on, pointed at
+    the relay with the token the gateway minted for it, the dashboard off, and the
+    setup guide written for a conversation in Discord. `zipper secret` needs the
+    dashboard, so this is also the one way its Discord token is ever set: written here,
+    once, by whoever provisions it. Returns what it made."""
+    home = os.path.abspath(os.path.expanduser(home))
+    if os.path.exists(home) and os.listdir(home):
+        raise RuntimeError('%s is not empty -- leaving it alone' % home)
+    if not re.match(r'^\d{5,25}$', str(channel)):
+        raise RuntimeError('channel must be a Discord channel id')
+    tz = tz or host_timezone()
+    for d in ('config', 'backup', 'code', 'home'):
+        os.makedirs(os.path.join(home, d), exist_ok=True)
+    envf = os.path.join(home, 'config', '.env')
+    fd = os.open(envf, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'w') as fh:
+        fh.write('# Secrets only. Never opened by Claude.\n')
+    env_set('DISCORD_TOKEN', token, envf)
+    env_set('DISCORD_RELAY', relay, envf)
+    t = RELAY_COMPOSE
+    for k, v in {'{{ID}}': zid, '{{IMAGE}}': image, '{{MEM}}': mem, '{{TZ}}': tz,
+                 '{{NETWORK}}': network}.items():
+        t = t.replace(k, v)
+    with open(os.path.join(home, 'compose.yml'), 'w', encoding='utf-8') as fh:
+        fh.write(t)
+    subs = {'{{HOME}}': home, '{{ID}}': zid, '{{CODE}}': ROOT, '{{OWNER}}': 'the operator',
+            '{{TZ}}': tz, '{{ADDR}}': '', '{{PORT}}': ''}
+    init_vault(os.path.join(home, 'vault'), zid=zid,
+               backup=os.path.join(home, 'backup', 'vault.git'),
+               guide=guide(subs, discord_only=True), record_backup=False, settings_json={
+                   'id': zid, 'owner': '',
+                   'code': {'repo': '4b3c/Zipper', 'branch': 'main'},
+                   'timezone': tz,
+                   'discord': {'channel': str(channel)},
+                   'scoops': {'backup': {'enabled': True}, 'discord': {'enabled': True},
+                              'dashboard': {'enabled': False}}})
+    return home
+
+
 def default_id(path):
     """A zipper is named after its folder unless told otherwise: `init /opt/zippers/quinn`
     makes `quinn`. Two zippers both defaulting to `zipper-0` is a container-name clash."""
@@ -342,6 +418,21 @@ def default_id(path):
 def cmd_init(a):
     if a.vault_only:
         return cmd_init_vault(a)
+    if getattr(a, 'relay', None):
+        # The token comes from the environment, never the command line, where any
+        # process on the machine could read it in `ps`.
+        token = os.environ.get('ZIPPER_NEW_DISCORD_TOKEN', '')
+        if not token or not a.id or not a.discord_channel:
+            print('init --relay needs --id, --discord-channel and ZIPPER_NEW_DISCORD_TOKEN')
+            return 1
+        try:
+            home = init_relay_home(a.path, a.id, a.relay, a.discord_channel, token,
+                                   network=a.network or 'zipper-gateway', mem=a.mem or '1g')
+        except RuntimeError as e:
+            print('init: %s' % e); return 1
+        print('Made %s in %s (Discord through %s). Start it: docker compose up -d'
+              % (a.id, home, a.relay))
+        return 0
     from . import install
     addr = a.address or '127.0.0.1'
     if not a.address and install.remote() and not a.local:

@@ -24,6 +24,15 @@ function. Three tiers:
     advanced   service.restart <any other allowed service>,         needs approval
                run <command>  (a root shell command)
 
+**Invites: the approval is the code.** `invite.create` is advanced, so making one
+takes the operator's authenticator code. What it makes is a one-use code, stored here
+only as a hash, that the shared Discord gateway (`gateway/`) can trade for exactly one
+new zipper: `invite.redeem` is the gateway's only verb (tier `provision`), and it can
+do nothing else -- not choose the folder, the image, the network or the memory cap,
+all of which come from this config. Redeeming creates `<provision.dir>/<id>` with
+`zipper init --relay` run inside the image, mounted on that one folder, then starts it.
+A compromised gateway can therefore spend codes the operator made, and nothing more.
+
 **Every `run` says why, in plain English** (`--why`). The operator may not read shell;
 what they can judge is whether the reason matches what they were just doing. The post
 leads with the reason and shows the command under it.
@@ -79,6 +88,14 @@ DEFAULT_CONFIG = {
     # restart, status and logs, none of which needs a code.
     'sites': {},
     'window_minutes': 15,       # after an approval, advanced requests run without one
+    # Invite codes (hashes only) and the zippers they made.
+    'invites': '/etc/zipper-hostd-invites.json',
+    'invite_days': 7,
+    # Where redeemed invites become zippers. `relay` and `network` are the shared
+    # gateway's; `max` caps how many zippers invites can make in all.
+    'provision': {'dir': '/opt/zippers', 'image': 'zipper:local', 'network': 'zipper-gateway',
+                  'relay': 'http://zipper-gateway:4300', 'mem': '1g', 'max': 5,
+                  'prefix': 'zipper-', 'first': 2},
     'systemctl': 'systemctl',
     'journalctl': 'journalctl',
     'docker': 'docker',
@@ -122,6 +139,8 @@ class State:
         self.last_counter = 0
         self.failures = []          # timestamps of wrong codes
         self.windows = {}           # zipper id -> time its approval window closes
+        self.invite_lock = threading.Lock()
+        self.bad_invites = []       # timestamps of codes that didn't match
 
     def window_left(self, zid):
         """Seconds left in this zipper's approval window, 0 if none is open."""
@@ -240,6 +259,8 @@ def classify(cfg, zid, verb, args):
             '%(g)s diff --quiet HEAD || { echo "uncommitted changes"; exit 1; }; '
             '%(g)s pull --ff-only && %(dc)s up -d --build') % {'g': git, 'dc': dc}), \
             'site.deploy %s' % s
+    if verb == 'invite.create':
+        return 'advanced', None, 'invite.create'
     if verb == 'run':
         cmd = ' '.join(args).strip()
         if not cmd:
@@ -269,7 +290,167 @@ def _box():
 
 
 def _execute(what):
+    if callable(what):
+        return what()
     return _run(what, shell=True) if isinstance(what, str) else _run(what)
+
+
+# ---------------------------------------------------------------- invites
+
+INVITE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'   # nothing to misread
+INVITE_BAD = (10, 10 * 60)      # wrong codes from the gateway, seconds locked
+
+
+def _norm_code(code):
+    return ''.join(ch for ch in str(code).upper() if ch in INVITE_ALPHABET)
+
+
+def _code_hash(code):
+    return hashlib.sha256(_norm_code(code).encode()).hexdigest()
+
+
+def _invites_load(cfg):
+    try:
+        with open(cfg['invites'], encoding='utf-8') as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        data = {}
+    data.setdefault('codes', {})
+    data.setdefault('made', {})
+    return data
+
+
+def _invites_save(cfg, data):
+    tmp = cfg['invites'] + '.tmp'
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w', encoding='utf-8') as fh:
+        json.dump(data, fh, indent=2)
+    os.replace(tmp, cfg['invites'])
+
+
+def invite_create(state, zid):
+    cfg = state.cfg
+    raw = ''.join(secrets.choice(INVITE_ALPHABET) for _ in range(10))
+    code = 'ZIP-%s-%s' % (raw[:5], raw[5:])
+    expires = time.time() + cfg['invite_days'] * 86400
+    with state.invite_lock:
+        data = _invites_load(cfg)
+        now = time.time()
+        data['codes'] = {h: c for h, c in data['codes'].items() if c['expires'] > now}
+        data['codes'][_code_hash(code)] = {'expires': expires, 'by': zid, 'made': now}
+        _invites_save(cfg, data)
+    when = datetime.datetime.fromtimestamp(expires).strftime('%Y-%m-%d')
+    log('%s made an invite (expires %s)' % (zid, when))
+    return {'ok': True, 'output': 'Invite code: %s\nOne use; expires %s. Whoever pastes it in '
+                                  'a server with the Zipper bot gets their own zipper.'
+                                  % (code, when)}
+
+
+def _host_tz():
+    try:
+        with open('/etc/timezone') as fh:
+            return fh.read().strip() or 'UTC'
+    except OSError:
+        link = os.path.realpath('/etc/localtime')
+        return link.split('/zoneinfo/', 1)[1] if '/zoneinfo/' in link else 'UTC'
+
+
+def _next_id(cfg, data):
+    p = cfg['provision']
+    n = int(p['first'])
+    while True:
+        zid = '%s%d' % (p['prefix'], n)
+        if zid not in data['made'] and zid not in cfg['zippers'] \
+                and not os.path.exists(os.path.join(p['dir'], zid)):
+            return zid
+        n += 1
+
+
+def provision(cfg, zid, channel, token):
+    """Make and start one relay zipper. (ok, output)."""
+    p = cfg['provision']
+    home = os.path.join(p['dir'], zid)
+    dk = cfg['docker']
+    os.makedirs(home, mode=0o700)
+    if subprocess.run([dk, 'network', 'inspect', p['network']], capture_output=True).returncode:
+        r = _run([dk, 'network', 'create', p['network']])
+        if not r['ok']:
+            return False, r['output']
+    # The token reaches init through the environment, never argv (`ps` shows argv).
+    # Only the new zipper's own folder is mounted: never /opt/zippers whole.
+    env = dict(os.environ, ZIPPER_NEW_DISCORD_TOKEN=token)
+    init = subprocess.run(
+        [dk, 'run', '--rm', '-e', 'ZIPPER_NEW_DISCORD_TOKEN', '-e', 'TZ=' + _host_tz(),
+         '-e', 'ZIPPER_SETTINGS=/nonexistent/settings.json',
+         '-e', 'ZIPPER_ENV_FILE=/nonexistent/.env',
+         '-v', '%s:%s' % (home, home), '-w', '/opt/zipper-seed', '--entrypoint', 'python3',
+         p['image'], '-m', 'zipper', 'init', home, '--id', zid, '--relay', p['relay'],
+         '--discord-channel', channel, '--network', p['network'], '--mem', p['mem']],
+        env=env, capture_output=True, text=True)
+    out = init.stdout + init.stderr
+    if init.returncode:
+        return False, out
+    up = subprocess.run([dk, 'compose', 'up', '-d'], cwd=home, capture_output=True, text=True)
+    return up.returncode == 0, out + up.stdout + up.stderr
+
+
+def _valid_token(secret):
+    return (secret.startswith('zt_') and 30 <= len(secret) <= 100
+            and all(ch.isalnum() or ch in '_-' for ch in secret))
+
+
+def invite_redeem(state, zid, args, secret):
+    """The gateway trades a code for a new zipper in a Discord server."""
+    cfg = state.cfg
+    if len(args) != 3 or not all(a.isdigit() and 5 <= len(a) <= 25 for a in args[1:]):
+        return {'ok': False, 'error': 'invite.redeem <code> <guild id> <channel id>'}
+    if not _valid_token(secret):
+        return {'ok': False, 'error': 'invite.redeem needs the new zipper\'s token as `secret`'}
+    code, guild, channel = args
+    with state.invite_lock:
+        n, secs = INVITE_BAD
+        now = time.time()
+        state.bad_invites = [t for t in state.bad_invites if now - t < secs]
+        if len(state.bad_invites) >= n:
+            return {'ok': False, 'error': 'too many wrong codes; try again in a few minutes'}
+        data = _invites_load(cfg)
+        h = _code_hash(code)
+        entry = data['codes'].get(h)
+        if not entry or entry['expires'] < now:
+            state.bad_invites.append(now)
+            log('%s: an invite code that did not match' % zid)
+            return {'ok': False, 'error': 'that code is not valid (used, expired or mistyped)'}
+        if len(data['made']) >= int(cfg['provision']['max']):
+            return {'ok': False, 'error': 'no room for another zipper on this machine'}
+        for other, m in data['made'].items():
+            if m.get('guild') == guild:
+                return {'ok': False, 'error': 'this server already has %s' % other}
+        new = _next_id(cfg, data)
+        del data['codes'][h]
+        data['made'][new] = {'guild': guild, 'channel': channel, 'at': now,
+                             'invite_by': entry['by']}
+        _invites_save(cfg, data)
+    log('%s redeemed an invite from %s: creating %s for server %s'
+        % (zid, entry['by'], new, guild))
+    try:
+        ok, out = provision(cfg, new, channel, secret)
+    except Exception as e:
+        ok, out = False, 'provision: %s' % e
+    if not ok:
+        # The code comes back: a failed build is not a used invite. The half-made
+        # folder stays for the operator to read, and _next_id skips it.
+        with state.invite_lock:
+            data = _invites_load(cfg)
+            data['made'].pop(new, None)
+            data['codes'][h] = entry
+            _invites_save(cfg, data)
+        log('creating %s failed:\n%s' % (new, out[-2000:]))
+        announce(cfg, 'An invite was redeemed but creating **%s** failed; the code still works.'
+                      '\n```\n%s\n```' % (new, out[-1200:]))
+        return {'ok': False, 'error': 'could not create the zipper; the operator has been told'}
+    announce(cfg, 'An invite from `%s` was redeemed: created **%s** for Discord server %s.'
+                  % (entry['by'], new, guild))
+    return {'ok': True, 'id': new, 'output': 'created %s' % new}
 
 
 def handle(state, zid, req):
@@ -282,17 +463,26 @@ def handle(state, zid, req):
         return {'ok': True, 'tiers': allowed,
                 'output': 'status, containers, disk, service.status|logs|restart <%s>, '
                           'site.status|logs|restart|deploy <%s>, '
-                          'container.restart, run --why "<reason>" <command>'
+                          'container.restart, invite.create, run --why "<reason>" <command>'
                           % ('|'.join(cfg['services']),
                              '|'.join(cfg['zippers'].get(zid, {}).get('sites', [])))}
 
     if verb == 'approve':
         return _approve(state, zid, args)
 
+    if verb == 'invite.redeem':
+        if 'provision' not in allowed:
+            log('%s refused invite.redeem (tier provision not granted)' % zid)
+            return {'ok': False, 'error': 'this zipper is not granted provision requests'}
+        return invite_redeem(state, zid, args, str(req.get('secret') or ''))
+
     try:
         tier, what, desc = classify(cfg, zid, verb, args)
     except ValueError as e:
         return {'ok': False, 'error': str(e)}
+    if verb == 'invite.create':
+        what = lambda: invite_create(state, zid)    # noqa: E731
+        why = why or "Make a one-use invite code for a new friend's zipper"
     if verb == 'run' and not why:
         return {'ok': False, 'error': 'run needs --why: one plain sentence saying what it '
                                       'does and why, for someone who does not read shell'}

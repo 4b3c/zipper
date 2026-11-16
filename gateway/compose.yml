@@ -1,0 +1,35 @@
+# The shared Discord gateway (gateway/). On the host:
+#
+#   docker network create zipper-gateway            # once; hostd also makes it if missing
+#   mkdir -p /opt/zippers/gateway && cp this file there
+#   /opt/zippers/gateway/.env, mode 600:
+#     DISCORD_TOKEN=<the shared bot's token>
+#     GATEWAY_IGNORE_GUILDS=<servers whose zipper runs its own bot on that same token>
+#   hostd config: "zippers": {"zipper-gateway": {"tiers": ["provision"]}}, then
+#     `zipper hostd install` (as root) so its socket exists
+#   docker compose up -d                            # from /opt/zippers/gateway
+#
+# No port is published: zippers reach it as http://zipper-gateway:4300 on the
+# zipper-gateway network, and nothing else can.
+services:
+  gateway:
+    image: zipper:local
+    container_name: zipper-gateway
+    hostname: zipper-gateway
+    restart: unless-stopped
+    working_dir: /opt/zipper-seed
+    entrypoint: ["python3", "-m", "gateway", "serve"]
+    env_file: [./.env]
+    environment:
+      GATEWAY_STATE: /zipper/gateway/registry.json
+      GATEWAY_HOST_SOCKET: /run/zipper-host/hostd.sock
+    volumes:
+      - ./state:/zipper/gateway
+      # Only the gateway's own hostd socket: it can redeem invites and nothing else.
+      - /run/zipper-hostd/zipper-gateway:/run/zipper-host
+    mem_limit: 256m
+    networks: [zipper-gateway]
+
+networks:
+  zipper-gateway:
+    external: true
