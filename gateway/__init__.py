@@ -24,7 +24,12 @@ never seen the real token, and nothing about conversations lives here.
   403 before Discord sees it.
 
 The upstream connection (`upstream.py`) is a plain discord.py client whose raw
-events feed the relay, and which answers in servers no zipper owns yet.
+events feed the relay. It also signs people up: in a server no zipper owns, a pasted
+invite code goes to the host (hostd `invite.redeem`), which builds and starts a
+zipper with `zipper init --relay`; the gateway then links that server to it. Making
+a code takes the operator's authenticator code (`zipper host invite.create`).
+
+Deploying it: `gateway/compose.yml` says how.
 
 Nothing here reads a vault. It is the most exposed process on the box -- it reads
 every message in every linked server -- so it stays small enough to read in one

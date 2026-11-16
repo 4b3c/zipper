@@ -15,6 +15,10 @@ ZID = re.compile(r'^[a-z0-9][a-z0-9-]{0,31}$')
 SNOWFLAKE = re.compile(r'^\d{5,25}$')
 
 
+def new_token():
+    return 'zt_' + secrets.token_urlsafe(32)
+
+
 def _hash(token):
     return hashlib.sha256(token.encode('utf-8')).hexdigest()
 
@@ -90,15 +94,16 @@ class Registry:
                 return zid
         return None
 
-    def add(self, zid, guild_id, channel_id=''):
+    def add(self, zid, guild_id, channel_id='', token=None):
         """Link a guild to a zipper and return the zipper's new token (shown once).
-        Adding an id that exists re-links it and replaces its token."""
+        Adding an id that exists re-links it and replaces its token. `token`: one
+        minted earlier with `new_token`, already written into that zipper's config."""
         guild_id, channel_id = str(guild_id), str(channel_id or '')
         if not ZID.match(zid):
             raise ValueError('zipper id must be lowercase letters, digits and dashes')
         if not SNOWFLAKE.match(guild_id) or (channel_id and not SNOWFLAKE.match(channel_id)):
             raise ValueError('guild and channel are Discord ids (digits)')
-        token = 'zt_' + secrets.token_urlsafe(32)
+        token = token or new_token()
         with self._changing():
             for other, entry in self._data['zippers'].items():
                 if other != zid and entry.get('guild') == guild_id:

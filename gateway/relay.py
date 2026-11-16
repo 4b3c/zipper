@@ -314,6 +314,12 @@ def app(hub):
                     except asyncio.TimeoutError:
                         await sock.close(code=4000, message=b'gateway not connected to Discord')
                         break
+                    # Again, after the wait: a token rotated while this identify waited
+                    # must not attach with the entry it had before.
+                    zid, entry = hub.registry.lookup((p.get('d') or {}).get('token'))
+                    if zid is None:
+                        await sock.close(code=4004, message=b'Authentication failed.')
+                        break
                     conn = Conn(sock, zid, entry)
                     conn.writer = asyncio.ensure_future(conn.drain())
                     hub.attach(conn, ws_url(request))

@@ -217,6 +217,11 @@ def main():
     s.add_argument('--vault-only', action='store_true',
                    help='only make a vault at PATH (what a container or a test wants)')
     s.add_argument('--backup', help='a bare git repo, outside the vault, pushed on every commit')
+    s.add_argument('--relay', help='Discord only, through the shared gateway at this URL '
+                   '(token in ZIPPER_NEW_DISCORD_TOKEN); no dashboard')
+    s.add_argument('--discord-channel', help='with --relay: the channel it answers in')
+    s.add_argument('--network', help='with --relay: the Docker network it shares with the gateway')
+    s.add_argument('--mem', help='with --relay: its memory cap (default 1g)')
     s.add_argument('--starter', action='store_true',
                    help='add a suggested layout: folders, a schema, Obsidian pages')
     s.set_defaults(fn=_setup('cmd_init'))

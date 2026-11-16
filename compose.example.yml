@@ -45,20 +45,8 @@ services:
       - zipper-1-home:/zipper/home
     ports: ["127.0.0.1:8901:8899"]
 
-  # Optional: one Discord bot shared by zippers that don't have their own
-  # (gateway/). Its .env holds the shared bot's DISCORD_TOKEN; `docker compose exec
-  # zipper-gateway python3 -m gateway add <zipper id> <guild id> <channel id>` links a
-  # server and prints that zipper's token, which goes in the zipper's .env as
-  # DISCORD_TOKEN with DISCORD_RELAY=http://zipper-gateway:4300. No port is published:
-  # zippers reach it over this network, and nothing else should.
-  # zipper-gateway:
-  #   <<: *zipper
-  #   hostname: zipper-gateway
-  #   entrypoint: ["python3", "-m", "gateway", "serve"]
-  #   working_dir: /opt/zipper-seed
-  #   env_file: [./gateway/.env]
-  #   environment: { GATEWAY_STATE: /zipper/gateway/registry.json }
-  #   volumes: ["./gateway:/zipper/gateway"]
+  # Optional: one Discord bot shared by zippers that don't have their own runs
+  # beside these, from gateway/compose.yml (its own folder, its own network).
 
 networks:
   zippers: {}
