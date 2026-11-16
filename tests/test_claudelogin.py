@@ -73,6 +73,54 @@ class Login(unittest.TestCase):
         self.assertIn('Signed in as a@b.c', self.sent[-1][1])
         self.assertFalse(claudelogin.takes('7', GOOD))      # spent
 
+    def test_first_login_closes_its_thread_and_starts_setup(self):
+        os.makedirs(os.path.join(TMP, 'vault'), exist_ok=True)
+        claude_md = os.path.join(TMP, 'vault', 'CLAUDE.md')
+        from zipper import setup
+        with open(claude_md, 'w') as fh:
+            fh.write(setup.GUIDE_OPEN + '\n# Setting up\n' + setup.GUIDE_CLOSE + '\n')
+        self.addCleanup(os.remove, claude_md)
+        begun = []
+        with mock.patch.object(claudelogin, 'begin_setup', lambda tid: begun.append(tid)):
+            claudelogin.start('7', [self.fake])
+            self.assertTrue(claudelogin.submit('7', GOOD, status_cmd=STATUS))
+        self.assertEqual(begun, ['7'])
+        self.assertIn('setup starts in a new thread', self.sent[-1][1])
+        # Once setup is done, a login is just a login: the thread stays.
+        with open(claude_md, 'w') as fh:
+            fh.write('# the rules\n')
+        begun.clear()
+        with mock.patch.object(claudelogin, 'begin_setup', lambda tid: begun.append(tid)):
+            claudelogin.start('8', [self.fake])
+            self.assertTrue(claudelogin.submit('8', GOOD, status_cmd=STATUS))
+        self.assertEqual(begun, [])
+        self.assertIn('Conversations can answer again', self.sent[-1][1])
+
+    def test_begin_setup_opens_a_thread_starts_it_and_archives_the_login(self):
+        from zipper import chat, scheduled
+        posted, archived = [], []
+
+        class Resp:
+            def read(self):
+                return b'{"ok": true}'
+        with mock.patch.object(scheduled, '_open_thread', return_value='99'), \
+                mock.patch('urllib.request.urlopen',
+                           lambda req, timeout=None: posted.append(req) or Resp()), \
+                mock.patch.object(chat, 'discord_archive', lambda tid: archived.append(tid)):
+            self.assertTrue(claudelogin.begin_setup('7'))
+        import json
+        body = json.loads(posted[0].data)
+        self.assertEqual((body['discord_thread_id'], body['opening']), (99, True))
+        self.assertTrue(posted[0].full_url.endswith('/discord'))
+        self.assertEqual(archived, ['7'])
+        # If the thread can't be opened, the login thread stays and says what to do.
+        archived.clear()
+        with mock.patch.object(scheduled, '_open_thread', side_effect=RuntimeError('no bot')), \
+                mock.patch.object(chat, 'discord_archive', lambda tid: archived.append(tid)):
+            self.assertFalse(claudelogin.begin_setup('7'))
+        self.assertEqual(archived, [])
+        self.assertIn('Could not start setup', self.sent[-1][1])
+
     def test_bad_code_says_so(self):
         claudelogin.start('7', [self.fake])
         self.assertFalse(claudelogin.submit('7', 'wrongcode1234567890abcdef'))
