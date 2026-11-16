@@ -172,8 +172,53 @@ def submit(thread_id, code, status_cmd=None):
         _send(thread_id, '[Login] Sign-in failed. Send /login to try again.\n%s'
               % out[-800:])
         return False
-    _send(thread_id, '[Login] Signed in%s. Conversations can answer again.'
-          % _who(status_cmd))
+    who = _who(status_cmd)
+    if setup_pending():
+        _send(thread_id, '[Login] Signed in%s. Your setup starts in a new thread.' % who)
+        begin_setup(thread_id)
+    else:
+        _send(thread_id, '[Login] Signed in%s. Conversations can answer again.' % who)
+    return True
+
+
+SETUP_PROMPT = ('You have just been signed in, and this is the first conversation. '
+                'Start the setup guide at the top of CLAUDE.md now: say hello and begin '
+                'with its first section.')
+
+
+def setup_pending():
+    """Is this zipper's setup guide still at the top of CLAUDE.md? Then this login
+    was its first, made in a thread that exists only for logging in."""
+    from . import core, setup
+    try:
+        with open(os.path.join(core.VAULT, 'CLAUDE.md'), encoding='utf-8') as fh:
+            return setup.GUIDE_OPEN in fh.read()
+    except OSError:
+        return False
+
+
+def begin_setup(login_thread):
+    """The first login's thread has done its job: close it, and start setup in a
+    thread of its own, as if they had asked -- rather than telling them to go and
+    send a message somewhere else. Only for a first login: a later /login usually
+    happens inside a conversation whose sign-in lapsed, and that thread stays open."""
+    from . import chat, core, scheduled
+    import urllib.request
+    try:
+        tid = scheduled._open_thread('Setting up your zipper.', 'Setup')
+        base = core.cfg('ZIPPER_URL') or 'http://127.0.0.1:%s' % (core.cfg('ZIPPER_PORT') or 8800)
+        req = urllib.request.Request(
+            base.rstrip('/') + '/discord', method='POST',
+            data=json.dumps({'prompt': SETUP_PROMPT, 'source': 'discord',
+                             'discord_thread_id': int(tid), 'opening': True}).encode(),
+            headers={'Content-Type': 'application/json'})
+        urllib.request.urlopen(req, timeout=120).read()
+    except Exception as e:
+        # The login stands either way; say how to carry on by hand.
+        _send(login_thread, '[Login] Could not start setup by itself (%s). Send any message '
+                            'in the main channel to begin.' % e)
+        return False
+    chat.discord_archive(login_thread)
     return True
 
 
