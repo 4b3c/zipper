@@ -136,7 +136,11 @@ class Signup:
 
 
 def client(hub):
-    c = discord.Client(intents=INTENTS, enable_debug_events=True)
+    # Invisible: one bot is every zipper's, so no status it could show would be true for
+    # all of them. It still reads and sends everything; each thread's typing indicator is
+    # what says a zipper is working.
+    c = discord.Client(intents=INTENTS, enable_debug_events=True,
+                       status=discord.Status.invisible)
     signup = Signup(hub)
 
     @c.event

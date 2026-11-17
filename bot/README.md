@@ -7,7 +7,7 @@ connection and no conversation state.
 bot/
 ├── discord_bot.py   # entry point
 ├── __init__.py      # main(): aiohttp server + Discord client
-├── client.py        # the gateway: on_message, post_to_zipper, resolve_thread, status line
+├── client.py        # the gateway: on_message, post_to_zipper, resolve_thread
 ├── status.py        # the per-thread "still working" message
 └── server.py        # HTTP: /send /history /edit /react /inject /typing /status /thread /threadinfo /threadrename
 ```
@@ -37,14 +37,6 @@ is refused. The server runs `claude auth login` under a pty (`zipper/claudelogin
 its sign-in link to the thread, and types the next one-word, code-shaped message in that
 thread into the process. One login at a time; a link lasts ten minutes. A refusal that
 looks like an expired login says to send `/login`.
-
-## Status line
-
-Every 30 seconds the bot sets its Discord status from `zipper.presence` to one word:
-*Working* (a conversation is running a tool), *Thinking* (busy, but only reasoning or
-writing), *Testing* (no conversation busy, a code review running) or *Waiting*. Never a
-conversation's name. Busy is read the same way the dashboard and `commit` read it (turn
-locks and pane status lines), and Discord is only told when the word changes.
 
 ## Status messages
 

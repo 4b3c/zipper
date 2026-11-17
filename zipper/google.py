@@ -294,6 +294,10 @@ You will get a "[secret] ..." message saying whether Google is signed in."""
 def cmd_google_discord(a):
     """The sign-in for a zipper reached only through Discord: the link for the reply,
     and a secret button for the address their browser lands on."""
+    if not os.environ.get('ZIPPER_DISCORD_THREAD'):
+        print('`zipper google --discord` works in a Discord conversation, where it can post '
+              'the button. Here, use `zipper google --auth`.')
+        return 1
     if not loopback():
         print('This zipper has a dashboard address, so Google returns to it: use '
               '`zipper google --auth` and the link alone.')
