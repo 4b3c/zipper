@@ -12,6 +12,15 @@ from aiohttp import web
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
+# Sandbox before importing anything from this repo: the live environment points at
+# the real vault, and zipper/testguard.py refuses it during a test run.
+_TMP = tempfile.mkdtemp()
+os.environ.update(ZIPPER_VAULT=os.path.join(_TMP, 'vault'),
+                  ZIPPER_ENV_FILE=os.path.join(_TMP, 'env'),
+                  ZIPPER_HOSTD_LOG=os.path.join(_TMP, 'hostd.log'),
+                  ZIPPER_HOSTD_CONFIG=os.path.join(_TMP, 'hostd.json'))
+os.environ.pop('ZIPPER_SETTINGS', None)
+os.environ.pop('ZIPPER_HOST_SOCKET', None)
 
 import discord                                       # noqa: E402
 import discord.gateway                               # noqa: E402
