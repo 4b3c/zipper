@@ -1308,3 +1308,52 @@ class Later(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class GoogleLoopbackTest(unittest.TestCase):
+    """A zipper with no dashboard signs in to Google through a Desktop client's
+    loopback address, finished by pasting where the browser landed (zipper/google.py)."""
+
+    def setUp(self):
+        from zipper import google
+        self.g = google
+        for k in ('ZIPPER_EXT_BASE', 'ZIPPER_SHEET_ID'):
+            os.environ.pop(k, None)
+        if os.path.exists(os.environ['ZIPPER_ENV_FILE']):
+            os.remove(os.environ['ZIPPER_ENV_FILE'])
+
+    def tearDown(self):
+        for k in ('ZIPPER_EXT_BASE', 'ZIPPER_SHEET_ID'):
+            os.environ.pop(k, None)
+
+    def test_no_dashboard_means_loopback(self):
+        self.assertEqual(self.g.redirect_uri(), 'http://localhost')
+        os.environ['ZIPPER_EXT_BASE'] = 'https://box.example/'
+        self.assertEqual(self.g.redirect_uri(), 'https://box.example/oauth/google/callback')
+        self.assertFalse(self.g.loopback())
+
+    def test_the_code_comes_out_of_what_they_paste(self):
+        code = '4/0AeanS0b' + 'Q' * 40
+        for pasted in ('http://localhost/?iss=https%%3A%%2F%%2Faccounts.google.com&code=%s'
+                       '&scope=email' % code.replace('/', '%2F'),
+                       '  localhost/?code=%s  ' % code, code):
+            self.assertEqual(self.g.code_from(pasted), code, pasted)
+        for bad in ('http://localhost/?scope=x', 'hello', 'http://localhost/?code=;rm'):
+            with self.assertRaises(ValueError):
+                self.g.code_from(bad)
+        with self.assertRaisesRegex(ValueError, 'access_denied'):
+            self.g.code_from('http://localhost/?error=access_denied')
+
+    def test_spreadsheets_only_with_a_timesheet(self):
+        self.assertFalse(any('spreadsheets' in s for s in self.g.scopes()))
+        self.assertTrue(any('gmail.readonly' in s for s in self.g.scopes()))
+        os.environ['ZIPPER_SHEET_ID'] = 'abc'
+        self.assertTrue(any('spreadsheets' in s for s in self.g.scopes()))
+
+
+class HostdSharedEnvTest(unittest.TestCase):
+
+    def test_shared_env_never_writes_a_second_line(self):
+        out = hostd._shared_env({'ZIPPER_GOOGLE_CLIENT_ID': 'id.apps',
+                                 'BAD': 'x\nDISCORD_TOKEN=evil', 'lower': 'y', 'EMPTY': ''})
+        self.assertEqual(out, 'ZIPPER_GOOGLE_CLIENT_ID=id.apps\n')

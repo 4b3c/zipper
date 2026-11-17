@@ -224,9 +224,11 @@ def guide(subs, discord_only=False):
     for n in FIRST:
         out += _block(n, read(os.path.join(SETUP_DIR, n + '.md')))
     if discord_only:
-        # Calendars are the one scoop that needs no secret page: a link pasted into
-        # their own server. The rest wait for a way to sign in from Discord.
+        # The scoops that can be set up from Discord: calendars are a link pasted into
+        # their own server, Gmail a Google sign-in finished through the secret form.
+        # The rest wait for a way to sign in from Discord.
         out += _block('calendar', read(os.path.join(SETUP_DIR, 'calendar-discord.md')))
+        out += _block('gmail', read(os.path.join(SETUP_DIR, 'gmail-discord.md')))
         for n in LAST:
             out += _block(n, read(os.path.join(SETUP_DIR, n + '.md')))
         return out + GUIDE_CLOSE + '\n\n'

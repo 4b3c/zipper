@@ -19,7 +19,8 @@ Then replace every "the operator" in the rules below with their name.
 rather than assume, one at a time, and write each answer into *Standing context*:
 
 - Should email become tasks? If yes, every pass opens mail from people and offices and
-  turns each deadline, form or owed reply into a task.
+  turns each deadline, form or owed reply into a task. (This needs Gmail connected: if
+  they say yes, the *Gmail* section does it.)
 - Does a reminder repeated daily help, or get ignored? (If ignored: ask once for a
   decision, then go quiet.)
 - Do they want a task for replies that only acknowledge something, or only for replies

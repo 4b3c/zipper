@@ -63,7 +63,7 @@ Standard library only; this is the most security-sensitive file in the repo, so
 it stays small enough to read in one sitting.
 """
 import base64, datetime, hashlib, hmac, json, os, secrets, socketserver, struct
-import shlex, subprocess, sys, threading, time, urllib.request
+import re, shlex, subprocess, sys, threading, time, urllib.request
 
 CONFIG = os.environ.get('ZIPPER_HOSTD_CONFIG', '/etc/zipper-hostd.json')
 LOG = os.environ.get('ZIPPER_HOSTD_LOG', '/var/log/zipper-hostd.log')
@@ -95,7 +95,11 @@ DEFAULT_CONFIG = {
     # gateway's; `max` caps how many zippers invites can make in all.
     'provision': {'dir': '/opt/zippers', 'image': 'zipper:local', 'network': 'zipper-gateway',
                   'relay': 'http://zipper-gateway:4300', 'mem': '1g', 'max': 5,
-                  'prefix': 'zipper-', 'first': 2},
+                  'prefix': 'zipper-', 'first': 2,
+                  # Written into every new zipper's .env: what all of them share, like
+                  # the operator's Desktop Google client (zipper/google.py), whose
+                  # secret Google treats as non-confidential. Never a per-person secret.
+                  'env': {}},
     'systemctl': 'systemctl',
     'journalctl': 'journalctl',
     'docker': 'docker',
@@ -404,8 +408,23 @@ def provision(cfg, zid, channel, token):
     out = init.stdout + init.stderr
     if init.returncode:
         return False, out
+    shared = _shared_env(p.get('env') or {})
+    if shared:
+        with open(os.path.join(home, 'config', '.env'), 'a', encoding='utf-8') as fh:
+            fh.write(shared)
     up = subprocess.run([dk, 'compose', 'up', '-d'], cwd=home, capture_output=True, text=True)
     return up.returncode == 0, out + up.stdout + up.stderr
+
+
+def _shared_env(env):
+    """`provision.env` as .env lines. A name or value that could break a line is
+    skipped: one stray newline would write a second variable into every zipper."""
+    out = ''
+    for k, v in sorted(env.items()):
+        k, v = str(k), str(v)
+        if re.match(r'^[A-Z_][A-Z0-9_]*$', k) and v and v.isprintable():
+            out += '%s=%s\n' % (k, v)
+    return out
 
 
 def _valid_token(secret):

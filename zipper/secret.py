@@ -148,7 +148,7 @@ def _spawn(name, host, port, token):
     time.sleep(0.3)
 
 
-def ask_discord(name, label, calendar=False):
+def ask_discord(name, label, calendar=False, kind=None):
     """Post a button in this conversation's thread that opens a private form
     (bot/secretask.py). Returns the exit code."""
     tid = os.environ.get('ZIPPER_DISCORD_THREAD')
@@ -157,16 +157,18 @@ def ask_discord(name, label, calendar=False):
               '(`zipper secret %s`)' % name)
         return 1
     from . import chat
+    kind = kind or ('calendar' if calendar else 'env')
     try:
         res = chat._bot('/secretask', {'thread_id': tid, 'name': name, 'label': label or name,
-                                        'kind': 'calendar' if calendar else 'env'})
+                                        'kind': kind})
     except Exception as e:
         body = getattr(e, 'read', lambda: b'')()
         print('secret: the bot refused: %s %s' % (e, body.decode('utf-8', 'replace')[:200]))
         return 1
     print('Posted a button in this thread. Whatever they paste goes straight to %s; you '
           'will get a "[secret] ..." message saying it was saved, never the value. '
-          'End your turn now.' % ('the "%s" calendar' % name if calendar else '.env as ' + name))
+          'End your turn now.' % {'calendar': 'the "%s" calendar' % name,
+                                  'google': 'the Google sign-in'}.get(kind, '.env as ' + name))
     return 0
 
 

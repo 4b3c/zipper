@@ -23,8 +23,7 @@ How to work through it:
 - **No passwords, keys or links-that-work-like-passwords in the chat.** When you need one,
   `zipper secret NAME --discord "what it is"` posts a button that opens a private form; what
   they type there is saved without passing through you, and you are told only that it
-  was saved. Email needs a sign-in this zipper can't do yet: if they ask, say it is coming
-  and note it in *Standing context*.
+  was saved. Gmail has its own sign-in, `zipper google --discord` (the *Gmail* section).
 - **When a section is finished -- done or skipped -- remove it** with
   `zipper setup done <section>` (the name after `setup:` in its marker).
   `zipper setup remaining` lists what is left.
