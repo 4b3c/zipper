@@ -15,8 +15,9 @@ tense.
   *Waiting*) from `zipper/presence.py`, every 30 seconds. On the shared gateway one bot is
   every zipper's, so the relay drops status updates, and the loop ran for nothing. It was
   removed rather than made shared: any shared status is either meaningless or shows one
-  person's activity to everyone. The gateway's bot is invisible; each thread's typing
-  indicator says a zipper is working.
+  person's activity to everyone. The gateway's bot is always online, so offline means it
+  is down; each thread's typing indicator says a zipper is working. (It was invisible for an
+  hour, which made it look broken.)
 
 ## 2026-10-25 — plugins became scoops
 

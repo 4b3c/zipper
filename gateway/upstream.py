@@ -137,11 +137,11 @@ class Signup:
 
 
 def client(hub):
-    # Invisible: one bot is every zipper's, so no status it could show would be true for
-    # all of them. It still reads and sends everything; each thread's typing indicator is
-    # what says a zipper is working.
+    # Always online, so offline means one thing: the gateway is down. Status is one per
+    # bot, shared by every server, so it can't follow one zipper's activity; each
+    # thread's typing indicator says a zipper is working.
     c = discord.Client(intents=INTENTS, enable_debug_events=True,
-                       status=discord.Status.invisible)
+                       status=discord.Status.online)
     signup = Signup(hub)
 
     @c.event
