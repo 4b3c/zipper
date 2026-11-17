@@ -129,10 +129,11 @@ def start(thread_id, cmd=None):
               % login.text()[-800:])
         return None
     url = m.group(0).decode()
-    # One sentence, link last: people act on the first thing they read, and the step
-    # they miss is bringing the code back here.
-    _send(thread_id, '[Login] Sign in with this link, then paste the code you get back '
-                     'here:\n%s' % url)
+    # "Paste" first: people act on the first thing they read. Led by the link, they
+    # click it and are stranded on the code page. Led by the paste, they read on to
+    # learn which code, and the link is the answer.
+    _send(thread_id, '[Login] Paste the code you get here. You get it by signing in at '
+                     'this link:\n%s' % url)
     t = threading.Timer(WAIT, _expire, (login,))
     t.daemon = True
     t.start()
