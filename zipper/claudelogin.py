@@ -129,8 +129,10 @@ def start(thread_id, cmd=None):
               % login.text()[-800:])
         return None
     url = m.group(0).decode()
-    _send(thread_id, '[Login] Open this, sign in, then paste the code it shows here '
-                     '(good for %d minutes):\n%s' % (WAIT // 60, url))
+    # One sentence, link last: people act on the first thing they read, and the step
+    # they miss is bringing the code back here.
+    _send(thread_id, '[Login] Sign in with this link, then paste the code you get back '
+                     'here:\n%s' % url)
     t = threading.Timer(WAIT, _expire, (login,))
     t.daemon = True
     t.start()
