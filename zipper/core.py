@@ -33,6 +33,8 @@ if not os.environ.get('ZIPPER_VAULT'):
     # the repo's docs as notes, and a write lands in the code. Say so, loudly.
     sys.stderr.write('zipper: ZIPPER_VAULT is not set -- using %s, which is the code, '
                      'not a vault. Set ZIPPER_VAULT.\n' % VAULT)
+from zipper import testguard   # noqa: E402
+testguard.check(VAULT, 'vault')
 LOGDIR  = os.path.join(VAULT, 'Log')
 METDIR  = os.path.join(VAULT, 'Metrics')
 DECDIR  = os.path.join(VAULT, 'Decisions')
@@ -70,7 +72,9 @@ BOOL_FIELDS  = ['revenue_intent', 'open_loop', 'open_problem', 'open_question',
 
 
 # ------------------------------------------------- frontmatter
-ENV_FILE = os.environ.get('ZIPPER_ENV_FILE') or os.path.join(os.path.dirname(HERE), '.env')
+ENV_FILE = testguard.check(
+    os.environ.get('ZIPPER_ENV_FILE') or os.path.join(os.path.dirname(HERE), '.env'),
+    'env file')
 
 
 def _env_file():

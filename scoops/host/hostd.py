@@ -158,8 +158,22 @@ class State:
         return len(self.failures) >= n
 
 
+def _live_log_in_test():
+    # The real audit log is not a test's to write: a test run once filled it with
+    # invites for a placeholder server. This file is copied to the host on its own,
+    # so it cannot share zipper/testguard.py; the check is the same.
+    import tempfile
+    spec = getattr(sys.modules.get('__main__'), '__spec__', None)
+    testing = 'pytest' in sys.modules or (getattr(spec, 'name', '') or '').startswith('unittest')
+    tmp = os.path.realpath(tempfile.gettempdir())
+    return testing and not os.path.realpath(LOG).startswith(tmp + os.sep)
+
+
 def log(line):
     stamp = datetime.datetime.now().isoformat(timespec='seconds')
+    if _live_log_in_test():
+        print('%s  %s' % (stamp, line), file=sys.stderr)
+        return
     try:
         with open(LOG, 'a', encoding='utf-8') as fh:
             fh.write('%s  %s\n' % (stamp, line))

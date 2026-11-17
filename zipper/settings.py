@@ -32,6 +32,7 @@ each manifest's `env` map. Order everywhere: the real environment, then `.env`
 rewrites it in the current shape.
 """
 import copy, json, os, tempfile
+from zipper import testguard
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCOOP_DIR = os.path.join(ROOT, 'scoops')
@@ -69,7 +70,7 @@ def _path():
     return LEGACY_PATH
 
 
-PATH = _path()
+PATH = testguard.check(_path(), 'settings file')
 
 # The core's shape, with defaults. Scoops add theirs from their manifests.
 DEFAULTS = {
