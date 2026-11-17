@@ -239,8 +239,14 @@ class RelayInitTest(unittest.TestCase):
         self.assertNotIn('zipper google --auth', guide)
         self.assertIn('<!-- setup:calendar -->', guide)
         self.assertIn('Calendar Feed', guide)
-        self.assertLess(guide.index('setup:notes'), guide.index('setup:calendar'))
-        self.assertLess(guide.index('setup:calendar'), guide.index('setup:finish'))
+        # Short: inputs, the two times of day, how it works -- no preference interview.
+        order = [guide.index('<!-- setup:%s -->' % n)
+                 for n in ('about', 'calendar', 'gmail', 'rhythm', 'flow', 'finish')]
+        self.assertEqual(order, sorted(order))
+        self.assertNotIn('setup:notes', guide)
+        self.assertNotIn('Should email become tasks', guide)
+        self.assertNotIn('zipper channel', guide)
+        self.assertIn('## 10. Gaps', guide)
         # Without the token in the environment it refuses rather than making a mute zipper.
         env.pop('ZIPPER_NEW_DISCORD_TOKEN')
         r = subprocess.run([sys.executable, '-m', 'zipper', 'init', home + '-b', '--id', 'zipper-8',

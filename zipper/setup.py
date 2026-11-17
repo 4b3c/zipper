@@ -202,6 +202,8 @@ FIRST = ('about', 'notes')
 SCOOP_ORDER = ('discord', 'dashboard', 'backup', 'github', 'calendar', 'canvas', 'hours', 'gmail',
                 'slack', 'passes', 'digest', 'upstream', 'peers', 'host')
 LAST = ('finish',)
+# A Discord-only zipper's guide, each `template/setup/<name>-discord.md`.
+DISCORD_STEPS = ('about', 'calendar', 'gmail', 'rhythm', 'flow', 'finish')
 GUIDE_OPEN, GUIDE_CLOSE = '<!-- setup -->', '<!-- /setup -->'
 
 
@@ -221,17 +223,16 @@ def guide(subs, discord_only=False):
         return t
     intro = 'intro-discord.md' if discord_only else 'intro.md'
     out = GUIDE_OPEN + '\n' + read(os.path.join(SETUP_DIR, intro)) + '\n'
+    if discord_only:
+        # Short on purpose: inputs, two times of day, how it works. Preferences are
+        # learned by working together, not asked up front. The inputs are the scoops
+        # that can be set up from Discord: calendars are a link pasted into their own
+        # server, Gmail a Google sign-in finished through the secret form.
+        for n in DISCORD_STEPS:
+            out += _block(n, read(os.path.join(SETUP_DIR, n + '-discord.md')))
+        return out + GUIDE_CLOSE + '\n\n'
     for n in FIRST:
         out += _block(n, read(os.path.join(SETUP_DIR, n + '.md')))
-    if discord_only:
-        # The scoops that can be set up from Discord: calendars are a link pasted into
-        # their own server, Gmail a Google sign-in finished through the secret form.
-        # The rest wait for a way to sign in from Discord.
-        out += _block('calendar', read(os.path.join(SETUP_DIR, 'calendar-discord.md')))
-        out += _block('gmail', read(os.path.join(SETUP_DIR, 'gmail-discord.md')))
-        for n in LAST:
-            out += _block(n, read(os.path.join(SETUP_DIR, n + '.md')))
-        return out + GUIDE_CLOSE + '\n\n'
     pdir = os.path.join(ROOT, 'scoops')
     have = sorted(n for n in os.listdir(pdir) if os.path.exists(os.path.join(pdir, n, 'SETUP.md')))
     for n in [x for x in SCOOP_ORDER if x in have] + [x for x in have if x not in SCOOP_ORDER]:

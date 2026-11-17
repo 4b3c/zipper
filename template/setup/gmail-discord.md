@@ -1,8 +1,9 @@
 ## Gmail
 
-Offer this to anyone who said email should become tasks. Once connected, each pull lists
+Offer it: *A) connect Gmail B) skip for now*. Once connected, each pull lists
 new mail as rows (who, the subject, a pointer, never the body), and every pass opens mail
-from people and offices and turns each deadline, form or owed reply into a task.
+from people and offices and turns each deadline, form or owed reply into a task. Post
+its button only once no calendar button is waiting.
 
 It is read-only: the zipper can read their mail and never send it. Say so, because the
 Google screen will ask about reading mail. Then:
