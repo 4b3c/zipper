@@ -45,7 +45,7 @@ class DiscordConnect(unittest.TestCase):
         self.assertEqual(open(os.path.join(d, 'compose.yml')).read(), once)
         with open(os.path.join(d, 'compose.yml'), 'w') as fh:
             fh.write('services:\n  z:\n    hostname: z\nnetworks:\n  mine: {}\n')
-        self.assertIn('by hand', discordsetup.join_network(d) + ' by hand')
+        self.assertIn('external network', discordsetup.join_network(d))
         self.assertNotIn('zipper-gateway]', open(os.path.join(d, 'compose.yml')).read())
 
     def test_the_invite_link_comes_from_the_token(self):
