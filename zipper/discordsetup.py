@@ -208,6 +208,10 @@ def connect(again=False):
     env_set('DISCORD_RELAY', RELAY, ENV_FILE)
     # The channel the code is pasted in becomes home; an old one would win over it.
     settings.put('discord.channel', '')
+    if _env_value(ENV_FILE, 'DISCORD_CHANNEL_ID'):
+        # An old zipper may set it in .env, which wins over settings: the bot would
+        # skip waiting for its code and be refused until it was pasted.
+        env_set('DISCORD_CHANNEL_ID', '', ENV_FILE)
     settings.put('scoops.discord.enabled', True)
     err = join_network(folder)
     if err:
