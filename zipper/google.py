@@ -16,10 +16,22 @@ Workspace org) needs no verification and its refresh token does not expire. An
 External client left in Testing works for its listed test users, but Google
 expires their refresh tokens after 7 days -- publish it (unverified is fine for
 a handful of users) or `zipper google --auth` becomes a weekly chore.
+
+**Two ways back from the consent screen.** A zipper with a dashboard has a public
+https address (`ZIPPER_EXT_BASE`), so Google returns to its `/oauth/google/callback`
+and the token is saved with no help. A zipper reached only through Discord has no
+address at all, so it signs in with a *Desktop* client, which Google lets return to
+`http://localhost`. Nothing listens there: their browser shows a page that won't load,
+with the code in its address bar, and they paste that address into the Discord secret
+form (`zipper google --discord`, `bot/secretask.py`). One Desktop client serves every
+such zipper: Google treats an installed app's client secret as non-confidential, and
+hostd writes it into each new zipper's `.env` (`provision.env`).
 """
+import re
 import json
 import os
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -51,10 +63,14 @@ CALENDAR = 'https://www.googleapis.com/auth/calendar.app.created'
 
 
 def scopes():
+    """What the consent screen asks for. Spreadsheets only for a zipper with a
+    timesheet: it reaches every sheet in the account, a scary line on a friend's
+    consent screen for a feature they don't use."""
     from . import settings
+    sheets = SCOPES[:1] if _cfg('ZIPPER_SHEET_ID') else []
     if settings.get('scoops.gmail.folders'):
-        return SCOPES[:1] + [MODIFY, CALENDAR]
-    return list(SCOPES) + [CALENDAR]
+        return sheets + [MODIFY, CALENDAR]
+    return sheets + SCOPES[1:] + [CALENDAR]
 
 # The file core reads, so the token lands where the next process looks. This
 # once built its own path beside the code, which stopped being where `.env`
@@ -74,12 +90,41 @@ def _cfg(key, default=''):
     return core.cfg(key, default)
 
 
+LOOPBACK = 'http://localhost'
+
+
 def redirect_uri():
+    """The dashboard's callback where there is one, else the loopback a Desktop
+    client may use. The same answer for the link and the exchange, or Google
+    refuses the code."""
     base = _cfg('ZIPPER_EXT_BASE')      # the same tailnet https address
     if not base:
-        raise RuntimeError('ZIPPER_EXT_BASE is unset; the callback needs a '
-                           'public https address to be registered against')
+        return LOOPBACK
     return base.rstrip('/') + '/oauth/google/callback'
+
+
+def loopback():
+    return redirect_uri() == LOOPBACK
+
+
+def code_from(pasted):
+    """The one-time code out of what they pasted: the whole address their browser
+    landed on, or the code alone. Raises ValueError saying what is wrong -- never
+    quoting the value, which is a credential for a few minutes."""
+    v = (pasted or '').strip()
+    if '://' in v or v.startswith(('localhost', '?')):
+        q = urllib.parse.parse_qs(urllib.parse.urlsplit(v if '://' in v else 'http://' + v).query)
+        if q.get('error'):
+            raise ValueError('Google said %s: the sign-in was turned down, or the account '
+                             'blocks this app' % re.sub(r'[^a-z_]', '', q['error'][0])[:40])
+        v = (q.get('code') or [''])[0]
+        if not v:
+            raise ValueError('that address has no code in it. It should be the one the '
+                             'browser landed on after Allow')
+    if not re.match(r'^[0-9]/[A-Za-z0-9_\-]{20,}$', v):
+        raise ValueError("that isn't the address the browser landed on after Allow "
+                         "(it starts http://localhost/?...code=)")
+    return v
 
 
 def configured():
@@ -118,6 +163,7 @@ def _post(url, data):
 
 def exchange(code):
     """Turn the one-time code from the callback into a lasting refresh token."""
+    _ACCESS.update(token=None, expires=0)   # a new grant may carry new scopes
     res = _post(TOKEN, {'code': code,
                         'client_id': _cfg('ZIPPER_GOOGLE_CLIENT_ID'),
                         'client_secret': _cfg('ZIPPER_GOOGLE_CLIENT_SECRET'),
@@ -230,10 +276,69 @@ def set_env(key, value):
     os.replace(tmp, ENV)
 
 
+DISCORD_STEPS = """Send them this link, with these steps, and end your turn:
+
+%s
+
+1. Open the link and sign in with the Google account whose mail this is.
+2. Google will warn that it hasn't verified the app. Tap Advanced, then "Go to ..."
+   (it is the operator's own Google app; it reads mail and never sends).
+3. Allow it. The browser then lands on a page that won't load, at an address starting
+   http://localhost. That is expected: copy that whole address from the address bar.
+4. Tap the button posted below and paste it there. It goes to the zipper's private
+   files, never into the chat.
+
+You will get a "[secret] ..." message saying whether Google is signed in."""
+
+
+def cmd_google_discord(a):
+    """The sign-in for a zipper reached only through Discord: the link for the reply,
+    and a secret button for the address their browser lands on."""
+    if not loopback():
+        print('This zipper has a dashboard address, so Google returns to it: use '
+              '`zipper google --auth` and the link alone.')
+        return 1
+    from . import secret
+    print(DISCORD_STEPS % auth_url())
+    print()
+    return secret.ask_discord('google', 'Google sign-in: the localhost address',
+                              kind='google')
+
+
+def save_pasted(pasted):
+    """What the Discord form does with the pasted address. Returns the line the
+    conversation is told: whether it worked, never the value."""
+    try:
+        code = code_from(pasted)
+    except ValueError as e:
+        return 'Google was not signed in: %s. Run `zipper google --discord` again.' % e
+    try:
+        exchange(code)
+    except urllib.error.HTTPError as e:
+        try:
+            err = json.loads(e.read().decode()).get('error', '')
+        except Exception:
+            err = ''
+        why = {'invalid_grant': 'the code was already used or has expired (it lasts a few '
+                                'minutes), so it needs a fresh sign-in',
+               'redirect_uri_mismatch': 'the Google app is not a Desktop app',
+               'invalid_client': 'ZIPPER_GOOGLE_CLIENT_ID / _SECRET are wrong'}.get(
+            err, 'Google refused it (%s)' % (re.sub(r'[^a-z_]', '', err)[:40] or e.code))
+        return 'Google was not signed in: %s. Run `zipper google --discord` again.' % why
+    except RuntimeError as e:
+        return 'Google was not signed in: %s' % e
+    return ('Google is signed in (%s). Run `zipper scoop enable gmail` if it is not on '
+            'yet; the next pull reads mail.' % ', '.join(
+                s.rsplit('/', 1)[-1] for s in scopes()))
+
+
 def cmd_google(a):
     if not configured():
-        print('ZIPPER_GOOGLE_CLIENT_ID / _SECRET are unset in .env')
+        print('ZIPPER_GOOGLE_CLIENT_ID / _SECRET are unset in .env. A zipper on the shared '
+              'gateway gets them from hostd (`provision.env`); ask its operator.')
         return 1
+    if getattr(a, 'discord', False):
+        return cmd_google_discord(a)
     if getattr(a, 'auth', False) or not authorized():
         # Naming the account is worth a line -- the client is Internal to one
         # Workspace org, so the wrong login fails at the consent screen and it

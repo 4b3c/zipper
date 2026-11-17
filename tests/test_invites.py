@@ -230,12 +230,23 @@ class RelayInitTest(unittest.TestCase):
                               'origin'], capture_output=True, text=True).stdout.strip()
         self.assertEqual(url, '/zipper/backup/vault.git')
         self.assertTrue(os.path.exists(os.path.join(home, 'backup', 'vault.git', 'HEAD')))
-        self.assertNotIn('setup:gmail', guide)
-        # Calendars are the one scoop a Discord-only zipper can set up: a pasted link.
+        # Only the scoops that can be set up from Discord: calendars (a pasted link) and
+        # Gmail (a Google sign-in finished through the secret form). Not the dashboard's
+        # versions, which open a secret page Discord can't reach.
+        self.assertNotIn('setup:github', guide)
+        self.assertIn('<!-- setup:gmail -->', guide)
+        self.assertIn('zipper google --discord', guide)
+        self.assertNotIn('zipper google --auth', guide)
         self.assertIn('<!-- setup:calendar -->', guide)
         self.assertIn('Calendar Feed', guide)
-        self.assertLess(guide.index('setup:notes'), guide.index('setup:calendar'))
-        self.assertLess(guide.index('setup:calendar'), guide.index('setup:finish'))
+        # Short: inputs, the two times of day, how it works -- no preference interview.
+        order = [guide.index('<!-- setup:%s -->' % n)
+                 for n in ('about', 'calendar', 'gmail', 'rhythm', 'flow', 'finish')]
+        self.assertEqual(order, sorted(order))
+        self.assertNotIn('setup:notes', guide)
+        self.assertNotIn('Should email become tasks', guide)
+        self.assertNotIn('zipper channel', guide)
+        self.assertIn('## 10. Gaps', guide)
         # Without the token in the environment it refuses rather than making a mute zipper.
         env.pop('ZIPPER_NEW_DISCORD_TOKEN')
         r = subprocess.run([sys.executable, '-m', 'zipper', 'init', home + '-b', '--id', 'zipper-8',

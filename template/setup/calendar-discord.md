@@ -4,7 +4,8 @@ This is the first thing that makes the zipper useful on day one, so offer it war
 calendar feed lets you see their days, notice when things move, and remind them before
 something is due. For a student, Canvas has a feed of every assignment with its due date.
 
-Ask which they have, one at a time:
+Ask which they use, lettered: *A) Google Calendar B) Canvas C) Outlook or a school
+calendar D) several of these E) none*. Then, for each:
 
 - **Google Calendar:** on a computer, Google Calendar → Settings → click the calendar
   under *Settings for my calendars* → *Integrate calendar* → copy *Secret address in iCal
@@ -15,8 +16,10 @@ Ask which they have, one at a time:
   *Shared calendars* → *Publish a calendar* → copy the ICS link.
 
 The link works like a password -- anyone who has it can read that calendar -- so it
-**never goes into the chat**. For each calendar, post a button that opens a private form,
-with a short label (`canvas` for Canvas: that label cleans up its course-code titles):
+**never goes into the chat**. Post a button that opens a private form, with a short label
+(`canvas` for Canvas: that label cleans up its course-code titles). **One at a time:** post
+the first, and the second only after its `[secret] ...` message comes back. Give the steps
+for that one calendar only, with its button:
 
     zipper secret canvas --calendar --discord "Canvas calendar feed link"
     zipper secret google --calendar --discord "Google Calendar secret iCal address"

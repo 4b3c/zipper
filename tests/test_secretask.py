@@ -167,7 +167,42 @@ class SecretFormTest(unittest.IsolatedAsyncioTestCase):
         _, form = await self.tap_and_submit(nonce, 'not a link')
         self.assertIn("isn't a calendar link", form.response.sent[0][0])
 
+    async def test_a_google_sign_in_trades_the_code_and_never_quotes_it(self):
+        from zipper import google
+        code = '4/0AeanS0aSECRETCODE_' + 'x' * 30
+        landed = 'http://localhost/?iss=https://accounts.google.com&code=%s&scope=x' % code
+        seen = []
+        with mock.patch.object(google, 'exchange', lambda c: seen.append(c) or {}):
+            nonce = secretask.new_ask(555, 'google', 'Google sign-in', 'google')
+            # A wrong paste is refused before the ask is spent: the button still works.
+            _, form = await self.tap_and_submit(nonce, 'https://example.com/nothing')
+            self.assertIn('no code', form.response.sent[0][0])
+            self.assertEqual((seen, self.told), ([], []))
+            await self.tap_and_submit(nonce, landed)
+        self.assertEqual(seen, [code])
+        self.assertIn('Google is signed in', self.told[0][0])
+        self.assertNotIn('SECRETCODE', self.told[0][0])
+        self.assertFalse(os.path.exists(self.env))      # the code itself is never stored
+
+    async def test_a_refused_google_code_says_why_without_the_code(self):
+        import io, urllib.error
+        from zipper import google
+        code = '4/0AeanS0aSECRETCODE_' + 'x' * 30
+
+        def refuse(c):
+            raise urllib.error.HTTPError('u', 400, 'bad', {}, io.BytesIO(
+                b'{"error": "invalid_grant", "error_description": "%s"}' % code.encode()))
+        with mock.patch.object(google, 'exchange', refuse):
+            said = secretask.store({'kind': 'google', 'name': 'google', 'label': 'G'},
+                                   'http://localhost/?code=' + code)
+        self.assertIn('expired', said)
+        self.assertNotIn('SECRETCODE', said)
+        said = google.save_pasted('http://localhost/?error=access_denied')
+        self.assertIn('access_denied', said)
+
     def test_asks_are_checked(self):
+        self.assertIsNone(secretask.check('google', 'google'))
+        self.assertIsNotNone(secretask.check('OTHER', 'google'))
         self.assertIsNone(secretask.check('API_KEY', 'env'))
         self.assertIsNotNone(secretask.check('bad name', 'env'))
         self.assertIsNone(secretask.check('canvas', 'calendar'))

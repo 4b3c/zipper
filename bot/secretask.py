@@ -2,6 +2,7 @@
 
     zipper secret NAME --discord "label"                 -> config/.env
     zipper secret canvas --calendar --discord "label"    -> a calendar feed (Inbox/)
+    zipper google --discord                              -> the Google sign-in
 
 The conversation asks (POST /secretask); this posts a message with a button. The
 server's owner taps it and gets a modal -- a pop-up form whose contents go only to the
@@ -66,7 +67,9 @@ def check(name, kind):
         return None if secret.valid_name(name) else 'NAME is letters, digits and _'
     if kind == 'calendar':
         return None if CAL_LABEL.match(name) else 'a calendar label is short: canvas, google, work'
-    return 'kind is env or calendar'
+    if kind == 'google':
+        return None if name == 'google' else 'a Google sign-in is named google'
+    return 'kind is env, calendar or google'
 
 
 def new_ask(thread_id, name, label, kind):
@@ -107,6 +110,13 @@ def clean(kind, value):
         return None, 'it was empty'
     if not value.isprintable() or len(value.splitlines()) != 1:
         return None, 'it had a line break or an invisible character in it'
+    if kind == 'google':
+        # Checked before the ask is spent, so a wrong paste leaves the button live.
+        from zipper import google
+        try:
+            google.code_from(value)
+        except ValueError as e:
+            return None, str(e)
     if kind == 'calendar':
         m = CAL_URL.match(value)
         if not m:
@@ -119,6 +129,11 @@ def clean(kind, value):
 
 def store(ask, value):
     """Write it. Returns the line the conversation is told -- never the value."""
+    if ask['kind'] == 'google':
+        # The pasted address holds a one-time code; trading it for the lasting
+        # token happens here, and only whether it worked goes back.
+        from zipper import google
+        return google.save_pasted(value)
     if ask['kind'] == 'env':
         from zipper import setup
         setup.env_set(ask['name'], value, core.ENV_FILE)

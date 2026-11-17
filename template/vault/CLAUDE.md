@@ -36,6 +36,10 @@ running.
 2. **Answer from the vault.** "What's drifting?", "what did I decide about X?" — read the
    notes, don't guess.
 3. **Argue.** When the evidence contradicts a note, say so plainly. That is the point.
+4. **Fill the gaps.** §10 lists things that exist in {{OWNER}}'s life with no note yet. When
+   one comes up -- in conversation, on the calendar, in mail -- ask a question or two about
+   it (lettered options make it quick), write the note, and take it off the list. Add to the
+   list whenever you meet something new. Don't ask about more than one or two at a time.
 
 **Replying.** Write one reply, to the terminal. If the turn came from Discord, a hook
 forwards it. Never answer with `zipper discord send` — it would post twice; that command is
@@ -257,3 +261,11 @@ notes at the top level and ask.*
 
 *Who {{OWNER}} is, what matters right now, what they asked to be reminded of. Short — detail
 belongs in notes.*
+
+---
+
+## 10. Gaps
+
+*Things {{OWNER}}'s life has that the notes don't cover yet, one line each: what it is and
+where you saw it ("Robotics -- Friday meetings on the calendar"). Remove a line once it
+has a note.*
