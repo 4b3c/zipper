@@ -609,7 +609,11 @@ class _Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
 def load_config(path=CONFIG):
     with open(path, encoding='utf-8') as fh:
         cfg = json.load(fh)
-    return dict(DEFAULT_CONFIG, **cfg)
+    out = dict(DEFAULT_CONFIG, **cfg)
+    # `provision` merges key by key: a config naming only `provision.env` keeps the
+    # defaults beside it. Replacing the whole section once lost `max` and broke invites.
+    out['provision'] = dict(DEFAULT_CONFIG['provision'], **(cfg.get('provision') or {}))
+    return out
 
 
 def serve(cfg):

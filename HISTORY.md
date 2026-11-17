@@ -9,6 +9,15 @@ tense.
 
 ---
 
+## 2026-11-17 — the bot's status line is gone
+
+- **The bot used to set its Discord status to one word** (*Working*, *Thinking*, *Testing*,
+  *Waiting*) from `zipper/presence.py`, every 30 seconds. On the shared gateway one bot is
+  every zipper's, so the relay drops status updates, and the loop ran for nothing. It was
+  removed rather than made shared: any shared status is either meaningless or shows one
+  person's activity to everyone. The gateway's bot is invisible; each thread's typing
+  indicator says a zipper is working.
+
 ## 2026-10-25 — plugins became scoops
 
 - **"Plugin" collided with Claude Code**, which has plugins of its own (and skills,

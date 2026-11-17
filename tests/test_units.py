@@ -19,7 +19,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from zipper import scoops, settings, supervise, setup, runqueue   # noqa: E402
-from zipper import presence, review                                # noqa: E402
+from zipper import review                                          # noqa: E402
 from scoops import backup, peers, upstream                        # noqa: E402
 from scoops.host import hostd                                     # noqa: E402
 
@@ -801,57 +801,6 @@ class QueueRows(unittest.TestCase):
         self.assertTrue(scoops.manifests()['upstream'].get('default_on'))
 
 
-class Presence(unittest.TestCase):
-    """The bot's status line: one word, never a conversation's name."""
-
-    def text(self, busy, doing=None, testing=False):
-        from zipper import turnstatus
-        real = presence.working, presence.testing, turnstatus.doing
-        presence.working = lambda: list(busy)
-        presence.testing = lambda: testing
-        turnstatus.doing = lambda tid: (doing or {}).get(tid, '')
-        try:
-            return presence.text()
-        finally:
-            presence.working, presence.testing, turnstatus.doing = real
-
-    def test_idle(self):
-        self.assertEqual(self.text([]), 'Waiting')
-
-    def test_tool_call_is_working(self):
-        self.assertEqual(self.text(['1', '2'], {'1': 'thinking', '2': 'running zipper lint'}),
-                         'Working')
-
-    def test_reasoning_is_thinking(self):
-        self.assertEqual(self.text(['1', '2'], {'1': 'thinking', '2': 'writing'}), 'Thinking')
-
-    def test_unreadable_transcript_is_working(self):
-        self.assertEqual(self.text(['1']), 'Working')
-
-    def test_review_alone_is_testing(self):
-        self.assertEqual(self.text([], testing=True), 'Testing')
-        self.assertEqual(self.text(['1'], {'1': 'thinking'}, testing=True), 'Thinking')
-
-    def test_review_job_needs_its_process(self):
-        from zipper import review, turnstatus
-        d = tempfile.mkdtemp()
-        real = review.DIR, turnstatus._review_process
-        review.DIR = d
-        try:
-            with open(os.path.join(d, 'x.json'), 'w') as fh:
-                json.dump({'slug': 'x', 'state': 'reviewing'}, fh)
-            turnstatus._review_process = lambda slug: False
-            self.assertFalse(presence.testing())
-            turnstatus._review_process = lambda slug: True
-            self.assertTrue(presence.testing())
-            with open(os.path.join(d, 'x.json'), 'w') as fh:
-                json.dump({'slug': 'x', 'state': 'approved'}, fh)
-            self.assertFalse(presence.testing())
-        finally:
-            review.DIR, turnstatus._review_process = real
-            shutil.rmtree(d, ignore_errors=True)
-
-
 class CommandLine(unittest.TestCase):
     """The CLI end to end on a fresh vault, in a child with the same empty env."""
 
@@ -1357,3 +1306,15 @@ class HostdSharedEnvTest(unittest.TestCase):
         out = hostd._shared_env({'ZIPPER_GOOGLE_CLIENT_ID': 'id.apps',
                                  'BAD': 'x\nDISCORD_TOKEN=evil', 'lower': 'y', 'EMPTY': ''})
         self.assertEqual(out, 'ZIPPER_GOOGLE_CLIENT_ID=id.apps\n')
+
+
+class HostdProvisionMergeTest(unittest.TestCase):
+
+    def test_provision_env_alone_keeps_the_defaults(self):
+        path = os.path.join(TMP, 'hostd.json')
+        with open(path, 'w') as fh:
+            json.dump({'provision': {'env': {'ZIPPER_GOOGLE_CLIENT_ID': 'x'}}}, fh)
+        cfg = hostd.load_config(path)
+        self.assertEqual(cfg['provision']['max'], hostd.DEFAULT_CONFIG['provision']['max'])
+        self.assertEqual(cfg['provision']['env'], {'ZIPPER_GOOGLE_CLIENT_ID': 'x'})
+        self.assertEqual(cfg['provision']['dir'], '/opt/zippers')

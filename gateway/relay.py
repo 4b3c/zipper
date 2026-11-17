@@ -364,7 +364,8 @@ def app(hub):
                 elif op == 6:
                     await sock.send_str(json.dumps({'op': 9, 'd': False}))
                 # Presence (3), voice (4) and member requests (8) are the shared
-                # bot's, not one zipper's to set; they are dropped.
+                # bot's, not one zipper's to set; they are dropped. The bot stays
+                # invisible (upstream.py).
         finally:
             if conn:
                 hub.detach(conn)
