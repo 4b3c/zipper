@@ -35,7 +35,8 @@ WELCOME = ("Hi, I'm Zipper. To set up your own zipper here, paste the invite cod
            "were sent into this channel.")
 WORKING = "Got it. Setting up your zipper -- this takes a few minutes."
 READY = ("Your zipper is ready, and this channel is its home. Send `/login` here to "
-         "connect your Claude account, then say hi.")
+         "connect your Claude account: it sends a link, and you paste back the code that "
+         "link gives you.")
 SLOW = ("Your zipper was made, but it hasn't connected yet. It may still be starting; "
         "if it stays quiet, ask whoever invited you.")
 
