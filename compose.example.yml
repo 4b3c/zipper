@@ -4,8 +4,10 @@
 #   docker compose up -d
 #   docker compose exec -it <id> claude     # once, then /login (or ANTHROPIC_API_KEY)
 #
-# Each gets its own vault, config, Claude login and Discord bot. They share the
-# image and a network they use only to message each other (port 8898).
+# Each gets its own vault, config and Claude login. They share the image, a network
+# they use only to message each other (port 8898), and for Discord the machine's one
+# gateway: `./zipper discord connect` for each (it needs a ./zipper per zipper; a
+# folder made by `zipper init` has one).
 # Publish 8899 on loopback or your tailnet address -- never 0.0.0.0.
 # Set TZ to this machine's zone: on UTC, calendar events read as moved.
 
@@ -45,8 +47,8 @@ services:
       - zipper-1-home:/zipper/home
     ports: ["127.0.0.1:8901:8899"]
 
-  # Optional: one Discord bot shared by zippers that don't have their own runs
-  # beside these, from gateway/compose.yml (its own folder, its own network).
+  # Discord: the gateway runs beside these, from gateway/compose.yml (its own folder,
+  # its own network, zipper-gateway, which each zipper here must also join).
 
 networks:
   zippers: {}

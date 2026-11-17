@@ -3,26 +3,24 @@
 Optional: without it they use the zipper from the dashboard, which is always there. With
 it they can reach the zipper from their phone, where each thread in one channel is its
 own conversation, and the evening digest can reach them. It takes a Discord server of
-their own and a bot they make, about five minutes. Ask whether they want it now; it can
-always be added later.
+their own and, if this machine has no Discord gateway yet, a bot they make (about five
+minutes). Ask whether they want it now; it can always be added later.
 
-If yes, they need a Discord server of their own (any -- a new one is fine) and a bot:
+**It is set up on the machine, not here.** The bot's token belongs to the machine's
+Discord gateway, a container this zipper cannot write to, so it is never pasted into
+the dashboard or a chat. If they said yes when they installed, it may already be done:
+`zipper settings get scoops.discord.enabled`.
 
-1. discord.com/developers/applications → **New Application**, name it.
-2. **Bot** tab → **Reset Token** → copy it. On the same page turn on **Message Content
-   Intent**.
-3. **OAuth2 → URL Generator**: scope `bot`; permissions *Send Messages*, *Send Messages in
-   Threads*, *Create Public Threads*, *Read Message History*, *Attach Files*. Open the
-   generated link and add the bot to their server.
-4. In Discord, **Settings → Advanced → Developer Mode** on; right-click the channel the
-   zipper should live in → **Copy Channel ID**.
+Otherwise, on the machine, in this zipper's folder (`{{HOME}}`):
 
-Then:
+    ./zipper discord connect
 
-    zipper secret DISCORD_TOKEN          # they paste the token on the page
-    zipper settings set discord.channel <channel id>
+It walks them through making the bot if the machine needs one, then prints a link to
+add the bot to their server and a code. Pasting the code in any channel of their server
+makes that channel this zipper's home. Connect restarts the zipper, which closes this
+terminal: tell them so first, and that afterwards they reopen it and say "continue setup".
+Then `zipper discord status` should say it is connected.
 
 Optionally a second channel for messages the zipper sends on its own (the digest, alerts),
-so they don't bury the conversations: `zipper settings set discord.notify_channel <id>`.
-
-Then `zipper scoop enable discord`.
+so they don't bury the conversations: `zipper settings set discord.notify_channel <id>`
+(Developer Mode on in Discord's settings, then right-click the channel, Copy Channel ID).

@@ -1,13 +1,15 @@
-# The shared Discord gateway (gateway/). On the host:
+# A machine's Discord gateway (gateway/): every zipper on the machine reaches Discord
+# through it. `./zipper discord connect` writes this folder and starts it; by hand:
 #
-#   docker network create zipper-gateway            # once; hostd also makes it if missing
-#   mkdir -p /opt/zippers/gateway && cp this file there
-#   /opt/zippers/gateway/.env, mode 600:
-#     DISCORD_TOKEN=<the shared bot's token>
-#     GATEWAY_IGNORE_GUILDS=<servers whose zipper runs its own bot on that same token>
+#   docker network create zipper-gateway
+#   mkdir -p <zippers' folder>/gateway && cp this file there
+#   .env beside it, mode 600:   DISCORD_TOKEN=<the bot's token>
+#   docker compose up -d
+#
+# Invite codes (building zippers for other people) also need hostd:
 #   hostd config: "zippers": {"zipper-gateway": {"tiers": ["provision"]}}, then
-#     `zipper hostd install` (as root) so its socket exists
-#   docker compose up -d                            # from /opt/zippers/gateway
+#   `zipper hostd install` (as root) so its socket exists. Without it, only pairing
+#   codes work, and the socket mount below is an empty folder.
 #
 # No port is published: zippers reach it as http://zipper-gateway:4300 on the
 # zipper-gateway network, and nothing else can.

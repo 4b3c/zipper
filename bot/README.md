@@ -12,10 +12,15 @@ bot/
 └── server.py        # HTTP: /send /history /edit /react /inject /typing /status /thread /threadinfo /threadrename
 ```
 
-**Its own bot, or the shared one.** With `DISCORD_RELAY` set, discord.py talks to the
-shared gateway (`gateway/`) instead of Discord, and `DISCORD_TOKEN` is the token the
-gateway minted for this zipper. Nothing else in this package changes: the gateway shows
-it only its own server and refuses calls outside it.
+**Always through the gateway.** discord.py talks to the machine's gateway (`gateway/`,
+at `DISCORD_RELAY`) instead of Discord, and `DISCORD_TOKEN` is the token the gateway
+minted for this zipper. The gateway shows it only its own server and refuses calls
+outside it. Without `DISCORD_RELAY` the bot exits and says to run `./zipper discord
+connect` on the machine.
+
+**Its home channel** is `discord.channel`. A zipper just paired has none yet: the bot
+asks the relay (`GET /zipper/home`) every 15 seconds until its code is pasted, then
+saves that channel and connects.
 
 ## Inbound
 
@@ -73,8 +78,9 @@ Unit: `deploy/zipper-discord.service` (runs `python3 -u`, or nothing reaches the
 Environment from the checkout's `.env`. Listens on `127.0.0.1:4200`.
 
 ```
-DISCORD_TOKEN=                     # the bot token
-DISCORD_CHANNEL_ID=                # the channel it listens in
+DISCORD_TOKEN=                     # this zipper's gateway token (zt_...), not the bot's
+DISCORD_RELAY=                     # the gateway, http://zipper-gateway:4300
+DISCORD_CHANNEL_ID=                # the channel it listens in (discord.channel)
 BOT_URL=http://127.0.0.1:4200      # where zipper reaches this bot
 ZIPPER_URL=http://127.0.0.1:8800   # where this bot forwards messages
 ```

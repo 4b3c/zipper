@@ -20,13 +20,40 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from zipper import scoops, settings, supervise, setup, runqueue   # noqa: E402
-from zipper import review                                          # noqa: E402
+from zipper import review, discordsetup                            # noqa: E402
 from scoops import backup, peers, upstream                        # noqa: E402
 from scoops.host import hostd, hostd_taps                         # noqa: E402
 
 
 def tearDownModule():
     shutil.rmtree(TMP, ignore_errors=True)
+
+
+class DiscordConnect(unittest.TestCase):
+    """The host side of `zipper discord connect` that needs no Docker."""
+
+    def test_a_home_joins_the_gateway_network_once_and_odd_ones_are_left_alone(self):
+        d = tempfile.mkdtemp(dir=TMP)
+        tpl = open(os.path.join(ROOT, 'template', 'home', 'compose.yml')).read()
+        with open(os.path.join(d, 'compose.yml'), 'w') as fh:
+            fh.write(tpl)
+        self.assertEqual(discordsetup.join_network(d), '')
+        once = open(os.path.join(d, 'compose.yml')).read()
+        self.assertIn('    networks: [default, zipper-gateway]', once)
+        self.assertTrue(once.rstrip().endswith('zipper-gateway:\n    external: true'))
+        self.assertEqual(discordsetup.join_network(d), '')            # idempotent
+        self.assertEqual(open(os.path.join(d, 'compose.yml')).read(), once)
+        with open(os.path.join(d, 'compose.yml'), 'w') as fh:
+            fh.write('services:\n  z:\n    hostname: z\nnetworks:\n  mine: {}\n')
+        self.assertIn('by hand', discordsetup.join_network(d) + ' by hand')
+        self.assertNotIn('zipper-gateway]', open(os.path.join(d, 'compose.yml')).read())
+
+    def test_the_invite_link_comes_from_the_token(self):
+        head = base64.b64encode(b'900000000000000001').decode().rstrip('=')
+        self.assertEqual(discordsetup.client_id(head + '.x.y'), '900000000000000001')
+        self.assertEqual(discordsetup.client_id('zt_abc'), '')
+        self.assertIn('client_id=900000000000000001', discordsetup.invite_link('900000000000000001'))
+        self.assertEqual(discordsetup.invite_link(''), '')
 
 
 class Review(unittest.TestCase):

@@ -156,8 +156,8 @@ def _children():
         if core.cfg('DISCORD_TOKEN'):
             kids.append(Child('bot', [py, '-u', '-m', 'bot.discord_bot']))
         else:
-            print('[run] the discord scoop is on but DISCORD_TOKEN is not set '
-                  '(`zipper secret DISCORD_TOKEN`); Discord will not answer until it is.',
+            print('[run] the discord scoop is on but DISCORD_TOKEN is not set (run '
+                  '`./zipper discord connect` on the machine); Discord will not answer until it is.',
                   flush=True)
     return kids
 

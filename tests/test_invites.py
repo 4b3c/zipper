@@ -155,6 +155,7 @@ class SignupTest(unittest.IsolatedAsyncioTestCase):
             # The zipper "connects" as soon as it is made.
             self.hub.conns.add(Conn('zipper-2'))
             return {'ok': True, 'id': 'zipper-2'}
+        kw.setdefault('can_build', lambda: True)
         return upstream.Signup(self.hub, redeem_fn=fake, ready_wait=2, poll=0.05, me=900, **kw)
 
     async def test_a_pasted_code_makes_and_links_a_zipper(self):
@@ -179,11 +180,7 @@ class SignupTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.reg.owner(GUILD))
         self.assertIn('not valid', sent[-1])
 
-    async def test_quiet_unless_spoken_to_and_never_in_ignored_servers(self):
-        s = self.signup(ignore={int(GUILD)})
-        m, sent = msg('ZIP-ABCDE-23456', mentions=[types.SimpleNamespace(id=900)])
-        await s.handle(m)
-        self.assertEqual((self.calls, sent), ([], []))
+    async def test_quiet_unless_spoken_to(self):
         s = self.signup()
         m, sent = msg('just chatting')
         await s.handle(m)
@@ -194,6 +191,65 @@ class SignupTest(unittest.IsolatedAsyncioTestCase):
         m, sent = msg('hello again', mentions=[types.SimpleNamespace(id=900)])
         await s.handle(m)
         self.assertEqual(sent, [])                          # once per ten minutes
+
+
+    async def test_a_pairing_code_links_its_zipper_without_the_host(self):
+        code, token = self.reg.pair('zipper-5')
+        self.assertEqual(self.reg.status(token), ('pending', None))
+        self.assertEqual(self.reg.lookup(token), (None, None))     # identifies to nothing yet
+        self.hub.conns.add(Conn('zipper-5'))
+        s = self.signup()
+        m, sent = msg('my code is %s' % code.lower().replace('-', ''))
+        await s.handle(m)
+        self.assertEqual(self.calls, [])                            # hostd never asked
+        self.assertEqual(sent, [upstream.READY])
+        state, entry = self.reg.status(token)
+        self.assertEqual((state, entry['guild'], entry['channel']), ('linked', GUILD, CHANNEL))
+        self.assertEqual(self.reg.lookup(token)[0], 'zipper-5')
+        self.assertEqual(self.reg.pending(), {})                    # spent
+
+    async def test_without_a_host_an_unknown_code_says_so(self):
+        s = self.signup(can_build=lambda: False)
+        m, sent = msg('ZIP-ABCDE-23456')
+        await s.handle(m)
+        self.assertEqual((self.calls, sent), ([], [upstream.UNKNOWN]))
+        self.assertIsNone(self.reg.owner(GUILD))
+
+
+class PairingTest(unittest.TestCase):
+
+    def setUp(self):
+        self.reg = registry.Registry(os.path.join(tempfile.mkdtemp(), 'r.json'))
+
+    def test_codes_are_hashed_replaced_and_expire(self):
+        code, token = self.reg.pair('zipper-5')
+        with open(self.reg.path) as fh:
+            raw = fh.read()
+        self.assertNotIn(code, raw)
+        self.assertNotIn(token, raw)
+        code2, token2 = self.reg.pair('zipper-5')                    # the first stops working
+        self.assertIsNone(self.reg.claim(code, GUILD, CHANNEL))
+        self.assertEqual(self.reg.status(token), (None, None))
+        with mock.patch.object(registry.time, 'time', return_value=time.time() + registry.PAIR_TTL + 1):
+            self.assertIsNone(self.reg.claim(code2, GUILD, CHANNEL))
+            self.assertEqual(self.reg.status(token2), (None, None))
+        self.assertEqual(self.reg.claim(code2, GUILD, CHANNEL), 'zipper-5')
+
+    def test_a_linked_zipper_moves_only_when_asked_and_servers_keep_one_owner(self):
+        old = self.reg.add('zipper-0', GUILD, CHANNEL)
+        with self.assertRaises(ValueError):
+            self.reg.pair('zipper-0')
+        code, token = self.reg.pair('zipper-0', again=True)
+        self.assertEqual(self.reg.lookup(old)[0], 'zipper-0')      # until the code is used
+        other = '333333333333333333'
+        self.assertEqual(self.reg.claim(code, other, '333333333333333334'), 'zipper-0')
+        self.assertIsNone(self.reg.lookup(old)[0])
+        self.assertEqual(self.reg.owner(other), 'zipper-0')
+        code, _ = self.reg.pair('zipper-6')
+        with self.assertRaises(ValueError):
+            self.reg.claim(code, other, '333333333333333334')
+        self.assertTrue(self.reg.remove('zipper-6'))                 # a pending one goes too
+        self.assertEqual(self.reg.pending(), {})
 
 
 class RelayInitTest(unittest.TestCase):

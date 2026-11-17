@@ -9,6 +9,18 @@ tense.
 
 ---
 
+## 2026-11-17 — every zipper goes through a gateway
+
+- **A zipper used to run its own bot with the real token in its `.env`**, and the shared
+  gateway was only for friends' zippers built from invite codes. Two setups meant two
+  sets of instructions, and a self-hoster who later wanted a second zipper had to move the
+  first by hand (zipper-0 did, on 2026-11-16). Now the bot always talks to a relay
+  (`DISCORD_RELAY`), and `zipper discord connect` makes the machine's gateway and pairs
+  the zipper with a code. `GATEWAY_IGNORE_GUILDS` went with it: it existed only so the
+  gateway stayed out of servers served by a zipper sharing its token directly.
+- **`zipper secret DISCORD_TOKEN` no longer sets Discord up.** The real token belongs to
+  the gateway, a container the zipper cannot write to, so it is typed on the machine.
+
 ## 2026-11-17 — the bot's status line is gone
 
 - **The bot used to set its Discord status to one word** (*Working*, *Thinking*, *Testing*,

@@ -13,9 +13,11 @@ load_dotenv()
 from zipper import settings as _settings
 _settings.apply()
 
-# Through the shared gateway instead of Discord itself (gateway/): the same bot,
-# with discord.py's REST and websocket pointed at the relay, and DISCORD_TOKEN the
-# token the gateway minted for this zipper, which Discord itself would refuse.
+# Always through the gateway (gateway/), never Discord itself: discord.py's REST and
+# websocket point at the relay, and DISCORD_TOKEN is the token the gateway minted for
+# this zipper, which Discord would refuse. One zipper or several on a machine, the
+# real bot token lives only in the gateway. `zipper discord connect` sets both.
+# Checked in main(), not here: tests import this package for its modules.
 DISCORD_RELAY = os.environ.get("DISCORD_RELAY", "").rstrip("/")
 if DISCORD_RELAY:
     import discord.gateway
@@ -36,11 +38,44 @@ BOT_PORT = int(os.environ.get("BOT_PORT", 4200))
 BOT_HOST = os.environ.get("BOT_HOST", "127.0.0.1")
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 
-# Expose channel ID to client module
-_client_mod.DISCORD_CHANNEL_ID = int(os.environ["DISCORD_CHANNEL_ID"])
+PAIR_POLL = 15      # seconds between "has my code been pasted yet" while pairing
+
+
+async def home_channel():
+    """The channel this zipper answers in. From settings once it is known; until then
+    (a zipper just paired, whose code nobody has pasted yet) the relay is asked every
+    PAIR_POLL seconds, and the channel the code was pasted in is saved to settings."""
+    if os.environ.get("DISCORD_CHANNEL_ID"):
+        return int(os.environ["DISCORD_CHANNEL_ID"])
+    import aiohttp
+    said = None
+    async with aiohttp.ClientSession() as s:
+        while True:
+            try:
+                async with s.get(DISCORD_RELAY + "/zipper/home",
+                                 headers={"Authorization": "Bot " + DISCORD_TOKEN}) as r:
+                    body = await r.json(content_type=None) if r.status == 200 else {}
+                    state = body.get("state") or ("unknown token" if r.status == 401
+                                                  else "HTTP %d" % r.status)
+            except (aiohttp.ClientError, ValueError) as e:
+                body, state = {}, "gateway unreachable (%s)" % e
+            if state == "linked" and body.get("channel"):
+                _settings.put("discord.channel", str(body["channel"]))
+                print(f"[discord] paired: home channel {body['channel']}", flush=True)
+                return int(body["channel"])
+            if state != said:
+                hint = {"pending": "waiting for the pairing code to be pasted in a server",
+                        "unknown token": "the gateway doesn't know this zipper; run "
+                                         "`./zipper discord connect` on the machine"}.get(state, state)
+                print(f"[discord] no home channel yet: {hint}", flush=True)
+                said = state
+            await asyncio.sleep(PAIR_POLL)
 
 
 async def main():
+    if not DISCORD_RELAY:
+        raise SystemExit("[discord] DISCORD_RELAY is not set. Discord goes through the gateway: "
+                         "run `./zipper discord connect` on the machine, from this zipper's folder.")
     # Start HTTP server first, before Discord connects
     # aiohttp refuses bodies over 1 MiB by default; leave room for a full-size file
     # plus the multipart framing and message text around it.
@@ -52,5 +87,5 @@ async def main():
     await site.start()
     print(f"[discord] internal server listening on {BOT_HOST}:{BOT_PORT}")
 
-    # Now start the Discord client
+    _client_mod.DISCORD_CHANNEL_ID = await home_channel()
     await _client_mod.client.start(DISCORD_TOKEN)

@@ -372,7 +372,20 @@ def app(hub):
                 print('[gateway] %s disconnected' % conn.zid)
         return sock
 
+    async def home(request):
+        # Not Discord's: the one call a zipper makes to the relay as itself. A zipper
+        # paired on its own machine learns here which server and channel claimed it,
+        # and until then that nobody has. Its token is the only credential.
+        state, entry = hub.registry.status(request.headers.get('Authorization'))
+        if state is None:
+            return _error(401, '401: Unauthorized')
+        if state == 'pending':
+            return _json({'state': 'pending'})
+        return _json({'state': 'linked', 'guild': entry['guild'],
+                      'channel': entry.get('channel') or ''})
+
     a = web.Application(client_max_size=MAX_BODY)
+    a.router.add_get('/zipper/home', home)
     a.router.add_route('*', '/api/v%d/{path:.*}' % API_VERSION, rest)
     a.router.add_get('/ws', ws)
     return a

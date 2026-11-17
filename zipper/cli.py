@@ -157,8 +157,11 @@ def main():
     s.add_argument('--days', type=int, default=14)
     s.set_defaults(fn=runqueue.cmd_queue)
     s = sub.add_parser('views');  s.set_defaults(fn=views.cmd_views)
-    s = sub.add_parser('discord', help='talk to the always-on Discord bot')
-    s.add_argument('action', choices=['send', 'read', 'status'])
+    s = sub.add_parser('discord', help='talk to the always-on Discord bot; `connect`, on the '
+                       'machine, links this zipper to Discord through the gateway')
+    s.add_argument('action', choices=['send', 'read', 'status', 'connect'])
+    s.add_argument('--again', action='store_true',
+                   help='with connect: pair a zipper that is already linked with another server')
     s.add_argument('text', nargs='?', default='')
     s.add_argument('--file', help='path to attach')
     s.add_argument('--thread', help='thread id; default is the main channel')

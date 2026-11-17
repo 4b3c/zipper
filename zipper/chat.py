@@ -201,7 +201,11 @@ def discord_history(limit=5, thread_id=None):
 
 def cmd_discord(a):
     """Everything an agent session needs: say something, read what was said,
-    hand over a file. Deliberately four verbs and no state."""
+    hand over a file. Deliberately four verbs and no state. `connect` is the odd one
+    out: it runs on the machine, not in a zipper (zipper/discordsetup.py)."""
+    if a.action == 'connect':
+        from . import discordsetup
+        return discordsetup.cmd_connect(a)
     try:
         if a.action == 'send':
             if not a.text and not a.file:
