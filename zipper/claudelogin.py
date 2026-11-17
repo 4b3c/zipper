@@ -129,13 +129,10 @@ def start(thread_id, cmd=None):
               % login.text()[-800:])
         return None
     url = m.group(0).decode()
-    # Lead with the step people miss: the page ends on a code and says "paste this into
-    # Claude Code", which means nothing to someone in Discord.
-    _send(thread_id, '[Login] **Paste the code it gives you here, in this thread.**\n'
-                     '1. Open the link below and sign in to Claude.\n'
-                     '2. It ends on a page called *Authentication code*. Tap **Copy code**.\n'
-                     '3. Paste it here as your next message.\n'
-                     'The link works for %d minutes:\n%s' % (WAIT // 60, url))
+    # One sentence, link last: people act on the first thing they read, and the step
+    # they miss is bringing the code back here.
+    _send(thread_id, '[Login] Sign in with this link, then paste the code you get back '
+                     'here:\n%s' % url)
     t = threading.Timer(WAIT, _expire, (login,))
     t.daemon = True
     t.start()
