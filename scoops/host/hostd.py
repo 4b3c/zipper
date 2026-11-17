@@ -52,6 +52,9 @@ secret that also exists only here, is single-use, and five wrong codes lock
 approvals for ten minutes. So a fully compromised zipper can ask, but it cannot
 change what the operator reads and cannot produce the code.
 
+**Or a tap** on a reaction under that post, from an account in `taps.approvers`; see
+`hostd_taps.py`, installed beside this file. The zipper waits on `result <id>`.
+
 **It runs from its own copy.** `install` copies this file to /opt/zippers/hostd, beside
 the zippers' folders but never inside one: a copy a container could write would let
 that container rewrite what runs as root. Nothing may mount /opt/zippers whole.
@@ -64,6 +67,11 @@ it stays small enough to read in one sitting.
 """
 import base64, datetime, hashlib, hmac, json, os, secrets, socketserver, struct
 import re, shlex, subprocess, sys, threading, time, urllib.request
+
+try:
+    from . import hostd_taps
+except ImportError:             # run as the installed script, from its own directory
+    import hostd_taps
 
 CONFIG = os.environ.get('ZIPPER_HOSTD_CONFIG', '/etc/zipper-hostd.json')
 LOG = os.environ.get('ZIPPER_HOSTD_LOG', '/var/log/zipper-hostd.log')
@@ -88,6 +96,7 @@ DEFAULT_CONFIG = {
     # restart, status and logs, none of which needs a code.
     'sites': {},
     'window_minutes': 15,       # after an approval, advanced requests run without one
+    'taps': {},                 # {"token", "approvers": [user ids]}; hostd_taps.py
     # Invite codes (hashes only) and the zippers they made.
     'invites': '/etc/zipper-hostd-invites.json',
     'invite_days': 7,
@@ -143,6 +152,7 @@ class State:
         self.last_counter = 0
         self.failures = []          # timestamps of wrong codes
         self.windows = {}           # zipper id -> time its approval window closes
+        self.results = {}           # id -> what became of an approved or refused request
         self.invite_lock = threading.Lock()
         self.bad_invites = []       # timestamps of codes that didn't match
 
@@ -186,20 +196,26 @@ def log(line):
 
 
 def announce(cfg, text):
-    """Post to the operator through hostd's own webhook. Never through a zipper."""
+    """Post to the operator through hostd's own webhook. Never through a zipper.
+    Returns the posted message (Discord's JSON), or None if nothing was posted."""
     if not cfg.get('webhook'):
         log('announce (no webhook): %s' % text)
-        return False
+        return None
     body = json.dumps({'content': text[:1900], 'allowed_mentions': {'parse': []}}).encode()
-    req = urllib.request.Request(cfg['webhook'], data=body, method='POST',
+    url = cfg['webhook'] + ('&' if '?' in cfg['webhook'] else '?') + 'wait=true'
+    req = urllib.request.Request(url, data=body, method='POST',
                                  headers={'Content-Type': 'application/json',
                                           'User-Agent': 'zipper-hostd'})
     try:
-        urllib.request.urlopen(req, timeout=20).read()
-        return True
+        with urllib.request.urlopen(req, timeout=20) as r:
+            raw = r.read()
+        try:
+            return json.loads(raw) or {}
+        except ValueError:
+            return {}
     except Exception as e:
         log('announce failed: %s' % e)
-        return False
+        return None
 
 
 def _run(argv, shell=False):
@@ -502,6 +518,8 @@ def handle(state, zid, req):
 
     if verb == 'approve':
         return _approve(state, zid, args)
+    if verb == 'result':
+        return hostd_taps.result(state, zid, args, PENDING_TTL)
 
     if verb == 'invite.redeem':
         if 'provision' not in allowed:
@@ -549,14 +567,19 @@ def handle(state, zid, req):
         state.pending[rid] = {'zipper': zid, 'what': what, 'desc': desc, 'at': time.time()}
     log('%s requested #%d: %s -- %s' % (zid, rid, why, desc))
     mins = cfg.get('window_minutes', 0) or 0
-    posted = announce(cfg, '**%s** asks to run as root on %s (request #%d):\n**%s**\n```\n%s\n```\n'
-                      'Tell the zipper `approve %d <code from your app>`. Expires in %d minutes.%s'
-                      % (zid, host, rid, why or '(no reason given)', desc, rid, PENDING_TTL // 60,
-                         (' Approving also lets its next requests run without a code for %d '
-                          'minutes.' % mins) if mins > 0 else ''))
-    return {'ok': True, 'pending': rid, 'posted': posted,
+    taps = hostd_taps.configured(cfg)
+    how = (('Tap %s to run it or %s to refuse, or tell the zipper `approve %d <code>`.'
+            % (hostd_taps.YES, hostd_taps.NO, rid)) if taps else
+           'Tell the zipper `approve %d <code from your app>`.' % rid)
+    msg = announce(cfg, '**%s** asks to run as root on %s (request #%d):\n**%s**\n```\n%s\n```\n'
+                   '%s Expires in %d minutes.%s'
+                   % (zid, host, rid, why or '(no reason given)', desc, how, PENDING_TTL // 60,
+                      (' Approving also lets its next requests run without asking for %d '
+                       'minutes.' % mins) if mins > 0 else ''))
+    tappable = taps and hostd_taps.offer(state, rid, msg, log)
+    return {'ok': True, 'pending': rid, 'posted': msg is not None, 'taps': tappable,
             'output': 'request #%d is waiting for approval%s' %
-                      (rid, '' if posted else ' (NOT posted: hostd has no webhook)')}
+                      (rid, '' if msg is not None else ' (NOT posted: hostd has no webhook)')}
 
 
 def _approve(state, zid, args):
@@ -581,9 +604,17 @@ def _approve(state, zid, args):
         state.last_counter = c
         state.pending.pop(rid)
         state.open_window(zid)
-    log('%s: #%d approved, running: %s' % (zid, rid, req['desc']))
+        state.results[rid] = {'zipper': zid, 'at': time.time(), 'state': 'running'}
+    return _carry_out(state, rid, req, 'with a code')
+
+
+def _carry_out(state, rid, req, how):
+    """Run an approved request and keep its result for `result <id>`."""
+    log('%s: #%d approved %s, running: %s' % (req['zipper'], rid, how, req['desc']))
     res = _execute(req['what'])
     log('#%d exit %s' % (rid, res.get('code')))
+    with state.lock:
+        state.results[rid] = dict(res, zipper=req['zipper'], at=time.time(), state='done')
     announce(state.cfg, 'Request #%d ran -- %s' % (rid, 'ok' if res['ok'] else 'exit %s' % res['code']))
     return res
 
@@ -633,6 +664,10 @@ def serve(cfg):
         servers.append(s)
         threading.Thread(target=s.serve_forever, daemon=True).start()
         log('listening for %s on %s' % (zid, path))
+    if hostd_taps.configured(cfg):
+        threading.Thread(target=hostd_taps.watch, daemon=True,
+                         args=(state, sys.modules[__name__], log)).start()
+        log('taps: on for %s' % ', '.join(map(str, cfg['taps']['approvers'])))
     try:
         while True:
             time.sleep(3600)
@@ -678,11 +713,13 @@ WantedBy=multi-user.target
 def install():
     os.makedirs(INSTALL_DIR, exist_ok=True)
     os.chmod(INSTALL_DIR, 0o700)
-    src = os.path.abspath(__file__)
+    here = os.path.dirname(os.path.abspath(__file__))
+    for f in ('hostd.py', 'hostd_taps.py'):
+        dst = os.path.join(INSTALL_DIR, f)
+        with open(os.path.join(here, f), 'rb') as a, open(dst, 'wb') as b:
+            b.write(a.read())
+        os.chmod(dst, 0o700)
     dst = os.path.join(INSTALL_DIR, 'hostd.py')
-    with open(src, 'rb') as a, open(dst, 'wb') as b:
-        b.write(a.read())
-    os.chmod(dst, 0o700)
     with open('/etc/systemd/system/zipper-hostd.service', 'w') as fh:
         fh.write(UNIT % {'dir': INSTALL_DIR})
     subprocess.run(['systemctl', 'daemon-reload'], check=True)
@@ -711,5 +748,7 @@ if __name__ == '__main__':
     # Run from its installed copy: `python3 /opt/zippers/hostd/hostd.py serve`.
     if len(sys.argv) > 1 and sys.argv[1] == 'serve':
         serve(load_config())
+    elif len(sys.argv) == 5 and sys.argv[1] == 'taps':
+        hostd_taps.setup(CONFIG, *sys.argv[2:])
     else:
-        print('usage: hostd.py serve')
+        print('usage: hostd.py serve | taps <env file> <variable> <Discord user id>')

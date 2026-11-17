@@ -8,6 +8,7 @@ box cannot touch the live vault, settings or .env -- a sandbox that inherited th
 live environment once logged a second bot in with the real token.
 """
 import base64, datetime, json, os, shutil, subprocess, sys, tempfile, time, unittest
+from unittest import mock
 
 TMP = tempfile.mkdtemp(prefix='zipper-units-')
 for k in [k for k in os.environ if k.startswith(('ZIPPER_', 'DISCORD_', 'GITHUB_', 'BOT_'))]:
@@ -21,7 +22,7 @@ sys.path.insert(0, ROOT)
 from zipper import scoops, settings, supervise, setup, runqueue   # noqa: E402
 from zipper import review                                          # noqa: E402
 from scoops import backup, peers, upstream                        # noqa: E402
-from scoops.host import hostd                                     # noqa: E402
+from scoops.host import hostd, hostd_taps                         # noqa: E402
 
 
 def tearDownModule():
@@ -239,6 +240,120 @@ class HostWindow(unittest.TestCase):
         hostd._approve(self.st, 'zipper-0', [str(rid), hostd.totp(self.secret)[0]])
         self.assertEqual(self.st.window_left('zipper-0'), 0)
         self.assertIn('pending', self.ask())
+
+
+class HostTaps(unittest.TestCase):
+    """Approving a held request with a reaction (scoops/host/hostd_taps.py)."""
+    secret = base64.b32encode(b'E' * 20).decode()
+    ME, BOT = '111111111111111111', '222222222222222222'
+
+    def setUp(self):
+        hostd.LOG = os.path.join(TMP, 'hostd.log')
+        self.st = hostd.State(dict(hostd.DEFAULT_CONFIG, totp_secret=self.secret, window_minutes=15,
+                                   webhook='https://example.invalid/hook',
+                                   taps={'token': 't', 'approvers': [self.ME]},
+                                   zippers={'zipper-0': {'tiers': ['advanced']},
+                                            'zipper-1': {'tiers': ['advanced']}}))
+        self.posts = []
+        patches = [mock.patch.object(hostd, 'announce', side_effect=self.post),
+                   mock.patch.object(hostd_taps, 'add_buttons')]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def post(self, cfg, text):
+        self.posts.append(text)
+        return {'id': '9%d' % len(self.posts), 'channel_id': '5'}
+
+    def ask(self, cmd='true', zid='zipper-0'):
+        return hostd.handle(self.st, zid, {'verb': 'run', 'args': [cmd], 'why': 'test'})
+
+    def tick(self, choice):
+        with mock.patch.object(hostd_taps, 'decision', return_value=choice):
+            hostd_taps.watch(self.st, hostd, hostd.log, sleep=lambda s: None, once=True)
+
+    def settle(self, rid, zid='zipper-0'):
+        for _ in range(200):
+            res = hostd.handle(self.st, zid, {'verb': 'result', 'args': [str(rid)]})
+            if res.get('state') != 'running':
+                return res
+            time.sleep(0.01)
+        return res
+
+    def test_a_tap_runs_it_and_opens_the_window(self):
+        res = self.ask('echo tapped')
+        self.assertTrue(res['taps'])
+        self.assertIn('Tap', self.posts[0])
+        self.assertEqual(self.settle(res['pending'])['state'], 'waiting')
+        self.tick('yes')
+        done = self.settle(res['pending'])
+        self.assertEqual(done['state'], 'done')
+        self.assertIn('tapped', done['output'])
+        self.assertGreater(self.st.window_left('zipper-0'), 14 * 60)
+
+    def test_a_cross_refuses_and_runs_nothing(self):
+        flag = os.path.join(TMP, 'tap-flag')
+        rid = self.ask('touch %s' % flag)['pending']
+        self.tick('no')
+        res = self.settle(rid)
+        self.assertEqual(res['state'], 'refused')
+        self.assertFalse(res['ok'])
+        self.assertFalse(os.path.exists(flag))
+        self.assertEqual(self.st.window_left('zipper-0'), 0)
+
+    def test_only_the_asking_zipper_sees_the_result(self):
+        rid = self.ask()['pending']
+        self.assertEqual(self.settle(rid, 'zipper-1')['state'], 'unknown')
+        self.tick('yes')
+        self.settle(rid)
+        self.assertEqual(self.settle(rid, 'zipper-1')['state'], 'unknown')
+
+    def test_a_code_first_means_a_later_tap_does_nothing(self):
+        rid = self.ask('echo once')['pending']
+        self.assertTrue(hostd._approve(self.st, 'zipper-0', [str(rid), hostd.totp(self.secret)[0]])['ok'])
+        self.tick('no')
+        self.assertEqual(self.settle(rid)['state'], 'done')
+
+    def test_an_untapped_request_expires(self):
+        rid = self.ask()['pending']
+        self.st.pending[rid]['at'] -= hostd.PENDING_TTL + 1
+        self.tick(None)
+        self.assertNotIn(rid, self.st.pending)
+        self.assertEqual(self.settle(rid)['state'], 'expired')
+
+    def test_without_taps_it_asks_for_a_code(self):
+        self.st.cfg['taps'] = {}
+        res = self.ask()
+        self.assertFalse(res['taps'])
+        self.assertNotIn('Tap', self.posts[0])
+        self.assertIn('<code from your app>', self.posts[0])
+
+    def test_only_an_approver_tap_counts(self):
+        def api(cfg, method, path):
+            if '%E2%9D%8C' in path:
+                return [{'id': self.BOT}]
+            return [{'id': self.BOT}] + ([{'id': self.ME}] if self.mine else [])
+        with mock.patch.object(hostd_taps, '_api', side_effect=api):
+            self.mine = False
+            self.assertIsNone(hostd_taps.decision(self.st.cfg, '5', '9'))
+            self.mine = True
+            self.assertEqual(hostd_taps.decision(self.st.cfg, '5', '9'), 'yes')
+
+    def test_setup_reads_the_token_from_a_file(self):
+        conf, env = os.path.join(TMP, 'hostd-taps.json'), os.path.join(TMP, 'taps.env')
+        with open(conf, 'w') as fh:
+            json.dump({'totp_secret': 'X'}, fh)
+        with open(env, 'w') as fh:
+            fh.write('OTHER=1\nHOSTD_DISCORD_TOKEN="abc.def"\n')
+        with mock.patch('sys.stdout'):
+            hostd_taps.setup(conf, env, 'HOSTD_DISCORD_TOKEN', self.ME)
+        with open(conf) as fh:
+            cfg = json.load(fh)
+        self.assertEqual(cfg['taps'], {'token': 'abc.def', 'approvers': [self.ME]})
+        self.assertEqual(cfg['totp_secret'], 'X')
+        self.assertEqual(os.stat(conf).st_mode & 0o777, 0o600)
+        with self.assertRaises(SystemExit):
+            hostd_taps.setup(conf, env, 'HOSTD_DISCORD_TOKEN', 'abram')
 
 
 class Schedule(unittest.TestCase):
