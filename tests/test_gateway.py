@@ -272,6 +272,26 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
         # A reconnecting zipper's snapshot carries the thread.
         self.assertIn(thread['id'], [t['id'] for t in self.hub.guilds[G1]['threads']])
 
+    async def test_a_zipper_learns_its_home_once_its_code_is_claimed(self):
+        code, tok = self.reg.pair('zipper-5')
+
+        async def home(token):
+            async with aiohttp.ClientSession() as s:
+                async with s.get(self.url + '/zipper/home',
+                                 headers={'Authorization': 'Bot ' + token}) as r:
+                    return r.status, await r.json(content_type=None)
+        self.assertEqual(await home(tok), (200, {'state': 'pending'}))
+        self.assertEqual((await home('zt_nope'))[0], 401)
+        g3, c3 = '333333333333333333', '333333333333333334'
+        self.assertEqual(self.reg.claim(code, g3, c3), 'zipper-5')
+        self.assertEqual(await home(tok), (200, {'state': 'linked', 'guild': g3, 'channel': c3}))
+        # A pending token is good for nothing else.
+        _, tok6 = self.reg.pair('zipper-6')
+        async with aiohttp.ClientSession() as s:
+            async with s.get(self.url + '/api/v10/channels/%s/messages' % C1,
+                             headers={'Authorization': 'Bot ' + tok6}) as r:
+                self.assertEqual(r.status, 401)
+
 
 class RegistryTest(unittest.TestCase):
 

@@ -1,8 +1,13 @@
-"""gateway -- one Discord bot shared by many zippers.
+"""gateway -- the one Discord bot on a machine, shared by every zipper on it.
 
     python3 -m gateway serve                         hold the bot, serve the relay
+    python3 -m gateway pair <zipper id> [--again]    a token and a code; see registry.py
     python3 -m gateway add <zipper id> <guild id>    link a server; prints the zipper's token
     python3 -m gateway list | remove <zipper id>
+
+**Every zipper uses one**, whether the machine runs one zipper or several: its bot
+never connects to Discord directly. `zipper discord connect` (zipper/discordsetup.py)
+makes the gateway and pairs a zipper with it.
 
 **The gateway is the only thing holding the bot's token.** A zipper holds a token of
 its own, minted here, which means nothing to Discord. If a zipper's container leaks
@@ -25,10 +30,12 @@ never seen the real token, and nothing about conversations lives here.
   Everything else is refused with 403 before Discord sees it.
 
 The upstream connection (`upstream.py`) is a plain discord.py client whose raw
-events feed the relay. It also signs people up: in a server no zipper owns, a pasted
-invite code goes to the host (hostd `invite.redeem`), which builds and starts a
-zipper with `zipper init --relay`; the gateway then links that server to it. Making
-a code takes the operator's authenticator code (`zipper host invite.create`).
+events feed the relay. It also links servers: in a server no zipper owns, a pasted
+pairing code links the zipper it was made for, and any other code is tried as an
+invite, which goes to the host (hostd `invite.redeem`) to build and start a zipper
+with `zipper init --relay`; the gateway then links that server to it. Making an
+invite takes the operator's authenticator code (`zipper host invite.create`).
+Either way, the channel the code was pasted in is the zipper's home.
 
 Deploying it: `gateway/compose.yml` says how.
 

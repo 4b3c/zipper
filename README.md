@@ -222,12 +222,28 @@ The relay is the door when you're away from a screen. A message in the channel o
 thread, and each thread is its own headless Claude conversation (`claude -p`, resumed from
 disk after idling). The reply is forwarded by Claude Code's `Stop` hook when the turn came
 from Discord. The engine never imports `discord`, so a cron job can post without owning a
-socket:
+socket.
+
+**Every zipper reaches Discord through its machine's gateway** (`gateway/`): one bot per
+machine, whether it runs one zipper or ten, and the only process holding the bot's real
+token. Each zipper gets a token of its own that works only in its own server. On the
+machine, in a zipper's folder:
+
+```bash
+./zipper discord connect      # makes the gateway if there is none, then pairs this zipper
+```
+
+It prints a link to add the bot to a server, and a code: paste the code in any channel
+there and that channel is the zipper's home. A second zipper on the same machine is the
+same command, with no new bot. `init` offers to do this at the end.
 
 ```bash
 python3 -m zipper discord send "the build finished"
 python3 -m zipper discord send "results" --file report.html
 ```
+
+Other people's zippers can share the same gateway: an invite code (`zipper host
+invite.create`, needs hostd) pasted in their own server builds them one.
 
 ## The browser extension
 
@@ -275,7 +291,8 @@ page with a single password field, opened through the dashboard; the value goes 
 into `.env` and Claude only learns that it was saved (`--tty` asks in a terminal instead).
 
 **Several people on one machine:** one `init` per person, each with its own `--id`, or
-`compose.example.yml` for all of them in one file. Zippers on a shared Docker network can
+`compose.example.yml` for all of them in one file. They share the machine's Discord
+gateway, each paired with its own server. Zippers on a shared Docker network can
 message each other through the peers scoop (port 8898, `/api/msg` only).
 
 **Without Docker:** `pip install -r requirements.txt` (plus git, tmux, ttyd and `claude`),
@@ -308,7 +325,7 @@ then restart `zipper-hostd`. Codes keep working.
 
 ```
 zipper-web.service       dashboard, views, POST /discord
-zipper-discord.service   the gateway connection (run with python3 -u)
+zipper-discord.service   the bot, connected to the gateway (run with python3 -u)
 zipper-fetch.timer       every 5 minutes: `zipper pull --due`
 zipper-pass.timer        09:00 and 21:00 bookkeeping pass
 zipper-digest.timer      19:00 digest

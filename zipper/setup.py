@@ -483,7 +483,30 @@ def cmd_init(a):
     print()
     print('Then open a terminal on the dashboard, log in to Claude when it asks, and say')
     print('"set me up".')
+    if not a.no_start:
+        offer_discord(home)
     return 0
+
+
+def offer_discord(home):
+    """Discord at install time, since it is set up here on the machine: at once when
+    this machine already has a gateway (no question to ask), else if they say so."""
+    import sys
+    from . import discordsetup
+    if discordsetup.find_gateway()[0] is None:
+        if not sys.stdin.isatty():
+            return
+        print()
+        ans = input('Reach this zipper from Discord too? It takes a bot you make '
+                    '(about five minutes). [y/N] ')
+        if ans.strip().lower() not in ('y', 'yes'):
+            print('Later, from %s: ./zipper discord connect' % home)
+            return
+    print()
+    env = dict(os.environ, ZIPPER_ENV_FILE=os.path.join(home, 'config', '.env'),
+               ZIPPER_VAULT=os.path.join(home, 'vault'))
+    env.pop('ZIPPER_SETTINGS', None)
+    subprocess.run([os.path.join(home, 'zipper'), 'discord', 'connect'], env=env)
 
 
 def cmd_init_vault(a):

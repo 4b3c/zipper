@@ -11,8 +11,7 @@ from utils.text import smart_split
 # (bot/__init__.py) sits above it, so an oversized file gets this check's clear 400
 # rather than aiohttp's bare "Content Too Large" at 1 MiB.
 SEND_MAX_BYTES = 8 * 1024 * 1024
-from bot.client import (client, post_to_zipper, resolve_thread, failure_notice,
-                        DISCORD_CHANNEL_ID)
+from bot.client import client, post_to_zipper, resolve_thread, failure_notice
 
 # Active typing tasks keyed by thread_id
 _typing_tasks: dict[int, asyncio.Task] = {}
