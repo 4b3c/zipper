@@ -294,6 +294,14 @@ config maps a name to a git checkout with a compose file, and `zippers.<id>.site
 ones that zipper may deploy (pull clean `main`, rebuild), restart and read the logs of.
 `zipper hostd init`, then `install`.
 
+Instead of typing a code, the operator can tap: give hostd a Discord bot of its own
+(`taps` in the config: its token and the operator's user id) and it puts a check mark and
+a cross under each request's post. A tap from that account approves or refuses; `zipper
+host run` waits for it and prints the output. The bot needs only View Channel, Read
+Message History and Add Reactions in the webhook's channel. To set it, with the token in
+a file on the host: `python3 /opt/zippers/hostd/hostd.py taps <file> <variable> <user id>`,
+then restart `zipper-hostd`. Codes keep working.
+
 ### Deployment (systemd)
 
 `deploy/` has systemd units and an nginx vhost.

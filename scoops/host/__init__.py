@@ -15,16 +15,18 @@ is simply out of reach and this says so.
                                           held for the operator's approval, unless it is a
                                           routine command or their approval window is open
     zipper host approve <id> <code>       the code the operator read off their app
+    zipper host wait <id>                 wait for the operator's tap, then show the output
 
 `--why` is one plain sentence for someone who does not read shell: what it does and
 why now ("Restart the sync so the moved vault is picked up"). hostd refuses a `run`
 without one.
 
-An advanced request returns at once with an id; hostd has already posted the
-exact command to the operator. **Never ask for a code in advance, and never
+An advanced request gets an id; hostd has already posted the exact command to the
+operator. Where hostd takes taps, `run` then waits up to five minutes for one and
+prints what the command printed; past that, `wait <id>` picks it up again. **Never ask for a code in advance, and never
 re-request a refused command with different wording** -- the vault's CLAUDE.md §10.
 """
-import json, os, socket
+import json, os, socket, time
 
 from zipper import core
 
@@ -70,9 +72,35 @@ def split_why(args):
     return why, args
 
 
+WAIT = 300          # seconds `run` waits for a tap; a Bash call is cut off at ten minutes
+
+
+def wait(rid, limit=WAIT, every=2, sleep=time.sleep):
+    """Poll `result <id>` until the request is no longer waiting or running."""
+    end = time.time() + limit
+    while True:
+        res = call('result', [str(rid)])
+        if res.get('state') not in ('waiting', 'running'):
+            return res
+        if time.time() >= end:
+            return {'ok': False, 'error': 'request #%d is still %s; `zipper host wait %d` '
+                                          'to keep waiting' % (rid, res['state'], rid)}
+        sleep(every)
+
+
 def cmd_host(a):
     why, args = split_why(a.args)
-    res = call(a.verb, args, why)
+    if a.verb == 'wait':
+        if len(args) != 1 or not args[0].isdigit():
+            print('host: wait <id>')
+            return 1
+        res = wait(int(args[0]))
+    else:
+        res = call(a.verb, args, why)
+    if res.get('pending') and res.get('taps'):
+        print('%s -- tap it in Discord; waiting up to %d minutes' % (res['output'], WAIT // 60),
+              flush=True)
+        res = wait(res['pending'])
     if res.get('output'):
         print(res['output'].rstrip())
     if res.get('tiers') is not None:

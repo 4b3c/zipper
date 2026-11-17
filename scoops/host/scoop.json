@@ -1,6 +1,6 @@
 {
   "title": "Host access",
-  "about": "reach the machine outside the container through hostd: status and logs freely, anything risky only on your authenticator code",
+  "about": "reach the machine outside the container through hostd: status and logs freely, anything risky only on your tap in Discord or your authenticator code",
   "defaults": {
     "socket": ""
   },
