@@ -7,7 +7,7 @@ connection and no conversation state.
 bot/
 ├── discord_bot.py   # entry point
 ├── __init__.py      # main(): aiohttp server + Discord client
-├── client.py        # the gateway: on_message, post_to_zipper, resolve_thread, status line
+├── client.py        # the gateway: on_message, post_to_zipper, resolve_thread
 ├── status.py        # the per-thread "still working" message
 └── server.py        # HTTP: /send /history /edit /react /inject /typing /status /thread /threadinfo /threadrename
 ```
