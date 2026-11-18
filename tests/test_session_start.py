@@ -88,6 +88,14 @@ class Install(unittest.TestCase):
         self.assertEqual(stop[0]['command'], 'python3 %s' % setup.HOOK)
         self.assertEqual(start[0]['command'], 'python3 %s' % setup.START_HOOK)
 
+    def test_unchanged_settings_are_not_rewritten(self):
+        # `zipper pull` calls this every few minutes.
+        p = os.path.join(TMP, 'claude-settings-2.json')
+        setup.install_hook(p)
+        os.utime(p, (1, 1))
+        setup.install_hook(p)
+        self.assertEqual(os.stat(p).st_mtime, 1)
+
 
 if __name__ == '__main__':
     unittest.main()

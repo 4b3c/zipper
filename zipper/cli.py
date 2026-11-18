@@ -230,10 +230,10 @@ def main():
     s.add_argument('--starter', action='store_true',
                    help='add a suggested layout: folders, a schema, Obsidian pages')
     s.set_defaults(fn=_setup('cmd_init'))
-    s = sub.add_parser('setup', help='the setup guide in CLAUDE.md, and the Stop hook')
+    s = sub.add_parser('setup', help='the setup guide in CLAUDE.md, and the Stop and SessionStart hooks')
     s.add_argument('--hook', action='store_true', help='(the default; kept for old scripts)')
     ss = s.add_subparsers(dest='action')
-    ss.add_parser('hook', help="point Claude Code's Stop hook at this checkout")
+    ss.add_parser('hook', help="point Claude Code's Stop and SessionStart hooks at this checkout")
     ss.add_parser('remaining', help='setup sections still in CLAUDE.md')
     ss.add_parser('starter', help='add the suggested layout to this vault; never overwrites')
     g = ss.add_parser('done', help='remove a finished section; with none left, the guide')

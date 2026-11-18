@@ -174,8 +174,9 @@ def install_hook(settings_path=None):
     Without Stop a Discord conversation works and its replies silently never
     arrive -- the failure a fresh install hit first. Without SessionStart a new
     conversation answers without having seen the queue. Idempotent, and every
-    other setting in the file is kept. The entrypoint runs this on every boot,
-    which is how a zipper made before a hook existed gets it."""
+    other setting in the file is kept. The entrypoint runs this on every boot and
+    `zipper pull` on every pass, because `zipper update` restarts services, not the
+    container: a zipper made before a hook existed gets it within minutes."""
     p = settings_path or os.path.expanduser('~/.claude/settings.json')
     try:
         with open(p, encoding='utf-8') as fh:
@@ -187,11 +188,17 @@ def install_hook(settings_path=None):
              'statusMessage': 'Forwarding reply to Discord'})
     _ensure(data, 'SessionStart', 'session_start.py',
             {'type': 'command', 'command': 'python3 %s' % START_HOOK, 'timeout': 10})
+    text = json.dumps(data, indent=2) + '\n'
+    try:
+        with open(p, encoding='utf-8') as fh:
+            if fh.read() == text:
+                return p        # every pull calls this; an unchanged file isn't rewritten
+    except FileNotFoundError:
+        pass
     os.makedirs(os.path.dirname(p), exist_ok=True)
-    tmp = p + '.tmp'
+    tmp = '%s.%d.tmp' % (p, os.getpid())
     with open(tmp, 'w', encoding='utf-8') as fh:
-        json.dump(data, fh, indent=2)
-        fh.write('\n')
+        fh.write(text)
     os.replace(tmp, p)
     return p
 
