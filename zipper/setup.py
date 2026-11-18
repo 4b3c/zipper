@@ -17,6 +17,7 @@ TEMPLATE = os.path.join(ROOT, 'template', 'vault')      # always: CLAUDE.md, .gi
 STARTER = os.path.join(ROOT, 'template', 'starter')     # optional: a suggested layout
 from .core import ENV_FILE
 HOOK = os.path.join(ROOT, 'hooks', 'forward_reply.py')
+START_HOOK = os.path.join(ROOT, 'hooks', 'session_start.py')
 
 # The starter layout's folders. None is required: the engine makes Inbox/, Meta/,
 # Log/ and Metrics/ when it first writes to them, and a vault is otherwise
@@ -150,32 +151,42 @@ def env_set(key, value, path=None):
     os.replace(tmp, ENV_FILE)
 
 
-# ---------------------------------------------------------------- the Stop hook
+# ---------------------------------------------------------------- the hooks
+
+def _ensure(data, event, script, entry):
+    """Point `event`'s hook for `script` at this checkout, adding it if absent.
+    Repointed rather than duplicated: two Stop hooks would post every reply twice."""
+    groups = data.setdefault('hooks', {}).setdefault(event, [])
+    found = False
+    for group in groups:
+        for h in group.get('hooks', []):
+            if script in h.get('command', ''):
+                h['command'] = entry['command']
+                found = True
+    if not found:
+        groups.append({'hooks': [entry]})
+
 
 def install_hook(settings_path=None):
-    """Point Claude Code's `Stop` hook at this checkout's forward_reply.py.
+    """Point Claude Code's hooks at this checkout: `Stop` (forward_reply.py) and
+    `SessionStart` (session_start.py).
 
-    Without it a Discord conversation works and its replies silently never
-    arrive -- the failure a fresh install hit first. Idempotent: an existing
-    forward_reply entry is repointed rather than duplicated (two would post every
-    reply twice), and every other setting in the file is kept."""
+    Without Stop a Discord conversation works and its replies silently never
+    arrive -- the failure a fresh install hit first. Without SessionStart a new
+    conversation answers without having seen the queue. Idempotent, and every
+    other setting in the file is kept. The entrypoint runs this on every boot,
+    which is how a zipper made before a hook existed gets it."""
     p = settings_path or os.path.expanduser('~/.claude/settings.json')
     try:
         with open(p, encoding='utf-8') as fh:
             data = json.load(fh)
     except FileNotFoundError:
         data = {}
-    cmd = 'python3 %s' % HOOK
-    stop = data.setdefault('hooks', {}).setdefault('Stop', [])
-    found = False
-    for group in stop:
-        for h in group.get('hooks', []):
-            if 'forward_reply.py' in h.get('command', ''):
-                h['command'] = cmd
-                found = True
-    if not found:
-        stop.append({'hooks': [{'type': 'command', 'command': cmd, 'timeout': 45,
-                                'statusMessage': 'Forwarding reply to Discord'}]})
+    _ensure(data, 'Stop', 'forward_reply.py',
+            {'type': 'command', 'command': 'python3 %s' % HOOK, 'timeout': 45,
+             'statusMessage': 'Forwarding reply to Discord'})
+    _ensure(data, 'SessionStart', 'session_start.py',
+            {'type': 'command', 'command': 'python3 %s' % START_HOOK, 'timeout': 10})
     os.makedirs(os.path.dirname(p), exist_ok=True)
     tmp = p + '.tmp'
     with open(tmp, 'w', encoding='utf-8') as fh:
@@ -526,7 +537,7 @@ def cmd_init_vault(a):
 def cmd_setup(a):
     action = getattr(a, 'action', None) or 'hook'
     if action == 'hook':
-        print('Stop hook -> %s' % install_hook())
+        print('Stop and SessionStart hooks -> %s' % install_hook())
         return 0
     from . import core
     if action == 'starter':
