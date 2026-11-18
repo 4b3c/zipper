@@ -325,6 +325,14 @@ def cmd_pull(a):
     """
     from . import serve, fanout
     fanout.install_hook()     # every pass, so a vault made before the hook gets it
+    try:                      # and Claude Code's hooks, for the same reason
+        from . import setup
+        # Not from a worktree under review: it would point the live Stop hook at
+        # a checkout that is deleted after the verdict, and replies stop arriving.
+        if os.path.isdir(os.path.join(setup.ROOT, '.git')):
+            setup.install_hook()
+    except Exception as e:
+        print('hooks: %s' % e)
     serve.feed_load()
     names = list(getattr(a, 'names', None) or [])
     if getattr(a, 'due', False):
