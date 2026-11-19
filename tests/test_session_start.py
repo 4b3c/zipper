@@ -81,7 +81,8 @@ class Install(unittest.TestCase):
         with open(p) as fh:
             data = json.load(fh)
         self.assertEqual(data['model'], 'x')
-        stop = [h for g in data['hooks']['Stop'] for h in g['hooks']]
+        stop = [h for g in data['hooks']['Stop'] for h in g['hooks']
+                if 'forward_reply' in h['command']]
         start = [h for g in data['hooks']['SessionStart'] for h in g['hooks']]
         self.assertEqual(len(stop), 1)
         self.assertEqual(len(start), 1)

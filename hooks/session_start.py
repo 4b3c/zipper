@@ -2,8 +2,9 @@
 """Put the queue in front of every new conversation.
 
 Wired to Claude Code's **SessionStart** hook. On a new session (`source` is
-`startup` or `clear`) it prints `Meta/Queue.md` as additional context, so the
-first reply is written already knowing what arrived since the last pass.
+`startup` or `clear`) it prints `Meta/Queue.md` as additional context with the
+instruction to work it -- claim its rows, file them, commit -- before answering,
+so the first reply is written with everything that arrived already filed.
 
 Why this exists
 ---------------
@@ -50,10 +51,14 @@ def context(event):
         text = fh.read()
     if len(text) > LIMIT:
         text = text[:LIMIT] + '\n\n[... cut at %d characters; read %s for the rest]' % (LIMIT, p)
-    return ('The queue (%s), read before anything else. It is what has arrived since '
-            'the last pass -- mail, Slack, pushes, uncommitted edits, flags -- and '
-            'the operator assumes you know it. Check it against their first message.'
-            '\n\n%s' % (p, text))
+    return ('This is a new conversation. **Before answering the first message, do a '
+            'pass:** run `zipper pull --due` (it refreshes the queue and claims its open '
+            'rows for you; rows another conversation already claimed are marked, leave '
+            'those), work each of your rows into the notes it affects as the vault\'s '
+            'CLAUDE.md describes, `zipper commit "<what changed>"`, then answer. If '
+            'nothing is open, answer straight away. If the first message bears on a row '
+            '(a deadline, a reply someone is owed), say so in the answer.\n\n'
+            'The queue as of this session\'s start (%s):\n\n%s' % (p, text))
 
 
 def main():

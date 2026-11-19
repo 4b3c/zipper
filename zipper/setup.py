@@ -18,6 +18,8 @@ STARTER = os.path.join(ROOT, 'template', 'starter')     # optional: a suggested 
 from .core import ENV_FILE
 HOOK = os.path.join(ROOT, 'hooks', 'forward_reply.py')
 START_HOOK = os.path.join(ROOT, 'hooks', 'session_start.py')
+GUARD_HOOK = os.path.join(ROOT, 'hooks', 'vault_guard.py')
+COMMIT_HOOK = os.path.join(ROOT, 'hooks', 'turn_commit.py')
 
 # The starter layout's folders. None is required: the engine makes Inbox/, Meta/,
 # Log/ and Metrics/ when it first writes to them, and a vault is otherwise
@@ -153,7 +155,7 @@ def env_set(key, value, path=None):
 
 # ---------------------------------------------------------------- the hooks
 
-def _ensure(data, event, script, entry):
+def _ensure(data, event, script, entry, matcher=None):
     """Point `event`'s hook for `script` at this checkout, adding it if absent.
     Repointed rather than duplicated: two Stop hooks would post every reply twice."""
     groups = data.setdefault('hooks', {}).setdefault(event, [])
@@ -161,15 +163,21 @@ def _ensure(data, event, script, entry):
     for group in groups:
         for h in group.get('hooks', []):
             if script in h.get('command', ''):
-                h['command'] = entry['command']
+                h.update(entry)
+                if matcher:
+                    group['matcher'] = matcher
                 found = True
     if not found:
-        groups.append({'hooks': [entry]})
+        group = {'hooks': [entry]}
+        if matcher:
+            group = {'matcher': matcher, 'hooks': [entry]}
+        groups.append(group)
 
 
 def install_hook(settings_path=None):
-    """Point Claude Code's hooks at this checkout: `Stop` (forward_reply.py) and
-    `SessionStart` (session_start.py).
+    """Point Claude Code's hooks at this checkout: `Stop` (forward_reply.py,
+    turn_commit.py), `SessionStart` (session_start.py) and the tool hooks
+    (vault_guard.py).
 
     Without Stop a Discord conversation works and its replies silently never
     arrive -- the failure a fresh install hit first. Without SessionStart a new
@@ -188,6 +196,15 @@ def install_hook(settings_path=None):
              'statusMessage': 'Forwarding reply to Discord'})
     _ensure(data, 'SessionStart', 'session_start.py',
             {'type': 'command', 'command': 'python3 %s' % START_HOOK, 'timeout': 10})
+    # Vault file locks (zipper/locks.py): claim on edit, commit and release at
+    # the end of every turn.
+    guard = {'type': 'command', 'command': 'python3 %s' % GUARD_HOOK, 'timeout': 10}
+    _ensure(data, 'PreToolUse', 'vault_guard.py', guard,
+            matcher='Edit|Write|MultiEdit|NotebookEdit|Bash')
+    _ensure(data, 'PostToolUse', 'vault_guard.py', guard, matcher='Bash|Read')
+    _ensure(data, 'Stop', 'turn_commit.py',
+            {'type': 'command', 'command': 'python3 %s' % COMMIT_HOOK, 'timeout': 60,
+             'statusMessage': 'Committing this turn\'s vault edits'})
     text = json.dumps(data, indent=2) + '\n'
     try:
         with open(p, encoding='utf-8') as fh:

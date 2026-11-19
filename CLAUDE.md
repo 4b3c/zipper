@@ -54,7 +54,8 @@ Dependencies are allowed where they earn their place; `requirements.txt` lists t
 | `zipper/box.py` | The box's vital signs, sampled each minute into `Inbox/box-history.json` |
 | `zipper/usage.py` | Plan usage meters. The OAuth token is read at call time, never stored |
 | `hooks/forward_reply.py` | The `Stop` hook that posts a reply to its Discord thread |
-| `hooks/session_start.py` | The `SessionStart` hook: a new conversation starts with `Meta/Queue.md` in context |
+| `hooks/session_start.py` | The `SessionStart` hook: a new conversation works the queue (claims its rows, files, commits) before answering |
+| `zipper/locks.py`, `hooks/vault_guard.py`, `hooks/turn_commit.py` | Vault file locks: an edit claims the file, other conversations are refused, every turn ends by committing only its own files and releasing them. `zipper locks` lists them |
 | `bot/` | Gateway client and HTTP surface. Saves attachments to `/tmp/zipper-discord-files/<message id>/` |
 | `gateway/` | A machine's one Discord bot, which every zipper on it goes through: a relay that looks like Discord to each zipper's `bot/`, scoped to its server. See its `__init__.py` |
 | `zipper/discordsetup.py` | `zipper discord connect`, on the machine: makes the gateway and pairs a zipper with it |
