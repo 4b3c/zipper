@@ -30,6 +30,11 @@ class Context(unittest.TestCase):
         self.q = os.path.join(self.vault, 'Meta', 'Queue.md')
         with open(self.q, 'w') as fh:
             fh.write('# Queue\n\n- slack: timesheets due at 5:00 today\n')
+        os.makedirs(os.path.join(self.vault, 'Inbox'), exist_ok=True)
+        with open(os.path.join(self.vault, 'Inbox', 'conversations.json'), 'w') as fh:
+            json.dump({'123': {}}, fh)
+        p = mock.patch.dict(os.environ, {'ZIPPER_CONVERSATION': '123'})
+        p.start(); self.addCleanup(p.stop)
 
     def tearDown(self):
         if os.path.exists(self.q):
@@ -52,6 +57,10 @@ class Context(unittest.TestCase):
         # Every Discord turn after the first is a --resume.
         for source in ('resume', 'compact'):
             self.assertEqual(self._run({'source': source}), '')
+
+    def test_review_testers_are_not_told_to_do_a_pass(self):
+        with mock.patch.dict(os.environ, {'ZIPPER_CONVERSATION': 'review-x'}):
+            self.assertEqual(self._run({'source': 'startup'}), '')
 
     def test_no_queue_is_silent(self):
         os.remove(self.q)
@@ -81,7 +90,8 @@ class Install(unittest.TestCase):
         with open(p) as fh:
             data = json.load(fh)
         self.assertEqual(data['model'], 'x')
-        stop = [h for g in data['hooks']['Stop'] for h in g['hooks']]
+        stop = [h for g in data['hooks']['Stop'] for h in g['hooks']
+                if 'forward_reply' in h['command']]
         start = [h for g in data['hooks']['SessionStart'] for h in g['hooks']]
         self.assertEqual(len(stop), 1)
         self.assertEqual(len(start), 1)

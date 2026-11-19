@@ -189,6 +189,10 @@ def main():
     s.add_argument('--force', action='store_true',
                    help='close even a bound conversation -- kills a live terminal')
     s.set_defaults(fn=conversations.cmd_conversations)
+    s = sub.add_parser('locks', help='vault files a conversation is editing; freed when its turn ends')
+    s.add_argument('--claim', nargs='+', metavar='PATH',
+                   help='claim vault files this conversation wrote, so its turn commits them')
+    s.set_defaults(fn=_mod('locks', 'cmd_locks'))
     s = sub.add_parser('extras', help='claude.ai connectors and synced plugins, for one conversation')
     s.add_argument('action', choices=['on', 'off', 'status']); s.add_argument('--thread')
     s.set_defaults(fn=_mod('extras', 'cmd_extras'))

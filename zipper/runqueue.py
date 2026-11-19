@@ -22,7 +22,7 @@ bookkeeping pass; `cmd_pull` pulls the scoops that are due and ends by calling i
 reading in between is not a command and cannot be one. `cmd_commit` ends the
 pass by ticking the rows and committing the notes.
 """
-import os, re, json, datetime, glob, subprocess, time
+import os, re, json, datetime, glob, subprocess, time, fcntl
 
 from .core import *          # noqa: F401,F403 -- the shared vocabulary
 from . import core
@@ -51,26 +51,59 @@ def _pass_file(pid):
     return os.path.join(PASS_DIR, re.sub(r'[^A-Za-z0-9_.-]', '_', pid) + '.json')
 
 
-def record_pass(rows):
-    """Remember which rows this pass's brief showed. Rewritten on every brief
-    the pass pulls, so it is always the latest brief it was handed."""
-    pid = pass_id()
-    if not pid:
-        return
-    os.makedirs(PASS_DIR, exist_ok=True)
-    # Conversations that pulled and never committed leave a file; drop stale ones.
+def _claims_elsewhere(pid):
+    """{row key: conversation} for rows another live pass has claimed. A pass
+    stops claiming when its conversation is no longer live, or when it commits."""
+    from . import locks
+    out = {}
     for f in glob.glob(os.path.join(PASS_DIR, '*.json')):
         try:
+            with open(f, encoding='utf-8') as fh:
+                rec = json.load(fh)
             if time.time() - os.path.getmtime(f) > PASS_MAX_AGE:
-                os.remove(f)
-        except OSError:
-            pass
-    out = _pass_file(pid)
-    tmp = '%s.%d.tmp' % (out, os.getpid())
-    with open(tmp, 'w', encoding='utf-8') as fh:
-        json.dump({'id': pid, 'at': datetime.datetime.now().isoformat(timespec='seconds'),
-                   'keys': [r['key'] for r in rows if r.get('key')]}, fh)
-    os.replace(tmp, out)
+                continue
+        except (OSError, ValueError):
+            continue
+        if rec.get('id') == pid or not locks.live(rec.get('id')):
+            continue
+        for k in rec.get('keys') or ():
+            out.setdefault(k, rec['id'])
+    return out
+
+
+def record_pass(rows):
+    """Claim the rows this pass's brief showed, minus those another live pass
+    already claimed, and return those others' claims {key: conversation}.
+
+    Rewritten on every brief the pass pulls. Two conversations started together
+    would otherwise both work the same email and file the same task twice; under
+    the flock, the first to pull takes the rows and the second is told whose they are.
+    """
+    pid = pass_id()
+    os.makedirs(PASS_DIR, exist_ok=True)
+    with open(os.path.join(PASS_DIR, '.lock'), 'a+') as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        try:
+            # Conversations that pulled and never committed leave a file; drop stale ones.
+            for f in glob.glob(os.path.join(PASS_DIR, '*.json')):
+                try:
+                    if time.time() - os.path.getmtime(f) > PASS_MAX_AGE:
+                        os.remove(f)
+                except OSError:
+                    pass
+            claims = _claims_elsewhere(pid)
+            if not pid:
+                return claims
+            out = _pass_file(pid)
+            tmp = '%s.%d.tmp' % (out, os.getpid())
+            with open(tmp, 'w', encoding='utf-8') as fh:
+                json.dump({'id': pid, 'at': datetime.datetime.now().isoformat(timespec='seconds'),
+                           'keys': [r['key'] for r in rows
+                                    if r.get('key') and r['key'] not in claims]}, fh)
+            os.replace(tmp, out)
+            return claims
+        finally:
+            fcntl.flock(lk, fcntl.LOCK_UN)
 
 
 def take_pass():
@@ -388,6 +421,10 @@ def cmd_brief(a):
 
     resolve = inputs.target_resolver()
     rows = [classify(r, resolve) for r in open_rows()]
+    claims = record_pass(rows)
+    for r in rows:
+        if r.get('key') in claims:
+            r['claimed_by'] = claims[r['key']]
     changes = note_changes()
     guides = sorted({n for n in map(inputs.row_scoop, rows) if n and inputs.has_guide(n)})
     q = {'generated': datetime.datetime.now().isoformat(timespec='seconds'),
@@ -398,7 +435,6 @@ def cmd_brief(a):
         json.dump(q, fh, indent=1)
     os.replace(tmp, QUEUE_JSON)     # read by other processes; never half a file
     _write_brief(q)
-    record_pass(rows)
     print('brief: %d open event(s), %d uncommitted note(s), %d flag(s)'
           % (len(rows), len(changes), len(fl)))
     print('  -> Meta/Queue.md  +  Inbox/queue.json')
@@ -427,7 +463,9 @@ def _ev_line(e):
     meta = '  ·  %s' % ' · '.join(bits) if bits else ''
     tgt = '  → **[[%s]]**' % e['target'] if e.get('target') else ''
     key = '`%s` ' % e['key'] if e.get('key') else ''
-    return '- %s%s%s%s' % (key, e.get('text', ''), meta, tgt)
+    claimed = ('  ·  *claimed by conversation %s, which is working it: leave it*'
+               % e['claimed_by'] if e.get('claimed_by') else '')
+    return '- %s%s%s%s%s' % (key, e.get('text', ''), meta, tgt, claimed)
 
 
 def _write_brief(q):
@@ -551,17 +589,19 @@ def cmd_commit(a):
     same claim, that everything in this pass has been looked at and its
     consequences written down.
     """
-    from . import serve
-    live = live_others()
-    if live and not getattr(a, 'force', False):
-        print('commit: %d other conversation(s) live — committing now would '
-              'sweep up their half-finished edits.' % len(live))
-        print('  check with `python3 -m zipper conversations`, then re-run with --force')
-        return 1
+    from . import serve, locks, chat
+    # Only this conversation's files, and the ones nobody holds (the engine's,
+    # or a turn that died before its commit). Another live conversation's
+    # half-finished edits stay out, so this no longer has to refuse while they
+    # are open; --force is accepted and means nothing now.
+    me = locks.owner()
+    theirs = locks.held_by_others(me)
     from .sync import chain_logs
     chain_logs()   # before the diff, so a log made by hand joins the chain
-    changes = note_changes()
+    changes = [c for c in note_changes() if c['path'] not in theirs]
     paths = [c['path'] for c in changes]
+    if theirs:
+        print('commit: leaving %d file(s) another conversation is editing' % len(theirs))
     # Before ticking: a pass the hook would refuse must not mark its rows done.
     from . import fanout
     if fanout.check(paths=paths) == fanout.BLOCKED:
@@ -576,41 +616,26 @@ def cmd_commit(a):
         if left:
             print('commit: no brief pulled in this conversation, so no rows ticked '
                   '(%d open, left for the next pass)' % left)
-    if paths:
-        # Not check=False-and-forget. `git add` aborts the entire batch if one
-        # pathspec matches nothing, so a single unreadable path silently took
-        # every other note down with it and the only symptom was the "still
-        # uncommitted" warning at the end, which reads like nothing was staged
-        # rather than like staging failed.
-        r = subprocess.run(['git', '-C', VAULT, 'add', '--'] + paths,
-                           capture_output=True, text=True)
-        if r.returncode != 0:
-            print('commit: git add failed, nothing staged --')
-            for ln in (r.stderr or '').strip().split('\n')[:3]:
-                print('  ' + ln)
-    # The generated views used to be staged explicitly here, because a pass
-    # rewrites them and leaving them dirty made `zipper commit`'s own
-    # tree-is-clean check fail. They are gitignored as of 2026-09-08 -- the
-    # brief cannot describe a clean tree without dirtying it, so tracking them
-    # guaranteed one stray file after every pass -- and staging an ignored path
-    # only earns a git warning. They still reach Obsidian: that goes over
-    # CouchDB (see the vault's `Meta/Systems/CouchDB Sync`), not over git.
-    r = subprocess.run(['git', '-C', VAULT, 'commit', '-m', a.message],
-                       capture_output=True, text=True)
-    ok = r.returncode == 0
+    # `git add` then `git commit --only` on exactly these paths, under the
+    # commit mutex the turn-end hook shares (`locks.commit`). Never the whole
+    # index: another conversation may have staged something of its own.
+    ok, out = locks.commit(paths, a.message)
+    ok = ok and bool(paths)
     print('commit: %d event(s) ticked, %s'
           % (marked, 'committed %d note(s)' % len(paths) if ok
              else 'nothing to commit'))
-    if not ok:
-        for ln in ((r.stderr or '') + (r.stdout or '')).strip().split('\n')[:20]:
+    if paths and not ok:
+        for ln in out.strip().split('\n')[:20]:
             print('  ' + ln)
+    else:
+        locks.release(me)
     for w in inputs.on_commit():
         print('  WARNING: %s' % w)
 
     # The invariant, checked rather than assumed. Anything still dirty here
     # would silently widen the next pass's diff, and the whole point of the
     # commit is that it does not.
-    left = note_changes()
+    left = [c for c in note_changes() if c['path'] not in theirs]
     if left:
         print('  WARNING: %d note(s) still uncommitted — the next pass will show '
               'them as new:' % len(left))
