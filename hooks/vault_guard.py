@@ -66,20 +66,31 @@ def handle(ev):
 
     if name == 'PostToolUse' and tool == 'Bash':
         changed, since = locks.changed_since(key)
-        mine = [p for p in changed if not locks.touched_after(p, since, me)]
-        if not mine:
-            return None
-        clash = locks.claim(mine, me)
-        if not clash:
-            return None
-        lines = ['- %s (conversation %s, since %s)' % (r, who, _since(at))
-                 for r, (who, at) in clash.items()]
-        return _out('PostToolUse', additionalContext=(
-            'That command changed vault files another conversation is editing:\n%s\n'
-            'They were not claimed for you and will not be in your commit. Check '
-            '`git -C %s diff -- <path>` for whether you overwrote its edit, and don\'t '
-            'write these again until that conversation\'s turn ends.'
-            % ('\n'.join(lines), os.environ.get('ZIPPER_VAULT', '.'))))
+        cmd = inp.get('command', '')
+        changed = [p for p in changed if not locks.touched_after(p, since, me)]
+        mine = [p for p in changed if locks.attributable(p, cmd)]
+        unsure = [p for p in changed if p not in mine]
+        msgs = []
+        clash = locks.claim(mine, me) if mine else {}
+        if clash:
+            lines = ['- %s (conversation %s, since %s)' % (r, who, _since(at))
+                     for r, (who, at) in clash.items()]
+            msgs.append(
+                'That command changed vault files another conversation is editing:\n%s\n'
+                'They were not claimed for you and will not be in your commit. Check '
+                '`git -C %s diff -- <path>` for whether you overwrote its edit, and don\'t '
+                'write these again until that conversation\'s turn ends.'
+                % ('\n'.join(lines), os.environ.get('ZIPPER_VAULT', '.')))
+        unsure = [p for p in unsure if not locks.holder(p, me)]
+        if unsure:
+            msgs.append(
+                'These vault files changed while that command ran, but it doesn\'t name '
+                'them, so they weren\'t claimed and won\'t be in your turn\'s commit: %s. '
+                'If your command wrote them, run `zipper locks --claim <path>...`; if not, '
+                'leave them -- the next pass reviews them.' % ', '.join(unsure[:8]))
+        if msgs:
+            return _out('PostToolUse', additionalContext='\n\n'.join(msgs))
+        return None
 
     if name == 'PostToolUse' and tool == 'Read':
         h = locks.holder(inp.get('file_path'), me)

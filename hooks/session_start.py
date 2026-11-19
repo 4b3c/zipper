@@ -41,8 +41,23 @@ def queue_path(cwd=''):
     return ''
 
 
+def known():
+    """Only conversations the registry knows -- Discord threads and panes --
+    are told to do a pass. A review tester or a scheduled job must not start
+    working the live queue because it happened to start a session."""
+    who = os.environ.get('ZIPPER_DISCORD_THREAD') or os.environ.get('ZIPPER_CONVERSATION')
+    vault = os.environ.get('ZIPPER_VAULT')
+    if not who or not vault:
+        return False
+    try:
+        with open(os.path.join(vault, 'Inbox', 'conversations.json'), encoding='utf-8') as fh:
+            return str(who) in json.load(fh)
+    except (OSError, ValueError, TypeError):
+        return False
+
+
 def context(event):
-    if event.get('source', 'startup') not in NEW:
+    if event.get('source', 'startup') not in NEW or not known():
         return ''
     p = queue_path(event.get('cwd', ''))
     if not p:

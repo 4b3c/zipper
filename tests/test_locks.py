@@ -55,6 +55,9 @@ class Base(unittest.TestCase):
         # Everyone named in a test is live unless a test says otherwise.
         p = mock.patch.object(locks, 'live', lambda who: bool(who) and who != 'dead')
         p.start(); self.addCleanup(p.stop)
+        # The registry: every name a test uses is a known conversation but review-*.
+        k = mock.patch.object(locks, 'known', lambda who: bool(who) and not who.startswith('review-'))
+        k.start(); self.addCleanup(k.stop)
 
     def as_(self, who):
         p = mock.patch.dict(os.environ, {'ZIPPER_CONVERSATION': who, 'ZIPPER_VAULT': VAULT})
@@ -122,18 +125,44 @@ class Guard(Base):
 
     def test_shell_writes_are_claimed_after(self):
         self.as_('one')
-        guard.handle(self.ev('PreToolUse', 'Bash', command='echo > B.md'))
+        cmd = 'echo shell > B.md; echo x > Log/new.md'
+        guard.handle(self.ev('PreToolUse', 'Bash', command=cmd))
         write('B.md', 'shell\n'); write('Log/new.md', 'x\n')
-        self.assertIsNone(guard.handle(self.ev('PostToolUse', 'Bash', command='')))
+        self.assertIsNone(guard.handle(self.ev('PostToolUse', 'Bash', command=cmd)))
         self.assertEqual(locks.owned('one'), ['B.md', 'Log/new.md'])
+
+    def test_a_file_the_command_does_not_name_is_not_claimed(self):
+        # The tester's S3: the operator (or the timer's pull) writes C.md while
+        # a long command that never mentions it is running.
+        self.as_('one')
+        cmd = 'python3 -m unittest tests.test_units'
+        guard.handle(self.ev('PreToolUse', 'Bash', command=cmd))
+        write('C.md', 'operator\n')
+        out = guard.handle(self.ev('PostToolUse', 'Bash', command=cmd))
+        self.assertEqual(locks.owned('one'), [])
+        self.assertIn('C.md', out['hookSpecificOutput']['additionalContext'])
+        self.assertTrue(turn.handle({'session_id': 's'}) is None)
+        self.assertIn('C.md', git('status', '--porcelain'))     # left for the pass
+
+    def test_engine_commands_claim_what_they_write(self):
+        self.assertTrue(locks.attributable('Log/2026-11-18.md', 'zipper hours add --date x'))
+        self.assertTrue(locks.attributable('X.md', 'cd /zipper/code && python3 -m zipper event y'))
+        self.assertFalse(locks.attributable('X.md', 'cd /zipper/vault && git status'))
+
+    def test_review_sessions_are_left_alone(self):
+        self.as_('review-some-slug')
+        self.assertIsNone(locks.owner())
+        self.assertIsNone(guard.handle(self.ev('PreToolUse', 'Edit',
+                                               file_path=os.path.join(VAULT, 'A.md'))))
+        self.assertEqual(locks.listing(), [])
 
     def test_shell_write_over_someone_elses_file_is_reported(self):
         locks.claim(['B.md'], 'two')
         time.sleep(0.01)
         self.as_('one')
-        guard.handle(self.ev('PreToolUse', 'Bash', command=''))
+        guard.handle(self.ev('PreToolUse', 'Bash', command='sed -i s/b/x/ B.md'))
         write('B.md', 'shell\n')
-        out = guard.handle(self.ev('PostToolUse', 'Bash', command=''))
+        out = guard.handle(self.ev('PostToolUse', 'Bash', command='sed -i s/b/x/ B.md'))
         self.assertIn('B.md', out['hookSpecificOutput']['additionalContext'])
         self.assertEqual(locks.owned('one'), [])
 

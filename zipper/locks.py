@@ -24,7 +24,7 @@ and ignored, so a turn that died before its commit can't hold a file forever.
 State lives in `Inbox/locks.json` under an flock. Hooks run on every tool call,
 so the hot path imports nothing heavier than `core`.
 """
-import os, json, time, fcntl, subprocess, contextlib
+import os, re, json, time, fcntl, subprocess, contextlib
 
 from . import core
 
@@ -35,11 +35,41 @@ COMMIT_LOCK = os.path.join(core.INBOX, 'commit.lock')
 SKIP = ('Inbox/', '.git/')
 
 
+def known(who):
+    """Is this a conversation the registry knows: a Discord thread or a pane?
+    Review testers (`review-*`), scheduled jobs and stray sessions are not, and
+    get no locking and no turn-end commit: their ids are never live to anyone
+    else, so they could take files without ever being held to it."""
+    if not who:
+        return False
+    try:
+        with open(os.path.join(core.INBOX, 'conversations.json'), encoding='utf-8') as fh:
+            return str(who) in json.load(fh)
+    except (OSError, ValueError, TypeError):
+        return False
+
+
 def owner(session_id=''):
-    """This process's conversation; a bare Claude session as a fallback, so a
-    session started outside zipper (a test, a shell) still holds its own files."""
+    """This process's conversation, if the registry knows it; else None."""
     from . import chat
-    return chat.current_conversation() or ('session-%s' % session_id if session_id else None)
+    who = chat.current_conversation()
+    return who if known(who) else None
+
+
+# A command that runs the engine: what the engine writes, it writes on this
+# conversation's behalf (`zipper hours add`, `python3 -m zipper event`...).
+# Not merely mentioning /zipper/ -- `cd /zipper/vault` runs nothing.
+ENGINE = re.compile(r'(?:^|[\s;&|(])(?:zipper|python3?\s+-m\s+zipper)\s+[a-z]')
+
+
+def attributable(path, command):
+    """Did this shell command evidently write `path`? It names the file, or it
+    runs the engine. Anything else that changed while it ran -- the timer's pull,
+    another process, the operator -- is not its to claim."""
+    if not command:
+        return False
+    return (path in command or os.path.basename(path) in command
+            or bool(ENGINE.search(command)))
 
 
 def rel(path):
@@ -87,8 +117,6 @@ def live(who):
     holds a file, so the cost lands on collisions, not on every tool call."""
     if not who:
         return False
-    if who.startswith('session-'):
-        return True     # no registry to ask; released by its own Stop hook
     try:
         from . import convhead
         if convhead.turn_running(who):
@@ -250,6 +278,17 @@ def commit(paths, message, env=None):
 
 
 def cmd_locks(a=None):
+    paths = getattr(a, 'claim', None) or []
+    if paths:
+        me = owner()
+        if not me:
+            print('locks: not a known conversation; nothing to claim for')
+            return 1
+        refused = claim(paths, me)
+        for r, (who, at) in refused.items():
+            print('refused  %s  held by %s' % (r, who))
+        print('claimed %d' % (len(paths) - len(refused)))
+        return 1 if refused else 0
     rows = listing()
     if not rows:
         print('no vault file is being edited')
