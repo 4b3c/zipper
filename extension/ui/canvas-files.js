@@ -92,7 +92,7 @@
 
   async function sendOne(f, courseName) {
     const meta = { course, courseName, id: f.id, name: f.display_name || f.filename,
-                   folder: f.folder, updated_at: f.updated_at };
+                   folder: f.folder, updated_at: f.updated_at, size: f.size };
     let out = await api.runtime.sendMessage({ type: 'zipper:file', url: f.url, meta });
     if (out && out.ok === false && out.page) {
       // The background couldn't download it; try from the page, where the
@@ -100,13 +100,26 @@
       try {
         const res = await fetch(f.url, { credentials: 'same-origin' });
         if (!res.ok) throw new Error('download ' + res.status);
-        const bytes = await res.arrayBuffer();
-        out = await api.runtime.sendMessage({ type: 'zipper:filebytes', meta, bytes });
+        const buf = await res.arrayBuffer();
+        // Base64 text, because Chrome passes messages as JSON and an
+        // ArrayBuffer arrives as `{}`. Base64 grows a file by a third and Chrome
+        // caps a message at 64 MB, so the page route stops at 40 MB.
+        if (buf.byteLength > 40 * 1024 * 1024) throw new Error('too big to pass from the page');
+        out = await api.runtime.sendMessage({ type: 'zipper:filebytes', meta, b64: toB64(buf) });
       } catch (e) {
         out = { ok: false, error: out.error + '; from the page: ' + e.message };
       }
     }
     return out || { ok: false, error: 'no reply' };
+  }
+
+  function toB64(buf) {
+    const u = new Uint8Array(buf);
+    let s = '';
+    for (let i = 0; i < u.length; i += 0x8000) {
+      s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+    }
+    return btoa(s);
   }
 
   let busy = false;

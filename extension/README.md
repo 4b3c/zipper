@@ -86,7 +86,9 @@ How it stays safe inside Canvas:
 lists the files same-origin (`/files`, or `/modules` when the Files tab is hidden), asks
 `GET /api/canvasfiles?course=` what Zipper already has, and hands each new or changed one to
 the background, which downloads it from Canvas' verifier URL and posts the raw bytes to
-`POST /api/canvasfiles`. If the background download fails it retries from the page.
+`POST /api/canvasfiles`. If the background download fails it retries from the page, passing
+the bytes as base64 (Chrome sends messages as JSON; up to 40 MB). The server refuses a body
+whose length differs from the size Canvas reported, so a mangled transfer is never stored.
 
 - **On demand only.** A press loads one course; nothing syncs in the background.
 - **Documents only, 50 MB cap**, the same list on both sides (`zipper/web/extapi.py`).

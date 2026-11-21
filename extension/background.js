@@ -310,7 +310,11 @@ async function postFile(meta, buf) {
     headers: { 'Content-Type': 'application/octet-stream',
                'X-Course-Id': String(meta.course), 'X-Course-Name': enc(meta.courseName),
                'X-File-Id': String(meta.id), 'X-File-Name': enc(meta.name),
-               'X-Folder': enc(meta.folder), 'X-Updated-At': String(meta.updated_at || '') },
+               'X-Folder': enc(meta.folder), 'X-Updated-At': String(meta.updated_at || ''),
+               // What Canvas says the file weighs; the server refuses a body
+               // that doesn't match, so a mangled transfer can't be stored as
+               // the file and then skipped as "already there".
+               'X-Expected-Size': String(meta.size ?? '') },
     body: buf,
   });
   const out = await res.json().catch(() => ({}));
@@ -340,8 +344,13 @@ api.runtime.onMessage.addListener((msg, _sender, respond) => {
         const buf = await res.arrayBuffer();
         respond(await postFile(msg.meta, buf));
       } else {
-        // The page fetched it itself (Firefox clones an ArrayBuffer across).
-        respond(await postFile(msg.meta, msg.bytes));
+        // The page fetched it itself and sent base64 text: JSON-safe, so it
+        // arrives intact in Chrome as well as Firefox.
+        if (typeof msg.b64 !== 'string' || !msg.b64) return respond({ ok: false, error: 'no bytes' });
+        const bin = atob(msg.b64);
+        const buf = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+        respond(await postFile(msg.meta, buf));
       }
     } catch (e) {
       respond({ ok: false, error: String(e), page: msg.type === 'zipper:file' });

@@ -149,7 +149,17 @@ def receive_file(headers, raw):
         raise ValueError('not a document type: %r' % ext)
     if len(raw) > MAX_BYTES:
         raise ValueError('over the size cap')
-    folder = _safe(urlunquote(headers.get('X-Folder', '') or ''), 80)
+    # A body that isn't the file must never be stored as it: the index would
+    # then call it held, and every later press would skip it.
+    if not raw:
+        raise ValueError('empty body')
+    want = headers.get('X-Expected-Size', '')
+    if not re.match(r'^\d{1,12}$', want or ''):
+        raise ValueError('missing X-Expected-Size')
+    if int(want) != len(raw):
+        raise ValueError('got %d bytes, Canvas says %s' % (len(raw), want))
+    folder = urlunquote(headers.get('X-Folder', '') or '').strip()
+    folder = _safe(folder, 80) if folder else ''
     course_name = urlunquote(headers.get('X-Course-Name', '') or '')[:200]
     with LOCK:
         idx = _load(os.path.join(cdir, 'index.json'))
