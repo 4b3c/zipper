@@ -150,7 +150,9 @@ api.runtime.onMessage.addListener((msg, _sender, respond) => {
   if (!msg || msg.type !== 'zipper:call') return false;
   (async () => {
     try {
-      const want = ALLOWED[msg.path];
+      // The query string is the caller's to choose (the panel's `?offset=`);
+      // the path is what the allow-list is about.
+      const want = ALLOWED[String(msg.path).split('?')[0]];
       const verbs = Array.isArray(want) ? want : (want ? [want] : []);
       if (!verbs.length) {
         respond({ ok: false, error: 'not an allowed path' });

@@ -12,8 +12,8 @@
  * What this file is not
  * ---------------------
  * It is not a collector and it is not a ranker. It does not decide what is
- * pressing -- `/api/worklist` is `data.ranked()`, the same call behind the
- * dashboard's "What to work on" card, and crossing a row off here POSTs to
+ * pressing -- `/api/worklist` is `data.week_worklist()`, the same week the
+ * dashboard's week card shows, and crossing a row off here POSTs to
  * `/api/done`, the same endpoint the dashboard's checkbox uses. So the vault
  * stays the one store and there is exactly one opinion about ordering. A
  * second ranking computed in the browser would be a second system that thinks,
@@ -44,6 +44,14 @@
   const api = globalThis.browser ?? globalThis.chrome;
 
   const REFRESH_MS = 5 * 60 * 1000;
+
+  /* The two switches on the options page. Absent means on, so an install that
+   * never opened the options sees what it always saw. Read before the first
+   * `ensure` and kept current from `storage.onChanged`, so flipping one in
+   * another tab takes effect here without a reload.
+   */
+  const prefs = { show_todo: true, show_grades: true };
+  let ready = false;   // no drawing until prefs are read
 
   /* Loud, unlike the collector.
    *
@@ -126,6 +134,12 @@
   header { display: flex; align-items: baseline; justify-content: space-between;
            gap: .5rem; margin-bottom: .9rem; }
   h2 { font-size: 1.05rem; font-weight: 700; margin: 0; letter-spacing: -.01em; }
+  h2.away { cursor: pointer; color: #0374b5; }
+  .nav { display: flex; align-items: center; gap: .2rem; }
+  .step { border: 0; background: transparent; font: inherit; font-size: 1.15rem;
+          line-height: 1; color: #6b7780; cursor: pointer; padding: 0 .3rem;
+          border-radius: 4px; }
+  .step:hover { background: #f2f4f6; color: #2d3b45; }
   .span { font-size: .72rem; color: #6b7780; white-space: nowrap; }
 
   /* How much of the week is behind them, which is the one number the list
@@ -196,6 +210,7 @@
     for (const sel of SUPERSEDED) {
       for (const el of document.querySelectorAll(sel)) {
         el.style.display = 'none';
+        el.dataset.zipperHidden = '1';
         n++;
       }
     }
@@ -203,6 +218,14 @@
          : 'matched none of ' + SUPERSEDED.join(', ') + ' — the panel is drawn '
            + 'but Canvas’ own list is still there. Inspect the sidebar and '
            + 'correct SUPERSEDED.');
+  }
+
+  // The way back when the list is switched off: only what this file hid.
+  function showNative() {
+    for (const el of document.querySelectorAll('[data-zipper-hidden]')) {
+      el.style.display = '';
+      delete el.dataset.zipperHidden;
+    }
   }
 
 /* Grades back on the course cards.
@@ -248,7 +271,7 @@
     + 'box-shadow:0 1px 3px rgba(0,0,0,.25);';
 
   function decorateCards() {
-    if (!scores) return;
+    if (!prefs.show_grades || !scores) return;
     let added = 0, seen = 0;
     for (const card of document.querySelectorAll('.ic-DashboardCard')) {
       const a = card.querySelector('a[href*="/courses/"]');
@@ -276,6 +299,20 @@
     else if (seen) once('cards', 'found', seen, 'course cards');
     else once('nocards', 'no .ic-DashboardCard on the page — grade badges '
               + 'need that selector corrected.');
+  }
+
+  function undecorateCards() {
+    for (const b of document.querySelectorAll('.zipper-grade')) b.remove();
+  }
+
+  // Grades come from Canvas, not Zipper, so they load on their own and work
+  // with the list switched off.
+  let gradesAsked = false;
+  async function loadGrades() {
+    if (!prefs.show_grades || gradesAsked) return;
+    gradesAsked = true;
+    scores = await grades();
+    decorateCards();
   }
 
   function row(it) {
@@ -368,8 +405,30 @@
     wrap.className = 'wrap';
 
     const head = document.createElement('header');
+    const left = document.createElement('div');
+    left.className = 'nav';
+    const prev = document.createElement('button');
+    prev.className = 'step';
+    prev.textContent = '\u2039';
+    prev.title = 'Previous week';
+    prev.addEventListener('click', () => go(offset - 1));
+    const next = document.createElement('button');
+    next.className = 'step';
+    next.textContent = '\u203a';
+    next.title = 'Next week';
+    next.addEventListener('click', () => go(offset + 1));
     const h = document.createElement('h2');
-    h.textContent = 'This week';
+    h.textContent = offset === 0 ? 'This week'
+      : offset === 1 ? 'Next week'
+      : offset === -1 ? 'Last week'
+      : (offset > 0 ? `In ${offset} weeks` : `${-offset} weeks ago`);
+    if (offset !== 0) {
+      // The way home is the heading itself: one click, no hunting for "today".
+      h.className = 'away';
+      h.title = 'Back to this week';
+      h.addEventListener('click', () => go(0));
+    }
+    left.append(prev, h, next);
     const span = document.createElement('span');
     span.className = 'span';
     // The installed version, so an auto-update is visible rather than inferred.
@@ -377,7 +436,7 @@
     // is the only thing that answers "has the new build arrived here yet".
     const v = (api.runtime.getManifest && api.runtime.getManifest().version) || '?';
     span.textContent = (spanOf(week) || 'zipper') + '  \u00b7  v' + v;
-    head.append(h, span);
+    head.append(left, span);
     wrap.appendChild(head);
 
     if (error) {
@@ -434,6 +493,7 @@
         ? 'Nothing finished yet this week.'
         : items.length ? 'All clear — everything this week is done.'
                        : 'Nothing due this week.';
+      if (offset !== 0) p.textContent = p.textContent.replace('this week', 'that week');
       wrap.appendChild(p);
     } else {
       const ul = document.createElement('ul');
@@ -450,18 +510,35 @@
    * all still force a real fetch, because those are the moments the answer can
    * actually have changed.
    */
-  let cached = null, cachedAt = 0;
+  /* Which week is showing, as weeks from this one. The server turns it into
+   * dates; the browser only counts steps. Kept per offset in the cache so
+   * stepping back and forth doesn't refetch, and a reply that arrives after
+   * they have stepped on is dropped rather than drawn over the newer week.
+   */
+  let offset = 0;
+  const cache = new Map();   // offset -> { out, at }
   const CACHE_MS = 30 * 1000;
+
+  function go(n) {
+    offset = n;
+    refresh(false);
+  }
 
   async function refresh(force) {
     if (!root) return;
-    if (!force && cached && Date.now() - cachedAt < CACHE_MS) {
-      draw(cached.items || [], cached);
+    const want = offset;
+    const hit = cache.get(want);
+    if (!force && hit && Date.now() - hit.at < CACHE_MS) {
+      draw(hit.out.items || [], hit.out);
       hideNative();
       decorateCards();
       return;
     }
-    const out = await zipper('/api/worklist');
+    // A tick changes this week's numbers and maybe others'; drop them all.
+    // Grades are re-read on the same beat they always were.
+    if (force) { cache.clear(); gradesAsked = false; loadGrades(); }
+    const out = await zipper('/api/worklist' + (want ? '?offset=' + want : ''));
+    if (want !== offset || !root) return;
     if (!out || out.ok === false) {
       log('could not reach zipper:', (out && out.error) || 'no reply from the '
           + 'background — is the endpoint saved in the extension options?');
@@ -469,11 +546,10 @@
       return;
     }
     const items = out.items || [];
-    cached = out; cachedAt = Date.now();
+    cache.set(want, { out, at: Date.now() });
     log('got', items.length, 'items for', out.monday, '->', out.sunday);
     draw(items, out);
     hideNative();
-    scores = await grades();
     decorateCards();
   }
 
@@ -483,6 +559,12 @@
   function ensure() {
     if (!onDashboard()) {
       once('path', 'not the dashboard, standing down:', location.pathname);
+      return;
+    }
+    if (!ready) return;
+    loadGrades();            // once per page; a no-op after the first
+    if (!prefs.show_todo) {
+      decorateCards();       // grades can be on with the list off
       return;
     }
     const anchor = document.querySelector(ANCHOR);
@@ -513,7 +595,37 @@
     requestAnimationFrame(() => { pending = false; ensure(); });
   }
 
-  ensure();
+  function unmount() {
+    if (host) host.remove();
+    host = null;
+    root = null;
+    showNative();
+  }
+
+  api.storage?.onChanged?.addListener((changes, area) => {
+    if (area !== 'sync') return;
+    if ('show_todo' in changes) {
+      prefs.show_todo = changes.show_todo.newValue !== false;
+      if (!prefs.show_todo) unmount();
+      else scheduleEnsure();
+    }
+    if ('show_grades' in changes) {
+      prefs.show_grades = changes.show_grades.newValue !== false;
+      if (prefs.show_grades) { gradesAsked = false; loadGrades(); }
+      else undecorateCards();
+    }
+  });
+
+  // Prefs first, so a list switched off never flashes on. If storage can't be
+  // read the defaults stand: the panel as it always was.
+  (api.storage?.sync?.get(['show_todo', 'show_grades']) ?? Promise.resolve({}))
+    .catch(() => ({}))
+    .then((got) => {
+      prefs.show_todo = got.show_todo !== false;
+      prefs.show_grades = got.show_grades !== false;
+      ready = true;
+      ensure();
+    });
   new MutationObserver(scheduleEnsure)
     .observe(document.body, { childList: true, subtree: true });
   setInterval(() => refresh(true), REFRESH_MS);
