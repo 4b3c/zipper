@@ -137,6 +137,8 @@ const ALLOWED = {
   // what the sheet actually says. Both halves are the same path, so this map
   // holds a list where it used to hold one verb.
   '/api/hours': ['GET', 'POST'],
+  // Which of a course's files Zipper already has.
+  '/api/canvasfiles': 'GET',
 };
 
 /* The panel's channel.
@@ -218,6 +220,131 @@ api.runtime.onMessage.addListener((msg, _sender, respond) => {
       respond(out);
     } catch (e) {
       respond({ ok: false, error: String(e) });
+    }
+  })();
+  return true;
+});
+
+/* Time on watched sites.
+ *
+ * `collectors/sitetime.js` runs on each watched site and says "15 more seconds
+ * here" while its tab is visible and focused. This adds the browser's own idle
+ * check -- a focused tab with nobody at the keyboard is not time on the site --
+ * and keeps running totals per day and domain in storage, because a Chrome
+ * service worker keeps nothing between wake-ups.
+ *
+ * Totals, not deltas, go to Zipper, under a random id for this browser: a
+ * resend after a lost reply rewrites the same number instead of adding it
+ * twice, and two browsers don't overwrite each other.
+ */
+const TICK_MAX = 30;             // a tick claims at most this many seconds
+const SITE_FLUSH_MS = 5 * 60 * 1000;
+const SITE_KEEP_DAYS = 14;
+
+function localDay(d = new Date()) {
+  const z = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`;
+}
+
+async function deviceId() {
+  const { siteDevice } = await api.storage.local.get('siteDevice');
+  if (siteDevice) return siteDevice;
+  const id = [...crypto.getRandomValues(new Uint8Array(9))]
+    .map((b) => b.toString(16).padStart(2, '0')).join('');
+  await api.storage.local.set({ siteDevice: id });
+  return id;
+}
+
+// Ticks are serialized: a read-modify-write of the totals interleaved with
+// another would lose one of them.
+let siteChain = Promise.resolve();
+
+function siteTick(domain, secs) {
+  siteChain = siteChain.then(async () => {
+    try {
+      const state = api.idle?.queryState ? await api.idle.queryState(60) : 'active';
+      if (state !== 'active') return;
+      const day = localDay();
+      const { siteTotals = {} } = await api.storage.local.get('siteTotals');
+      const d = (siteTotals[day] = siteTotals[day] || {});
+      d[domain] = (d[domain] || 0) + Math.max(0, Math.min(TICK_MAX, secs | 0));
+      const cutoff = localDay(new Date(Date.now() - SITE_KEEP_DAYS * 86400000));
+      for (const k of Object.keys(siteTotals)) if (k < cutoff) delete siteTotals[k];
+      await api.storage.local.set({ siteTotals });
+      await siteFlush(false);
+    } catch (e) {
+      console.warn('[zipper] site time:', e);
+    }
+  });
+  return siteChain;
+}
+
+async function siteFlush(force) {
+  const { siteFlushed = 0, siteTotals = {} } =
+    await api.storage.local.get(['siteFlushed', 'siteTotals']);
+  if (!force && Date.now() - siteFlushed < SITE_FLUSH_MS) return;
+  // The last three days: enough to cover a laptop asleep over a weekend
+  // without resending two weeks every five minutes.
+  const since = localDay(new Date(Date.now() - 3 * 86400000));
+  const totals = {};
+  for (const [k, v] of Object.entries(siteTotals)) if (k >= since) totals[k] = v;
+  if (!Object.keys(totals).length) return;
+  const out = await call('/api/sitetime', { device: await deviceId(), totals });
+  if (out && out.ok !== false) await api.storage.local.set({ siteFlushed: Date.now() });
+}
+
+/* Course files.
+ *
+ * The panel on a course page lists the files (same-origin, so the Canvas
+ * session applies) and hands each one's download URL here. That URL carries
+ * Canvas' own `verifier`, and redirects to Canvas' file store on another
+ * host, which a page's fetch would hit CORS on; from here host permissions
+ * apply. The bytes go to Zipper raw, described by headers.
+ */
+async function postFile(meta, buf) {
+  const endpoint = await config();
+  if (!endpoint) return { ok: false, error: 'no endpoint' };
+  const enc = (s) => encodeURIComponent(String(s || ''));
+  const res = await fetch(endpoint + '/api/canvasfiles', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream',
+               'X-Course-Id': String(meta.course), 'X-Course-Name': enc(meta.courseName),
+               'X-File-Id': String(meta.id), 'X-File-Name': enc(meta.name),
+               'X-Folder': enc(meta.folder), 'X-Updated-At': String(meta.updated_at || '') },
+    body: buf,
+  });
+  const out = await res.json().catch(() => ({}));
+  return res.ok ? out : { ok: false, error: out.error || 'zipper returned ' + res.status };
+}
+
+api.runtime.onMessage.addListener((msg, _sender, respond) => {
+  if (!msg || !['zipper:tick', 'zipper:file', 'zipper:filebytes'].includes(msg.type)) return false;
+  // A file may only come from the site the asking tab is on (or Canvas' own
+  // file store it redirects to): the panel names a URL, this checks it.
+  if (msg.type === 'zipper:file') {
+    let ok = false;
+    try { ok = new URL(msg.url).origin === new URL(_sender.url).origin; } catch {}
+    if (!ok) { respond({ ok: false, error: 'not this site' }); return false; }
+  }
+  (async () => {
+    try {
+      if (msg.type === 'zipper:tick') {
+        await siteTick(String(msg.domain || '').toLowerCase(), msg.secs);
+        respond({ ok: true });
+      } else if (msg.type === 'zipper:file') {
+        const res = await fetch(msg.url, { credentials: 'include' });
+        if (!res.ok) return respond({ ok: false, error: 'download ' + res.status, page: true });
+        const ctype = res.headers.get('Content-Type') || '';
+        // Canvas answers an expired session with its login page at 200.
+        if (ctype.includes('text/html')) return respond({ ok: false, error: 'got a web page', page: true });
+        const buf = await res.arrayBuffer();
+        respond(await postFile(msg.meta, buf));
+      } else {
+        // The page fetched it itself (Firefox clones an ArrayBuffer across).
+        respond(await postFile(msg.meta, msg.bytes));
+      }
+    } catch (e) {
+      respond({ ok: false, error: String(e), page: msg.type === 'zipper:file' });
     }
   })();
   return true;

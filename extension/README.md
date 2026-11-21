@@ -19,6 +19,8 @@ manifest.json          both browsers, one file
 background.js          the reporter; the only part that knows Zipper exists
 collectors/canvas.js   one site: fetches, posts, concludes nothing
 ui/canvas-todo.js      draws Zipper's work list into Canvas
+ui/canvas-files.js     a course's files to Zipper, on a button
+collectors/sitetime.js time on watched sites, hostname and seconds only
 options.html/.js       where Zipper lives (a runtime permission), and the panel's switches
 ```
 
@@ -77,6 +79,32 @@ How it stays safe inside Canvas:
   declaring `const api` throws on line 1. `node --check` won't catch it.
 - The page can reach only the paths in `ALLOWED` in `background.js`, matched without the
   query string.
+
+## Course files
+
+`ui/canvas-files.js` puts *Send this course's files to Zipper* on a course's home page. It
+lists the files same-origin (`/files`, or `/modules` when the Files tab is hidden), asks
+`GET /api/canvasfiles?course=` what Zipper already has, and hands each new or changed one to
+the background, which downloads it from Canvas' verifier URL and posts the raw bytes to
+`POST /api/canvasfiles`. If the background download fails it retries from the page.
+
+- **On demand only.** A press loads one course; nothing syncs in the background.
+- **Documents only, 50 MB cap**, the same list on both sides (`zipper/web/extapi.py`).
+- **Kept outside the vault**, in `data/course-files/<course id>/` with an `index.json`.
+  `zipper course-files` lists them.
+- The background downloads only from the origin of the tab that asked.
+
+## Time on sites
+
+`collectors/sitetime.js` runs on the sites in its manifest `matches` (Onshape, PrairieLearn,
+Canvas, GitHub, Google Docs) and sends the hostname and 15 seconds while the tab is visible
+and focused. The background drops a tick when `idle.queryState(60)` isn't `active`, keeps
+per-day totals in `storage.local`, and every five minutes posts the last three days' totals
+under a random browser id to `POST /api/sitetime`. Totals, not deltas, so a resend can't
+double-count; the server keeps the larger figure per browser and sums browsers.
+`zipper sitetime` prints them. **Evidence, never hours**: nothing writes the timesheet from it.
+
+Adding a site is one more pattern in that `matches` list and a new build.
 
 ## Why Canvas is a content script
 

@@ -108,6 +108,14 @@ server {
         proxy_set_header X-Real-IP "";
         proxy_pass http://127.0.0.1:%(web)s;
     }
+    location ~ ^/(api/canvasfiles$|api/sitetime$) {
+        # The extension's pushes; a course file can be tens of megabytes.
+        client_max_body_size 52m;
+        auth_basic off;
+        auth_request off;
+        proxy_set_header X-Real-IP "";
+        proxy_pass http://127.0.0.1:%(web)s;
+    }
     location ~ ^/(api/inputs/|api/canvas|api/hours|api/worklist$|api/done$|ext/|bookmarklet) {
         auth_basic off;
         auth_request off;

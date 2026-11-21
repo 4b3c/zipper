@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Zipper Collector",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Reads what only a logged-in browser can see, and hands it to Zipper. Collects; never concludes.",
 
   "background": {
@@ -25,10 +25,25 @@
       "matches": ["https://docs.google.com/spreadsheets/d/*"],
       "js": ["ui/sheet-hours.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://canvas.asu.edu/courses/*", "*://*.instructure.com/courses/*"],
+      "js": ["ui/canvas-files.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://cad.onshape.com/*", "https://*.prairielearn.com/*",
+                  "https://canvas.asu.edu/*", "*://*.instructure.com/*",
+                  "https://github.com/*", "https://docs.google.com/*"],
+      "js": ["collectors/sitetime.js"],
+      "run_at": "document_idle"
     }
   ],
 
-  "permissions": ["storage"],
+  "permissions": ["storage", "idle"],
+
+  "host_permissions": ["https://canvas.asu.edu/*", "*://*.instructure.com/*",
+                       "https://*.inscloudgate.net/*"],
 
   "optional_host_permissions": ["http://*/*", "https://*/*"],
 
