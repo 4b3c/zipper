@@ -1,4 +1,4 @@
-/* One setting: where Zipper is.
+/* Where Zipper is, and which parts of the Canvas panel to draw.
  *
  * The address is a runtime permission rather than a manifest entry. A personal
  * tailnet host has no business in a manifest that lives in a public repo, and
@@ -84,6 +84,34 @@ $('test').addEventListener('click', async () => {
   }
 });
 
+/* The two Canvas switches. Both default on, so an absent key means on:
+ * `storage.sync` holds nothing until the box is first touched, and an
+ * install that never opens this page should see what it saw before.
+ * Saved on change -- a checkbox with a separate Save button is a trap.
+ */
+const PANEL_KEYS = ['show_todo', 'show_grades'];
+
+function loadPanel() {
+  if (!api?.storage?.sync) return;
+  api.storage.sync.get(PANEL_KEYS)
+    .then((got) => { for (const k of PANEL_KEYS) $(k).checked = got[k] !== false; })
+    .catch((e) => say('Could not read saved settings: ' + e, 'bad'));
+}
+
+for (const k of PANEL_KEYS) {
+  $(k).addEventListener('change', async () => {
+    try {
+      await api.storage.sync.set({ [k]: $(k).checked });
+      $('status2').textContent = 'Saved.';
+      $('status2').className = 'ok';
+    } catch (e) {
+      $('status2').textContent = 'Not saved: ' + e;
+      $('status2').className = 'bad';
+    }
+  });
+}
+
 // Last: the UI is fully wired by this point, so a failure here is reportable
 // rather than fatal.
 loadSaved();
+loadPanel();

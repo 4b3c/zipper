@@ -12,7 +12,7 @@ from .conv import (PASTE_DIR, TTYD, _prune_pastes, _queue_prompt, close_conversa
                    conversation_rows,
                    current_conversation, new_conversation, newest_buffer,
                    open_conversation, start_session)
-from .data import close_task, delete_task, toggle_done, week_worklist
+from .data import close_task, delete_task, toggle_done, week_worklist, worklist_at
 from .live import live_sig
 from .feed import (SUBS, SUBS_LOCK, do_refresh, emit_diff, feed_load, feed_mark,
                    feed_mark_all, feed_rows, feed_watch, notes_watch, publish,
@@ -244,7 +244,7 @@ class Handler(BaseHTTPRequestHandler):
                                         'sheet_id': hours.SHEET_ID,
                                         'tab': hours._load().get('sheet', {}).get('tab')}),
                        'application/json')
-        elif self.path == '/api/worklist':
+        elif self.path.split('?')[0] == '/api/worklist':
             # What the extension draws in Canvas' sidebar: this Monday-Sunday
             # week, Canvas only, built on the same `week_canvas` behind the
             # dashboard's week card so "this week" means one thing. The
@@ -260,7 +260,14 @@ class Handler(BaseHTTPRequestHandler):
                 self.headers.get('X-Forwarded-For', 'local'),
                 self.headers.get('User-Agent', '-')[:60]))
             sys.stderr.flush()
-            self._send(200, json.dumps(week_worklist()), 'application/json')
+            # `?offset=N` is weeks from this one. The browser names a step, not a
+            # date, so which Monday a week starts on is decided here alone.
+            q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            try:
+                offset = max(-52, min(52, int((q.get('offset') or ['0'])[0])))
+            except ValueError:
+                offset = 0
+            self._send(200, json.dumps(worklist_at(offset)), 'application/json')
         elif self.path == '/ext' or self.path.startswith('/ext/'):
             # The extension's own update channel. Firefox polls `updates.json`
             # on its own schedule and fetches the `.xpi` named there, so this is

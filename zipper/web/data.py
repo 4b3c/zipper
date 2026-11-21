@@ -161,6 +161,25 @@ def week_worklist(monday=None):
     return {'items': items, 'monday': wk['monday'], 'sunday': wk['sunday']}
 
 
+def worklist_at(offset=0):
+    """`week_worklist` for the week `offset` weeks from this one.
+
+    The Canvas panel steps between weeks by naming an offset; the server turns
+    it into a Monday so the panel and the dashboard can't disagree about where
+    a week starts. `offset` comes back so a slow reply can be matched to the
+    step that asked for it.
+    """
+    mon = monday_of() + datetime.timedelta(weeks=int(offset))
+    out = week_worklist(mon)
+    if offset:
+        # Carried work belongs to the week being lived. Shown on next week it
+        # would list this week's open work twice; on a past week it would list
+        # what was late *then*, which no longer means anything.
+        out['items'] = [i for i in out['items'] if not i.get('carried')]
+    out['offset'] = int(offset)
+    return out
+
+
 def task_text(raw):
     """Exactly the engine's normalisation, so the dashboard, ledger and queue all
     key a task the same way. A naive character class stops inside [[Note]] and

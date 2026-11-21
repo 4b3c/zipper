@@ -19,7 +19,7 @@ manifest.json          both browsers, one file
 background.js          the reporter; the only part that knows Zipper exists
 collectors/canvas.js   one site: fetches, posts, concludes nothing
 ui/canvas-todo.js      draws Zipper's work list into Canvas
-options.html/.js       where Zipper lives, granted as a runtime permission
+options.html/.js       where Zipper lives (a runtime permission), and the panel's switches
 ```
 
 Adding a site is one file in `collectors/` plus a `content_scripts` entry. `ui/` is the other
@@ -57,6 +57,12 @@ week's coursework from `GET /api/worklist` (`data.week_worklist()`). Ticking a r
 - **A week-progress bar** above the tabs, and **grade badges** on course cards from
   `/api/v1/courses?include[]=total_scores`. `--%` means nothing graded, not zero. Badges never
   reach Zipper — a course score isn't a conclusion.
+- **Arrows step between weeks** with `GET /api/worklist?offset=N` (weeks from this one).
+  The server picks the Monday, so the panel and the dashboard agree on where a week starts.
+  Other weeks drop the carried rows; clicking the heading comes back to this week.
+- **Two switches on the options page**, the list and the grade badges, each on unless
+  turned off and applied live through `storage.onChanged`. With the list off, Canvas' own
+  widgets come back.
 - **No ranking in the browser.** Two surfaces disagreeing about what's pressing is worse than
   Canvas' own bad list. The browser draws; Zipper decides.
 
@@ -69,7 +75,8 @@ How it stays safe inside Canvas:
   restores hidden widgets.
 - **Each content script is a closure.** Every frame gets one isolated world, so two files
   declaring `const api` throws on line 1. `node --check` won't catch it.
-- The page can reach exactly the two paths in `ALLOWED` in `background.js`.
+- The page can reach only the paths in `ALLOWED` in `background.js`, matched without the
+  query string.
 
 ## Why Canvas is a content script
 
