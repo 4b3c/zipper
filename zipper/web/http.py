@@ -12,6 +12,7 @@ from .conv import (PASTE_DIR, TTYD, _prune_pastes, _queue_prompt, close_conversa
                    conversation_rows,
                    current_conversation, new_conversation, newest_buffer,
                    open_conversation, start_session)
+from . import extapi
 from .data import close_task, delete_task, toggle_done, week_worklist, worklist_at
 from .live import live_sig
 from .feed import (SUBS, SUBS_LOCK, do_refresh, emit_diff, feed_load, feed_mark,
@@ -244,6 +245,15 @@ class Handler(BaseHTTPRequestHandler):
                                         'sheet_id': hours.SHEET_ID,
                                         'tab': hours._load().get('sheet', {}).get('tab')}),
                        'application/json')
+        elif self.path.split('?')[0] == '/api/canvasfiles':
+            # Which of a course's files the box already has, so the extension
+            # sends only new or changed ones.
+            q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            try:
+                self._send(200, json.dumps(extapi.have((q.get('course') or [''])[0])),
+                           'application/json')
+            except ValueError as e:
+                self._send(400, json.dumps({'ok': False, 'error': str(e)}), 'application/json')
         elif self.path.split('?')[0] == '/api/worklist':
             # What the extension draws in Canvas' sidebar: this Monday-Sunday
             # week, Canvas only, built on the same `week_canvas` behind the
@@ -332,6 +342,24 @@ class Handler(BaseHTTPRequestHandler):
                     SUBS.remove(q)
             client_gone()
 
+    def _extapi_post(self):
+        # The extension's two pushes (zipper/web/extapi.py). A file arrives as
+        # raw bytes with its description in headers; site time as JSON.
+        n = int(self.headers.get('Content-Length', 0) or 0)
+        if n > extapi.MAX_BYTES + 1024:
+            self._send(413, json.dumps({'ok': False, 'error': 'over the size cap'}),
+                       'application/json')
+            return
+        raw = self.rfile.read(n) if n else b''
+        try:
+            if self.path.split('?')[0] == '/api/sitetime':
+                res = extapi.receive_sitetime(json.loads(raw.decode('utf-8') or '{}'))
+            else:
+                res = extapi.receive_file(self.headers, raw)
+            self._send(200, json.dumps(res), 'application/json')
+        except ValueError as e:
+            self._send(400, json.dumps({'ok': False, 'error': str(e)}), 'application/json')
+
     def do_POST(self):
         core.TODAY = datetime.date.today()
         if _relay_only_refuses('POST', self.path):
@@ -339,6 +367,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == '/login':
             self._login_post()
+            return
+        if self.path.split('?')[0] in ('/api/sitetime', '/api/canvasfiles'):
+            self._extapi_post()
             return
         if self.path.startswith('/api/card/'):
             # A card's button: /api/card/<card id>/<action>, JSON args in the body,

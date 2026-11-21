@@ -49,6 +49,11 @@ def _github_cmd(a):
     return github.cmd(a)
 
 
+def _extapi():
+    from .web import extapi
+    return extapi
+
+
 def main():
     ap = argparse.ArgumentParser(prog='zipper', description='vault command line')
     sub = ap.add_subparsers(dest='cmd')
@@ -348,6 +353,13 @@ def main():
     s.add_argument('--clean', action='store_true',
                    help='put the update_url placeholder back after a failed sign')
     s.set_defaults(fn=_needs('canvas', ext.cmd_ext))
+
+    s = sub.add_parser('sitetime', help='time on watched sites, from the browser extension')
+    s.add_argument('--days', type=int, default=7)
+    s.set_defaults(fn=lambda a: _extapi().cmd_sitetime(a.days))
+
+    s = sub.add_parser('course-files', help='course files the extension sent, per course')
+    s.set_defaults(fn=lambda a: _extapi().cmd_files())
 
     a = ap.parse_args()
     if not getattr(a, 'fn', None):
