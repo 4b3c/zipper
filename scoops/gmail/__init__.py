@@ -153,7 +153,25 @@ def events(before, after):
     msgs = (_load() or {}).get('messages', {})
     new = [(mid, msgs[mid]) for mid in after - before
            if mid in msgs and not msgs[mid].get('baseline')]
-    return [row(mid, m) for mid, m in sorted(new, key=lambda kv: kv[1].get('ms', 0))]
+    out = []
+    for mid, m in sorted(new, key=lambda kv: kv[1].get('ms', 0)):
+        r = row(mid, m)
+        if m.get('sent'):
+            r['context'] = before_mine(msgs, m)
+        out.append(r)
+    return out
+
+
+def before_mine(msgs, m, n=5):
+    """The n messages before one the operator sent, in the same thread, oldest first:
+    who and the subject, never a body. Their reply read beside what it answers is what
+    settles an "owes a reply" task."""
+    prior = sorted((o for o in msgs.values()
+                    if m.get('thread') and o.get('thread') == m['thread']
+                    and o.get('ms', 0) < m.get('ms', 0)), key=lambda o: o.get('ms', 0))
+    return ['%s  %s: "%s"' % (o.get('when', '').replace('T', ' '),
+                               'sent' if o.get('sent') else o.get('from') or '?', o.get('subject', ''))
+            for o in prior[-n:]]
 
 
 # ---------------------------------------------------------------- reading one

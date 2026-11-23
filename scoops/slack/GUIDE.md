@@ -20,8 +20,11 @@ report it. Write the conclusion and a pointer (who, where, date), never the text
 Watched-channel rows are announcements and project chatter. Read the ones that might change
 a date, a plan or a project's state; a channel that is all chatter can be ticked on its
 row. The operator's own messages are rows too, `sent` in place of `from`: one after a
-message from someone else means they already answered it, and nothing is owed. Read it
-when what they said might be a commitment (a date, a promise, a meeting) and record that.
+message from someone else means they already answered it, and nothing is owed. **A sent row
+shows the five messages before it** (*answering:*). Read it against them, then find every
+open task whose pointer names that conversation and make it true: a reply they owed is sent, a
+time they agreed to is settled and goes on the calendar. A commitment in it (a date, a
+promise, a meeting) is recorded too.
 
 `zipper slack` lists recent rows and says whether the last pull worked. **An expired
 session is a flag**: the operator has to log in again in that browser and re-send the token

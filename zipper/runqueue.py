@@ -465,7 +465,12 @@ def _ev_line(e):
     key = '`%s` ' % e['key'] if e.get('key') else ''
     claimed = ('  ·  *claimed by conversation %s, which is working it: leave it*'
                % e['claimed_by'] if e.get('claimed_by') else '')
-    return '- %s%s%s%s%s' % (key, e.get('text', ''), meta, tgt, claimed)
+    line = '- %s%s%s%s%s' % (key, e.get('text', ''), meta, tgt, claimed)
+    if e.get('context'):
+        # What the operator's own message answered. Read it against every open task
+        # pointing at this conversation: a reply owed may already be sent.
+        line += '\n  *answering:*' + ''.join('\n  > %s' % c for c in e['context'])
+    return line
 
 
 def _write_brief(q):

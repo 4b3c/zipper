@@ -202,7 +202,9 @@ def publish(kind, text='', **extra):
                    'action': extra.get('action', ''),
                    'clears': 'tick'}
             # `scoop`: which guide the brief points at (zipper.scoops.guide).
-            for f in ('who', 'when', 'target', 'scoop'):
+            # `context`: the messages before one the operator sent (a scoop's
+            # before_mine), so a pass reads the answer beside what it answers.
+            for f in ('who', 'when', 'target', 'scoop', 'context'):
                 if extra.get(f):
                     row[f] = extra[f]
             FEED.append(row)

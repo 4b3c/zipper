@@ -247,5 +247,41 @@ class Pulls(unittest.TestCase):
         self.assertTrue(any('CNOPE' in f for f in slack.flags()))
 
 
+class SentContext(unittest.TestCase):
+    """A sent row carries the messages before it, so a pass reads the reply beside the
+    question it settles (a teammate's proposed time, agreed to two days later)."""
+
+    def msg(self, ts, frm='nadia', mine=False, ch='G1', thread='', text=None):
+        return {'ch': ch, 'ts': ts, 'from': frm, 'mine': mine, 'thread': thread,
+                'when': '2026-11-21T%02d:00' % (int(float(ts)) % 24),
+                'text': text or 'm%s' % ts}
+
+    def test_five_before_in_the_same_conversation(self):
+        msgs = {str(i): self.msg(str(i)) for i in range(1, 8)}
+        msgs['x'] = self.msg('3.5', ch='OTHER')
+        msgs['t'] = self.msg('4.5', thread='2')          # a thread reply, not the channel
+        mine = self.msg('9', frm='me', mine=True)
+        ctx = slack.before_mine(msgs, mine)
+        self.assertEqual([c.split('"')[1] for c in ctx], ['m3', 'm4', 'm5', 'm6', 'm7'])
+
+    def test_a_thread_reply_sees_its_thread_and_parent(self):
+        msgs = {'p': self.msg('2'), 'r': self.msg('3', thread='2'), 'c': self.msg('4')}
+        ctx = slack.before_mine(msgs, self.msg('5', mine=True, thread='2'))
+        self.assertEqual([c.split('"')[1] for c in ctx], ['m2', 'm3'])
+
+    def test_events_attach_context_only_to_sent_rows(self):
+        state = {'messages': {'G1-1': self.msg('1'), 'G1-2': self.msg('2', mine=True, frm='me')}}
+        with mock.patch.object(slack, '_read', return_value=state):
+            rows = slack.events(frozenset(), frozenset(state['messages']))
+        self.assertNotIn('context', rows[0])
+        self.assertEqual(len(rows[1]['context']), 1)
+
+    def test_the_brief_prints_it_under_the_row(self):
+        from zipper import runqueue
+        line = runqueue._ev_line({'key': 'k', 'text': 'slack sent', 'context': ['a', 'b']})
+        self.assertEqual(line.splitlines()[1:], ['  *answering:*', '  > a', '  > b'])
+        self.assertNotIn('answering', runqueue._ev_line({'key': 'k', 'text': 'x'}))
+
+
 if __name__ == '__main__':
     unittest.main()
