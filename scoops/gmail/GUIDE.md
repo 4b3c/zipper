@@ -11,7 +11,7 @@ the vault already writes about. For each of those, open the body:
 
 Each date they must act by, form to fill, or reply they owe becomes its own task with a
 `[due::]`, unless the task list already has it. A deadline someone else set is a hard one:
-say so when you report it. Write the conclusion and a pointer (sender, subject, date), never
+say so when you report it. Write the conclusion and a pointer (sender, subject, date and the row's `#<id>`), never
 the body.
 
 Only obvious bulk (newsletters, receipts, promotions, login codes) is ticked unread. A row
@@ -19,8 +19,8 @@ from someone the operator wrote to tells you whether they answered: use that, ra
 leaving "follow up if they haven't replied" for the operator to remember.
 
 **A sent row shows up to five earlier messages in its thread** (*answering:*: who and the
-subject). Find every open task that points at that thread or person and make it true: a reply
-owed is now sent.
+subject), and *open tasks made from those:* lists every open task whose pointer carries one of
+their ids. Make each one true: a reply owed is now sent.
 
 **Filing**, when `scoops.gmail.folders` is set: each pull already moves opened bulk by those
 rules, and unread mail never moves. Once a held message's tasks exist, move it out of the

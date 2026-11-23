@@ -282,6 +282,24 @@ class SentContext(unittest.TestCase):
         self.assertEqual(line.splitlines()[1:], ['  *answering:*', '  > a', '  > b'])
         self.assertNotIn('answering', runqueue._ev_line({'key': 'k', 'text': 'x'}))
 
+    def test_open_tasks_made_from_those_messages(self):
+        from zipper import runqueue
+        os.makedirs(os.path.join(TMP, 'vault', 'Tasks'), exist_ok=True)
+        with open(os.path.join(TMP, 'vault', 'Tasks', 'T.md'), 'w') as fh:
+            fh.write('- [ ] Agree a recording time [due:: 2026-11-23]\n'
+                     '  *Pointer: Nadia, group DM, #G1-11.5*\n'
+                     '- [x] Done already\n  #G1-11.5\n'
+                     '- [ ] Unrelated\n  #G1-11.55\n')
+        row = {'key': 'k', 'text': 'slack sent', 'context': ['10:00  nadia: "free at 11:30?"  #G1-11.5']}
+        with mock.patch.object(runqueue, 'VAULT', os.path.join(TMP, 'vault')), \
+                mock.patch.object(runqueue, '_all_md',
+                                  return_value=[os.path.join(TMP, 'vault', 'Tasks', 'T.md')]):
+            runqueue.tasks_from_context([row, {'key': 'n', 'text': 'x'}])
+        self.assertEqual(row['tasks'], ['Agree a recording time  (Tasks/T.md)'])
+        line = runqueue._ev_line(row)
+        self.assertIn('*open tasks made from those:*', line)
+        self.assertNotIn('[ ]', line)
+
 
 if __name__ == '__main__':
     unittest.main()

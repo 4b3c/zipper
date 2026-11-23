@@ -417,9 +417,9 @@ def before_mine(msgs, m, n=CONTEXT):
              if o.get('ch') == m.get('ch') and float(o.get('ts') or 0) < ts
              and ((o.get('thread') or '') == conv or (conv and o.get('ts') == conv))]
     prior.sort(key=lambda o: float(o.get('ts') or 0))
-    return ['%s  %s: "%s"' % (o.get('when', '').replace('T', ' '),
-                               'sent' if o.get('mine') else o.get('from') or '?',
-                               _clean(o.get('text'), CONTEXT_MAX))
+    return ['%s  %s: "%s"  #%s' % (o.get('when', '').replace('T', ' '),
+                                    'sent' if o.get('mine') else o.get('from') or '?',
+                                    _clean(o.get('text'), CONTEXT_MAX), msg_id(o['ch'], o['ts']))
             for o in prior[-n:]]
 
 

@@ -166,12 +166,13 @@ def before_mine(msgs, m, n=5):
     """The n messages before one the operator sent, in the same thread, oldest first:
     who and the subject, never a body. Their reply read beside what it answers is what
     settles an "owes a reply" task."""
-    prior = sorted((o for o in msgs.values()
+    prior = sorted(((k, o) for k, o in msgs.items()
                     if m.get('thread') and o.get('thread') == m['thread']
-                    and o.get('ms', 0) < m.get('ms', 0)), key=lambda o: o.get('ms', 0))
-    return ['%s  %s: "%s"' % (o.get('when', '').replace('T', ' '),
-                               'sent' if o.get('sent') else o.get('from') or '?', o.get('subject', ''))
-            for o in prior[-n:]]
+                    and o.get('ms', 0) < m.get('ms', 0)), key=lambda ko: ko[1].get('ms', 0))
+    return ['%s  %s: "%s"  #%s' % (o.get('when', '').replace('T', ' '),
+                                    'sent' if o.get('sent') else o.get('from') or '?',
+                                    o.get('subject', ''), k)
+            for k, o in prior[-n:]]
 
 
 # ---------------------------------------------------------------- reading one
