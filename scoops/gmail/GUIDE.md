@@ -18,6 +18,10 @@ Only obvious bulk (newsletters, receipts, promotions, login codes) is ticked unr
 from someone the operator wrote to tells you whether they answered: use that, rather than
 leaving "follow up if they haven't replied" for the operator to remember.
 
+**A sent row shows up to five earlier messages in its thread** (*answering:*: who and the
+subject). Find every open task that points at that thread or person and make it true: a reply
+owed is now sent.
+
 **Filing**, when `scoops.gmail.folders` is set: each pull already moves opened bulk by those
 rules, and unread mail never moves. Once a held message's tasks exist, move it out of the
 inbox with `zipper gmail <id> --file <label>`, using the owner's labels. The inbox should hold

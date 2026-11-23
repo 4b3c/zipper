@@ -45,6 +45,8 @@ MAP_HOURS = 24               # how long the channel list is trusted
 USERS_PER_PULL = 40          # users.info lookups per pull; the rest wait for the next
 NAME_MAX = 80
 TEXT_MAX = 300               # characters of a message a row carries
+CONTEXT = 5                  # messages shown before each of the operator's own
+CONTEXT_MAX = 160            # characters of each of those
 RESEND = ('log in to Slack in the browser again and re-send both: '
           '`zipper secret SLACK_TOKENS` and `zipper secret SLACK_COOKIE`')
 
@@ -402,13 +404,38 @@ def snapshot():
     return frozenset(state.get('messages') or {})
 
 
+def before_mine(msgs, m, n=CONTEXT):
+    """The n messages before one of the operator's own, in the same conversation (and
+    the same thread, when it is a reply), oldest first, as context lines.
+
+    A sent row alone says only that they wrote something; read beside what it answered,
+    it is the answer that settles a task ("he hasn't replied" stops being true). Built
+    from the remembered messages, so a conversation only mentions reach shows less."""
+    ts = float(m.get('ts') or 0)
+    conv = m.get('thread') or ''
+    prior = [o for o in msgs.values()
+             if o.get('ch') == m.get('ch') and float(o.get('ts') or 0) < ts
+             and ((o.get('thread') or '') == conv or (conv and o.get('ts') == conv))]
+    prior.sort(key=lambda o: float(o.get('ts') or 0))
+    return ['%s  %s: "%s"' % (o.get('when', '').replace('T', ' '),
+                               'sent' if o.get('mine') else o.get('from') or '?',
+                               _clean(o.get('text'), CONTEXT_MAX))
+            for o in prior[-n:]]
+
+
 def events(before, after):
     if before is None or after is None:
         return []
     msgs = (_read() or {}).get('messages', {})
     new = [(mid, msgs[mid]) for mid in after - before
            if mid in msgs and not msgs[mid].get('baseline')]
-    return [row(mid, m) for mid, m in sorted(new, key=lambda kv: float(kv[1].get('ts') or 0))]
+    out = []
+    for mid, m in sorted(new, key=lambda kv: float(kv[1].get('ts') or 0)):
+        r = row(mid, m)
+        if m.get('mine'):
+            r['context'] = before_mine(msgs, m)
+        out.append(r)
+    return out
 
 
 def flags():
