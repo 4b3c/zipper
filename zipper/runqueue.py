@@ -286,6 +286,44 @@ def _tasks():
                 tasks[text[:120]] = (m.group(1).lower() == 'x')
     return tasks
 
+CONTEXT_ID_RE = re.compile(r'#([A-Za-z0-9]+(?:-[0-9.]+)?)\s*$')
+
+
+def open_task_blocks():
+    """[(task line, note path, the line and its indented lines below)] for every open
+    checkbox. The block is where a task's pointer lives (`#<message id>`)."""
+    out = []
+    for p in _all_md():
+        lines = list(defenced(open(p, encoding='utf-8').read().split('\n')))
+        for i, line in enumerate(lines):
+            m = TASK_RE.match(line)
+            if not m or m.group(1).strip():
+                continue
+            ind = len(line) - len(line.lstrip())
+            j = i + 1
+            while j < len(lines) and lines[j].strip() and \
+                    len(lines[j]) - len(lines[j].lstrip()) > ind and not TASK_RE.match(lines[j]):
+                j += 1
+            title = re.sub(r'\s*\[[a-z_]+::\s*(?:\[\[[^\]]+\]\]|[^\]]*)\]', '', m.group(2)).strip()
+            out.append((title, os.path.relpath(p, VAULT), '\n'.join(lines[i:j])))
+    return out
+
+
+def tasks_from_context(rows):
+    """Give each row with `context` the open tasks whose pointer names one of those
+    messages: the tasks the operator's own message may just have settled."""
+    rows = [r for r in rows if r.get('context')]
+    if not rows:
+        return
+    blocks = open_task_blocks()
+    for r in rows:
+        ids = {m.group(1) for m in map(CONTEXT_ID_RE.search, r['context']) if m}
+        hits = ['%s  (%s)' % (t, p) for t, p, b in blocks
+                if any(re.search(r'#%s\b' % re.escape(i), b) for i in ids)]
+        if hits:
+            r['tasks'] = hits
+
+
 def flags(evrecs=None):
     """Conditions, re-derived every run. Never queued, never ticked."""
     if evrecs is None:
@@ -421,6 +459,7 @@ def cmd_brief(a):
 
     resolve = inputs.target_resolver()
     rows = [classify(r, resolve) for r in open_rows()]
+    tasks_from_context(rows)
     claims = record_pass(rows)
     for r in rows:
         if r.get('key') in claims:
@@ -470,6 +509,9 @@ def _ev_line(e):
         # What the operator's own message answered. Read it against every open task
         # pointing at this conversation: a reply owed may already be sent.
         line += '\n  *answering:*' + ''.join('\n  > %s' % c for c in e['context'])
+    if e.get('tasks'):
+        # Never a checkbox here: every `- [ ]` in the vault is read as a task.
+        line += '\n  *open tasks made from those:*' + ''.join('\n  > %s' % t for t in e['tasks'])
     return line
 
 

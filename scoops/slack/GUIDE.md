@@ -15,15 +15,16 @@ Every pass, open each DM and mention in full:
 It prints the whole message and the rest of its thread, so a reply makes sense in context. Each
 deadline, request, meeting or reply they owe becomes its own task with a `[due::]`, unless
 the task list already has it. A deadline someone else set is a hard one: say so when you
-report it. Write the conclusion and a pointer (who, where, date), never the text.
+report it. Write the conclusion and a pointer (who, where, date and the row's `#<id>`), never the text.
 
 Watched-channel rows are announcements and project chatter. Read the ones that might change
 a date, a plan or a project's state; a channel that is all chatter can be ticked on its
 row. The operator's own messages are rows too, `sent` in place of `from`: one after a
 message from someone else means they already answered it, and nothing is owed. **A sent row
-shows the five messages before it** (*answering:*). Read it against them, then find every
-open task whose pointer names that conversation and make it true: a reply they owed is sent, a
-time they agreed to is settled and goes on the calendar. A commitment in it (a date, a
+shows the five messages before it** (*answering:*) and, under *open tasks made from those:*,
+every open task whose pointer carries one of their ids. Read the reply against them and make
+each task true: a reply they owed is sent, a time they agreed to is settled and goes on the
+calendar. The id in the pointer is what makes the match, so never leave it out. A commitment in it (a date, a
 promise, a meeting) is recorded too.
 
 `zipper slack` lists recent rows and says whether the last pull worked. **An expired
